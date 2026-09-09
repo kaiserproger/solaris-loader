@@ -1,0 +1,14 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.solaris.agent.mixin",
+  "client": [
+    "ClientCommonPacketListenerMixin",
+    "ClientPacketListenerMixin",
+    "MinecraftBlockBreakMixin",
+    "PacketProcessorListenerAndPacketMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
