@@ -1,11 +1,232 @@
-# Solaris Minecraft Client MCP
-> Standalone Gradle workspace. Check out as a sibling of the Solaris core
-> repository (`../solaris`): `git clone <url> solaris-loader` next to `solaris`.
-The Solaris core harness launches this workspace through `SOLARIS_LOADER_ROOT`
-(default `../solaris-loader`); the core checkout is only needed for the
-harness-driven runs below, not for building this workspace.
+# Solaris Loader
 
-This NeoForge development mod embeds an authenticated Streamable HTTP MCP
+Optional **client-side mod** for [Solaris](https://github.com/kaiserproger/solaris)
+servers whose Luau plugins provide custom screens, HUD, assets, sounds, items,
+blocks, or keyboard actions. If the server uses only server-side plugins, an
+ordinary vanilla client is enough.
+
+This is not a server plugin, modpack, launcher, or replacement for Fabric,
+NeoForge, or Forge. Players do not need Gradle, Rust, MCP, or an API token.
+
+## Download
+
+Open [Releases](https://github.com/kaiserproger/solaris-loader/releases) and
+choose the Loader release required by your server. Download **one** platform
+JAR from its Assets, not GitHub's source-code archive:
+
+| Minecraft | Platform baseline | Download |
+| --- | --- | --- |
+| 26.1.2 | Fabric Loader 0.19.3 + Fabric API 0.155.2+26.1.2 | `loader-fabric-0.1.0.jar` |
+| 26.1.2 | NeoForge 26.1.2.76 | `loader-neoforge-0.1.0.jar` |
+| 26.1.2 | Forge 26.1.2-64.1.0 | `loader-forge-0.1.0.jar` |
+
+Use **Java 25**. The same platform JAR works across operating systems; the
+launcher, Java runtime, Minecraft version, and mod loader must match. Do not
+mix adapters, use a nearby Minecraft version, or install an agent/development
+JAR. Fabric requires the separate Fabric API mod. A `SHA256SUMS` release asset
+allows verification with `sha256sum -c SHA256SUMS --ignore-missing` on Linux;
+on Windows, compare `Get-FileHash FILE.jar -Algorithm SHA256` with that file.
+
+Current protocol is **2**, plugin API **0.6.0**. These are alpha contracts:
+match the server's declared compatibility, not just similar version numbers.
+The settlement overhaul and schema-2/protocol-3 view proposal are not current
+features. Releases remain previews, not broad survival-readiness claims.
+
+## Install in your launcher
+
+1. Close the Minecraft instance.
+2. Select Minecraft **26.1.2**, Java **25**, and one platform from the table.
+3. Open the **game directory of that instance** and its `mods/` folder.
+4. Copy the matching Solaris Loader JAR there. For Fabric, also install the
+   matching Fabric API JAR. Remove an older Solaris Loader JAR from that same
+   instance so exactly one remains.
+5. Start that instance, connect to the server, and review its permission prompt.
+
+| Launcher | Where to place the JAR |
+| --- | --- |
+| PrismLauncher | Edit the instance → **Mods** → add the downloaded file, or open its game folder and use `mods/`. Choose the mod loader under **Version**. |
+| MultiMC | Edit the instance → **Loader mods** → add the file, or open the instance's Minecraft folder and use `mods/`. Use only a platform/version the launcher actually offers. |
+| Official Minecraft Launcher | Install the chosen Fabric/NeoForge/Forge client profile with that platform's installer. Select its installation and open its configured **Game Directory**, then use `mods/`. The launcher alone does not install a mod loader. |
+| Modrinth App | Open the matching instance's folder and copy the file into `mods/`; ensure the instance has the exact game version and platform. |
+| CurseForge App | Open the matching custom profile's folder and copy the file into `mods/`. Managed packs may need content-management changes; do not replace their loader with a different platform. |
+| Other launchers | Use the launched profile's game directory, not the launcher's application directory or another profile's global `.minecraft`. |
+
+Launcher menus vary by version. If it cannot provide the exact Minecraft,
+Java, and loader combination, use a compatible launcher rather than changing
+the JAR's target version. This table describes manual installation, not a
+claim that every launcher/platform combination was graphically tested.
+[Prism's mod installation guide](https://prismlauncher.org/wiki/getting-started/download-mods/)
+explains its instance/loader selection.
+
+Do **not** unzip the JAR or place it in the Solaris server's `plugins/` folder.
+For a custom game directory, its `mods/` folder is authoritative; operating
+system default Minecraft folders are not reliable for separate instances.
+
+## First connection
+
+Loader asks before activating a server's requested permissions. **Allow**
+downloads missing declared bundles, verifies their sizes and SHA-256 hashes,
+then activates content. **Deny** disconnects without requesting those bundles.
+A different server address or permission set prompts again.
+
+Decisions and verified content are cached under `~/.solaris/loader-cache/`.
+Active content, HUD, sounds, and held actions are cleared on disconnect.
+Only approve servers you trust; a matching content hash establishes byte
+identity, not that a server is trustworthy.
+
+## Troubleshooting
+
+- **“Loader required”**: verify the launched instance, `mods/` location, adapter,
+  and Minecraft version. Look for `solaris_loader` in `logs/latest.log`.
+- **Missing Fabric API / incompatible mod**: use the matching dependencies from
+  the table, not Fabric API for another Minecraft release.
+- **Wrong Java / unsupported class version**: configure Java 25 for this
+  instance, not merely your shell.
+- **Permission denied**: inspect the server address and your decision. Do not
+  copy another server's permission file to bypass consent.
+- **Hash, bundle, protocol, or activation failure**: retain the disconnect
+  reason and `logs/latest.log`; ask the operator for a matching release and
+  corrected bundle. Do not disable verification or mix adapters.
+
+Operators and plugin authors: see the
+[full installation/permission guide](https://github.com/kaiserproger/solaris/blob/main/docs/SOLARIS_LOADER.md)
+and [plugin API](https://github.com/kaiserproger/solaris/blob/main/docs/PLUGINS.md).
+
+## Build from source
+
+Java 25 is required. This Gradle workspace builds independently of core;
+integration tests use the sibling `../solaris` fixtures.
+
+```sh
+git clone https://github.com/kaiserproger/solaris-loader.git
+cd solaris-loader
+./gradlew --no-configuration-cache :loader-fabric:jar :loader-neoforge:jar :loader-forge:jar
+```
+
+On Windows use `gradlew.bat`. JARs appear in each adapter's `build/libs/`.
+Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
+`fabric-agent`, `java-agent`, and `bridge-core` are development tooling.
+
+<details>
+<summary>Developer reference: Loader protocol and content activation</summary>
+
+### Shared Loader implementation
+
+`loader-core` contains the protocol-2 manifest/ack codec and validates platform,
+permissions, and exact cache identities. `loader-fabric`, `loader-neoforge`,
+and `loader-forge` register the same Configuration-state manifest and
+acknowledgement payloads through their native 26.1.2 networking APIs.
+
+The first manifest for an exact server address and permission set opens a
+Minecraft confirmation screen. Allow and deny decisions are stored separately
+per normalized server address in `permissions.properties` under the Loader
+cache. A different server or changed permission set prompts again. The cache
+directory defaults to `~/.solaris/loader-cache` and may be overridden for tests
+or isolated profiles:
+
+```text
+-Dsolaris.loader.cacheDir=/path/to/loader-cache
+```
+
+Denial disconnects before an artifact request or staging file can be created.
+Solaris keeps the Loader Configuration handshake open for up to two minutes so
+the first confirmation is not constrained by the ordinary ten-second pre-Play
+packet timeout.
+For each missing exact cache identity the client requests only that bundle,
+streams bounded Configuration payloads into a temporary file, verifies the
+declared size and SHA-256, and atomically publishes it before acknowledging the
+manifest. An unknown, duplicate, or missing permission fails the handshake.
+After all exact cache files pass verification, the shared core opens each ZIP
+with `solaris-client.json` as its first entry. That closed schema currently
+accepts owned UI, block, item and sound definitions, declared asset bytes, and
+owner-namespaced UI/keyboard interactions. Each block declaration (`id`, owner
+`model`, and `name`) is backed by its exact verified model asset.
+Each item names a known vanilla base
+item and requires its exact verified
+`assets/<namespace>/items/<path>.json` definition; UI may reference one
+declared item. Each interaction carries a bounded label and at most 4 KiB UTF-8
+payload, with optional same-bundle `ui_id` and canonical `key.keyboard.*` `key`.
+At least one source is required; a screen may expose at most eight actions,
+and at most 64 interactions may be activated. Key-only content uses
+`send_interactions` without requesting `present_ui`.
+Up to 64 `sounds` (`id`) require `play_sounds` and same-bundle verified mono
+OGG Vorbis assets. Shared pack preparation probes their headers/initial audio
+and generates owner `sounds.json` indexes without late registry mutation.
+The three adapters publish the resulting immutable registry before sending the
+acknowledgement and keep it available in Play. Unknown archive fields or
+entries and mismatched asset bytes fail before acknowledgement. An acknowledged
+Loader session can receive
+`solaris:loader/ui` in Play. One shared presenter handles `screen`, `hud` and
+`hidden` modes for an activated id from the exact originating connection.
+Optional title/body overrides are bounded to 128 bytes/8 KiB; omitted values
+come from the verified UI definition. Modal views retain item/block displays
+and action buttons. HUD is non-interactive title/body text: at most eight rows,
+256 GUI pixels wide, clipped by viewport capacity, and hidden by Minecraft's
+hide-GUI option. Hiding one id cannot remove another owner's HUD or modal view.
+Pressing a current action emits `solaris:loader/interaction` only while that
+originating connection and definition are still active. Referenced items render
+through a local vanilla stack with Minecraft 26.1.2's owner-namespaced
+`ITEM_MODEL`; no late registry mutation is used. The server accepts the
+bounded action only from the exact acknowledged Play session and delivers
+`on_loader_interaction(event)` solely to the Lua plugin owning the interaction
+namespace. The event carries `player_id`, `interaction_id`, `phase`
+(`trigger` for buttons, `press`/`release` for keys), and untrusted `payload`.
+The shared HEAD keyboard mixin covers vanilla early-return keys on every
+adapter without cancellation. Menu/overlay/window-focus loss releases bounded
+held state; autorepeat cannot reactivate it. Menu-closing Escape never becomes
+a gameplay press. Fixed bindings preserve vanilla screenshot/fullscreen and
+movement; no rebinding, chords, mouse/gamepad or client Lua runtime is added.
+The protocol-2 action is `u16 protocol`, `u8 phase`, then `u16`-prefixed UTF-8
+id/payload (big-endian, at most 4,231 bytes), with no old-wire fallback.
+Activation/disconnect clears HUD, keyboard state and Loader sound playback; disconnect clears the
+active registry, so queued work or content from one server cannot reach a later
+connection. Declared
+`assets/<namespace>/<path>` bytes now form one
+transient required Minecraft client resource pack. The acknowledgement waits
+for an exact-byte resource reload, and the pack is removed and reloaded out
+when its originating connection closes. The block path pre-registers eight
+bounded carriers before freeze on each platform. After verified pack reload it
+sorts up to eight owner block ids, maps each blockstate/item definition to the
+corresponding carrier, and sends the exact owner-id-to-runtime-state map as
+`carrier_block_state_ids`. Solaris cross-checks that closed map against the
+hash-verified artifacts and retains it only in the acknowledged Play session.
+Server grants, placement, projection, break drops, persistence, and pickup
+preserve the exact owner identity through that mapping; no client runtime id
+enters canonical world or inventory state.
+
+`solaris:loader/sound` resolves only an activated sound on its originating
+connection. The shared native presenter supports personal or fixed-position
+one-shots, bounded volume/pitch, distance attenuation, and owner-id-local stop.
+The [live fixture gate](../solaris/examples/loader-live-gate/README.md) captures actual
+audio output for all three platforms; no acknowledgement or chat response is
+treated as evidence that the sound played.
+
+```sh
+./gradlew \
+  :loader-core:test \
+  :loader-fabric:test \
+  :loader-neoforge:test \
+  :loader-forge:test
+```
+
+Build distributable platform jars with:
+
+```sh
+./gradlew :loader-fabric:jar :loader-neoforge:jar :loader-forge:jar
+```
+
+</details>
+
+<details>
+<summary>Developer reference: real-client MCP automation</summary>
+
+### Solaris Minecraft Client MCP
+
+The Solaris core harness locates this workspace through `SOLARIS_LOADER_ROOT`
+(default `../solaris-loader`). The following automation commands require the
+core checkout; normal player installations do not.
+
+The development client agent embeds an authenticated Streamable HTTP MCP
 server in the real Minecraft Java 26.1.2 client. MCP hosts can inspect the
 client-visible world and drive ordinary client inputs without using screenshots
 as state assertions or an external command-string launcher.
@@ -160,107 +381,4 @@ The existing `/rpc` client-agent bridge remains available for the historical
 real-client regression runner and can be launched independently with
 `:fabric-agent:runClientAgent`.
 
-## Solaris Loader Prototype
-
-`loader-core` contains the protocol-2 manifest/ack codec and validates platform,
-permissions, and exact cache identities. `loader-fabric`, `loader-neoforge`,
-and `loader-forge` register the same Configuration-state manifest and
-acknowledgement payloads through their native 26.1.2 networking APIs.
-
-The first manifest for an exact server address and permission set opens a
-Minecraft confirmation screen. Allow and deny decisions are stored separately
-per normalized server address in `permissions.properties` under the Loader
-cache. A different server or changed permission set prompts again. The cache
-directory defaults to `~/.solaris/loader-cache` and may be overridden for tests
-or isolated profiles:
-
-```text
--Dsolaris.loader.cacheDir=/path/to/loader-cache
-```
-
-Denial disconnects before an artifact request or staging file can be created.
-Solaris keeps the Loader Configuration handshake open for up to two minutes so
-the first confirmation is not constrained by the ordinary ten-second pre-Play
-packet timeout.
-For each missing exact cache identity the client requests only that bundle,
-streams bounded Configuration payloads into a temporary file, verifies the
-declared size and SHA-256, and atomically publishes it before acknowledging the
-manifest. An unknown, duplicate, or missing permission fails the handshake.
-After all exact cache files pass verification, the shared core opens each ZIP
-with `solaris-client.json` as its first entry. That closed schema currently
-accepts owned UI, block, item and sound definitions, declared asset bytes, and
-owner-namespaced UI/keyboard interactions. The prototype accepts one block
-declaration (`id`, owner `model`, and `name`) backed by its exact verified model
-asset. Each item names a known vanilla base
-item and requires its exact verified
-`assets/<namespace>/items/<path>.json` definition; UI may reference one
-declared item. Each interaction carries a bounded label and at most 4 KiB UTF-8
-payload, with optional same-bundle `ui_id` and canonical `key.keyboard.*` `key`.
-At least one source is required; a screen may expose at most eight actions,
-and at most 64 interactions may be activated. Key-only content uses
-`send_interactions` without requesting `present_ui`.
-Up to 64 `sounds` (`id`) require `play_sounds` and same-bundle verified mono
-OGG Vorbis assets. Shared pack preparation probes their headers/initial audio
-and generates owner `sounds.json` indexes without late registry mutation.
-The three adapters publish the resulting immutable registry before sending the
-acknowledgement and keep it available in Play. Unknown archive fields or
-entries and mismatched asset bytes fail before acknowledgement. An acknowledged
-Loader session can receive
-`solaris:loader/ui` in Play. One shared presenter handles `screen`, `hud` and
-`hidden` modes for an activated id from the exact originating connection.
-Optional title/body overrides are bounded to 128 bytes/8 KiB; omitted values
-come from the verified UI definition. Modal views retain item/block displays
-and action buttons. HUD is non-interactive title/body text: at most eight rows,
-256 GUI pixels wide, clipped by viewport capacity, and hidden by Minecraft's
-hide-GUI option. Hiding one id cannot remove another owner's HUD or modal view.
-Pressing a current action emits `solaris:loader/interaction` only while that
-originating connection and definition are still active. Referenced items render
-through a local vanilla stack with Minecraft 26.1.2's owner-namespaced
-`ITEM_MODEL`; no late registry mutation is used. The server accepts the
-bounded action only from the exact acknowledged Play session and delivers
-`on_loader_interaction(event)` solely to the Lua plugin owning the interaction
-namespace. The event carries `player_id`, `interaction_id`, `phase`
-(`trigger` for buttons, `press`/`release` for keys), and untrusted `payload`.
-The shared HEAD keyboard mixin covers vanilla early-return keys on every
-adapter without cancellation. Menu/overlay/window-focus loss releases bounded
-held state; autorepeat cannot reactivate it. Menu-closing Escape never becomes
-a gameplay press. Fixed bindings preserve vanilla screenshot/fullscreen and
-movement; no rebinding, chords, mouse/gamepad or client Lua runtime is added.
-The protocol-2 action is `u16 protocol`, `u8 phase`, then `u16`-prefixed UTF-8
-id/payload (big-endian, at most 4,231 bytes), with no old-wire fallback.
-Activation/disconnect clears HUD, keyboard state and Loader sound playback; disconnect clears the
-active registry, so queued work or content from one server cannot reach a later
-connection. Declared
-`assets/<namespace>/<path>` bytes now form one
-transient required Minecraft client resource pack. The acknowledgement waits
-for an exact-byte resource reload, and the pack is removed and reloaded out
-when its originating connection closes. The block path pre-registers eight
-bounded carriers before freeze on each platform. After verified pack reload it
-sorts up to eight owner block ids, maps each blockstate/item definition to the
-corresponding carrier, and sends the exact owner-id-to-runtime-state map as
-`carrier_block_state_ids`. Solaris cross-checks that closed map against the
-hash-verified artifacts and retains it only in the acknowledged Play session.
-Server grants, placement, projection, break drops, persistence, and pickup
-preserve the exact owner identity through that mapping; no client runtime id
-enters canonical world or inventory state.
-
-`solaris:loader/sound` resolves only an activated sound on its originating
-connection. The shared native presenter supports personal or fixed-position
-one-shots, bounded volume/pitch, distance attenuation, and owner-id-local stop.
-The [live fixture gate](../solaris/examples/loader-live-gate/README.md) captures actual
-audio output for all three platforms; no acknowledgement or chat response is
-treated as evidence that the sound played.
-
-```sh
-./gradlew \
-  :loader-core:test \
-  :loader-fabric:test \
-  :loader-neoforge:test \
-  :loader-forge:test
-```
-
-Build distributable platform jars with:
-
-```sh
-./gradlew :loader-fabric:jar :loader-neoforge:jar :loader-forge:jar
-```
+</details>
