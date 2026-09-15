@@ -1,5 +1,6 @@
 package dev.solaris.loader;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.ByteBuffer;
@@ -11,7 +12,12 @@ import org.junit.jupiter.api.Test;
 
 final class LoaderSoundCommandTest {
     private static final LoaderActivatedContent CONTENT = new LoaderActivatedContent(
-            List.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(),
+            List.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
+            Map.of(),
             Map.of("example:tone", new LoaderSoundDefinition("example:tone")));
 
     @Test
@@ -48,6 +54,20 @@ final class LoaderSoundCommandTest {
         valid = payload("example:tone", 0, 1, 1, 0);
         valid[5] = (byte) 0xff;
         assertTrue(LoaderSoundCommand.resolve(valid, CONTENT, true).isEmpty());
+    }
+
+    @Test
+    void soundChannelUsesWireThreeOnly() {
+        assertEquals(3, LoaderHandshake.PROTOCOL_VERSION);
+        byte[] play = payload("example:tone", 1, 1, 1, 0);
+        assertEquals(
+                LoaderHandshake.PROTOCOL_VERSION,
+                ((play[0] & 0xff) << 8) | (play[1] & 0xff));
+        assertTrue(LoaderSoundCommand.resolve(play, CONTENT, true).isPresent());
+        byte[] protocolTwo = play.clone();
+        protocolTwo[0] = 0;
+        protocolTwo[1] = 2;
+        assertTrue(LoaderSoundCommand.resolve(protocolTwo, CONTENT, true).isEmpty());
     }
 
     private static byte[] payload(String id, int mode, float volume, float pitch, double x) {

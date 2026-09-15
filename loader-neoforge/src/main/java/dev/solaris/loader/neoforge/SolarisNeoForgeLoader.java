@@ -2,19 +2,16 @@ package dev.solaris.loader.neoforge;
 
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderHandshake;
-import dev.solaris.loader.LoaderInteractionAction;
-import dev.solaris.loader.LoaderInteractionDefinition;
 import dev.solaris.loader.LoaderOutgoing;
 import dev.solaris.loader.LoaderPermissionController;
 import dev.solaris.loader.LoaderPermissionRequest;
 import dev.solaris.loader.LoaderPlatform;
 import dev.solaris.loader.LoaderRuntimeSettings;
-import dev.solaris.loader.LoaderUiPresentation;
+import dev.solaris.loader.LoaderViewMessage;
 import dev.solaris.loader.LoaderSoundCommand;
 import dev.solaris.loader.minecraft.LoaderMinecraftSound;
 import dev.solaris.loader.minecraft.LoaderRuntimeResourcePack;
-import dev.solaris.loader.minecraft.LoaderMinecraftUi;
-import dev.solaris.loader.minecraft.LoaderMinecraftInput;
+import dev.solaris.loader.minecraft.LoaderMinecraftView;
 import dev.solaris.loader.minecraft.LoaderBlockCarrier;
 import dev.solaris.loader.minecraft.LoaderMinecraftBlock;
 import java.net.InetSocketAddress;
@@ -37,12 +34,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
-import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
@@ -88,16 +83,10 @@ public final class SolarisNeoForgeLoader {
         BLOCKS.register(modBus);
         ITEMS.register(modBus);
         modBus.addListener(SolarisNeoForgeLoader::registerPayloads);
-        modBus.addListener(SolarisNeoForgeLoader::registerGuiLayers);
         NeoForge.EVENT_BUS.addListener(SolarisNeoForgeLoader::onClientTickPre);
         NeoForge.EVENT_BUS.addListener(SolarisNeoForgeLoader::onClientTickPost);
         NeoForge.EVENT_BUS.addListener(SolarisNeoForgeLoader::onLoggingIn);
         NeoForge.EVENT_BUS.addListener(SolarisNeoForgeLoader::onLoggingOut);
-    }
-
-    private static void registerGuiLayers(RegisterGuiLayersEvent event) {
-        event.registerAboveAll(
-                Identifier.parse(LoaderUiPresentation.CHANNEL), LoaderMinecraftUi::renderHud);
     }
 
     private static void onClientTickPre(ClientTickEvent.Pre event) {
@@ -107,7 +96,6 @@ public final class SolarisNeoForgeLoader {
     }
 
     private static void onClientTickPost(ClientTickEvent.Post event) {
-        LoaderMinecraftInput.tick(Minecraft.getInstance());
         if (MCP_RUNTIME != null) {
             MCP_RUNTIME.afterTick();
         }
@@ -122,20 +110,14 @@ public final class SolarisNeoForgeLoader {
     }
 
     private static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
-        Minecraft client = Minecraft.getInstance();
-        Connection origin = event.getConnection();
-        LoaderMinecraftInput.bind(
-                origin,
-                ACTIVE_CONTENT.get(),
-                (interaction, phase) -> sendInteraction(client, origin, interaction, phase));
         publishMcpState();
     }
 
     private static void registerPayloads(RegisterPayloadHandlersEvent event) {
         var registrar = event.registrar(Integer.toString(LoaderHandshake.PROTOCOL_VERSION)).optional();
         registrar.playToClient(
-                LoaderUiPayload.TYPE,
-                LoaderUiPayload.CODEC,
+                LoaderViewPayload.TYPE,
+                LoaderViewPayload.CODEC,
                 (payload, context) -> {
                     Connection origin = context.connection();
                     Minecraft.getInstance().execute(() -> {
@@ -144,13 +126,11 @@ public final class SolarisNeoForgeLoader {
                         boolean originActive = origin.isConnected()
                                 && listener != null
                                 && listener.getConnection() == origin;
-                        resolveUi(payload.bytes(), originActive).ifPresent(presentation ->
-                                LoaderMinecraftUi.present(
-                                        presentation,
+                        decodeView(payload.bytes(), originActive).ifPresent(message ->
+                                LoaderMinecraftView.present(
+                                        message,
                                         ACTIVE_CONTENT.get(),
-                                        interaction -> sendInteraction(
-                                                client, origin, interaction,
-                                                LoaderInteractionAction.Phase.TRIGGER)));
+                                        actionBytes -> sendViewAction(client, origin, actionBytes)));
                     });
                 });
         registrar.playToClient(
@@ -167,10 +147,10 @@ public final class SolarisNeoForgeLoader {
                     });
                 });
         registrar.playToServer(
-                LoaderInteractionPayload.TYPE,
-                LoaderInteractionPayload.CODEC,
+                LoaderViewActionPayload.TYPE,
+                LoaderViewActionPayload.CODEC,
                 (payload, context) -> context.disconnect(
-                        Component.literal("Solaris Loader interaction is client-only")));
+                        Component.literal("Solaris Loader view action is client-only")));
         registrar.configurationToClient(
                 LoaderManifestPayload.TYPE,
                 LoaderManifestPayload.CODEC,
@@ -266,8 +246,7 @@ public final class SolarisNeoForgeLoader {
 
     static void activate(LoaderOutgoing outgoing) {
         if (outgoing.kind() == LoaderOutgoing.Kind.ACKNOWLEDGEMENT) {
-            LoaderMinecraftUi.clear();
-            LoaderMinecraftInput.clear();
+            LoaderMinecraftView.clear();
             LoaderMinecraftSound.clear();
             ACTIVE_CONTENT.set(outgoing.activatedContent());
         }
@@ -278,8 +257,7 @@ public final class SolarisNeoForgeLoader {
     }
 
     static void clearActiveContent() {
-        LoaderMinecraftUi.clear();
-        LoaderMinecraftInput.clear();
+        LoaderMinecraftView.clear();
         LoaderMinecraftSound.clear();
         ACTIVE_CONTENT.set(LoaderActivatedContent.empty());
     }
@@ -307,30 +285,24 @@ public final class SolarisNeoForgeLoader {
                 SolarisNeoForgeLoader::clearActiveContent);
     }
 
-    static Optional<LoaderUiPresentation> resolveUi(
+    static Optional<LoaderViewMessage> decodeView(
             byte[] payload,
             boolean connectionActive) {
-        return LoaderUiPresentation.resolve(payload, ACTIVE_CONTENT.get(), connectionActive);
+        return LoaderViewMessage.decode(payload, ACTIVE_CONTENT.get(), connectionActive);
     }
 
-
-    private static void sendInteraction(
+    private static void sendViewAction(
             Minecraft client,
             Connection origin,
-            LoaderInteractionDefinition interaction,
-            LoaderInteractionAction.Phase phase) {
+            byte[] bytes) {
         var listener = client.getConnection();
         boolean originActive = origin.isConnected()
                 && listener != null
                 && listener.getConnection() == origin;
-        LoaderInteractionAction.encode(
-                        interaction,
-                        phase,
-                        ACTIVE_CONTENT.get(),
-                        originActive)
-                .ifPresent(bytes -> origin.send(
-                        new ServerboundCustomPayloadPacket(
-                                new LoaderInteractionPayload(bytes))));
+        if (originActive) {
+            origin.send(new ServerboundCustomPayloadPacket(
+                    new LoaderViewActionPayload(bytes)));
+        }
     }
 
     private static LoaderPermissionController controller(Connection connection) {

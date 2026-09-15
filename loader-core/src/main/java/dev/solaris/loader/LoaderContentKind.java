@@ -7,12 +7,16 @@ public enum LoaderContentKind {
     BLOCKS,
     @SerializedName("items")
     ITEMS,
-    @SerializedName("ui")
-    UI,
+    @SerializedName("views")
+    VIEWS,
+    @SerializedName("view_actions")
+    VIEW_ACTIONS,
     @SerializedName("assets")
     ASSETS,
-    @SerializedName("interactions")
-    INTERACTIONS,
+    @SerializedName("world_previews")
+    WORLD_PREVIEWS,
+    @SerializedName("world_selection")
+    WORLD_SELECTION,
     @SerializedName("sounds")
     SOUNDS
 }

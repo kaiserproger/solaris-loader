@@ -1,24 +1,24 @@
-package dev.solaris.loader.neoforge;
+package dev.solaris.loader.fabric;
 
-import dev.solaris.loader.LoaderInteractionAction;
+import dev.solaris.loader.LoaderViewMessage;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-record LoaderInteractionPayload(byte[] bytes) implements CustomPacketPayload {
-    static final Type<LoaderInteractionPayload> TYPE =
-            new Type<>(Identifier.parse("solaris:loader/interaction"));
-    static final StreamCodec<FriendlyByteBuf, LoaderInteractionPayload> CODEC =
+record LoaderViewPayload(byte[] bytes) implements CustomPacketPayload {
+    static final Type<LoaderViewPayload> TYPE =
+            new Type<>(Identifier.parse(LoaderViewMessage.CHANNEL));
+    static final StreamCodec<FriendlyByteBuf, LoaderViewPayload> CODEC =
             CustomPacketPayload.codec(
-                    LoaderInteractionPayload::write,
-                    LoaderInteractionPayload::new);
+                    LoaderViewPayload::write,
+                    LoaderViewPayload::new);
 
-    LoaderInteractionPayload {
+    LoaderViewPayload {
         bytes = bytes.clone();
     }
 
-    private LoaderInteractionPayload(FriendlyByteBuf buffer) {
+    private LoaderViewPayload(FriendlyByteBuf buffer) {
         this(read(buffer));
     }
 
@@ -28,8 +28,8 @@ record LoaderInteractionPayload(byte[] bytes) implements CustomPacketPayload {
 
     private static byte[] read(FriendlyByteBuf buffer) {
         int length = buffer.readableBytes();
-        if (length > LoaderInteractionAction.MAX_PAYLOAD_BYTES) {
-            throw new IllegalArgumentException("Loader interaction payload exceeds limit");
+        if (length > LoaderViewMessage.MAX_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("Loader view payload exceeds limit");
         }
         byte[] bytes = new byte[length];
         buffer.readBytes(bytes);

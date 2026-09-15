@@ -2,7 +2,7 @@ package dev.solaris.loader.minecraft;
 
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderBlockDefinition;
-import dev.solaris.loader.LoaderUiDefinition;
+import dev.solaris.loader.LoaderScreenDefinition;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -23,7 +23,7 @@ public final class LoaderMinecraftBlock {
     }
 
     public static Optional<ItemStack> forScreen(
-            LoaderUiDefinition screen,
+            LoaderScreenDefinition screen,
             LoaderActivatedContent content) {
         Optional<String> blockId = screen.blockId();
         return blockId.flatMap(id -> resolve(screen, content)
@@ -33,7 +33,7 @@ public final class LoaderMinecraftBlock {
     }
 
     static Optional<LoaderBlockDefinition> resolve(
-            LoaderUiDefinition screen,
+            LoaderScreenDefinition screen,
             LoaderActivatedContent content) {
         return screen.blockId()
                 .map(content.blocks()::get)

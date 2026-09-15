@@ -9,22 +9,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.solaris.loader.LoaderClientTransport;
 import dev.solaris.loader.LoaderEnvironment;
-import dev.solaris.loader.LoaderInteractionAction;
 import dev.solaris.loader.LoaderOutgoing;
 import dev.solaris.loader.LoaderPermission;
 import dev.solaris.loader.LoaderPlatform;
-import dev.solaris.loader.LoaderUiPresentation;
+import dev.solaris.loader.LoaderScreenKind;
+import dev.solaris.loader.LoaderViewActionRequest;
+import dev.solaris.loader.LoaderViewMessage;
+import dev.solaris.loader.LoaderWidget;
 import io.netty.buffer.Unpooled;
 import java.io.ByteArrayOutputStream;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
@@ -32,7 +34,6 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.network.protocol.common.custom.DiscardedPayload;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -88,39 +89,45 @@ final class ForgeLoaderTransportTest {
         assertTrue(new String(acknowledgement, StandardCharsets.UTF_8)
                 .contains("\"platform\":\"forge\""));
         assertInstanceOf(LoaderAckPayload.class, SolarisForgeLoader.payload(outgoing));
-        assertTrue(SolarisForgeLoader.activeContent()
-                .ui()
-                .containsKey("example:welcome"));
-        var interaction = SolarisForgeLoader.activeContent()
-                .interactions()
-                .get("example:continue");
-        byte[] interactionBytes = LoaderInteractionAction
-                .encode(interaction, LoaderInteractionAction.Phase.TRIGGER,
-                        SolarisForgeLoader.activeContent(), true)
-                .orElseThrow();
-        RegistryFriendlyByteBuf interactionWire =
-                new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
-        LoaderInteractionPayload.CODEC.encode(
-                interactionWire,
-                new LoaderInteractionPayload(interactionBytes));
-        assertArrayEquals(
-                interactionBytes,
-                LoaderInteractionPayload.CODEC.decode(interactionWire).bytes());
+        var screen = SolarisForgeLoader.activeContent().screens().get("example:welcome");
+        assertNotNull(screen);
+        assertEquals(LoaderScreenKind.SETTLEMENT, screen.kind());
         assertEquals(
-                "solaris:loader/interaction",
-                LoaderInteractionPayload.TYPE.id().toString());
-        byte[] uiPayload = uiPayload("example:welcome");
+                new LoaderWidget.ActionButton(
+                        "example:confirm", "Confirm", true, Optional.empty()),
+                screen.widget("example:confirm").orElseThrow());
+
+        byte[] actionBytes = LoaderViewActionRequest.action(
+                        "solaris:view-1", 1, "example:confirm", 1, List.of(), Optional.empty())
+                .orElseThrow();
+        RegistryFriendlyByteBuf actionWire =
+                new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
+        LoaderViewActionPayload.CODEC.encode(
+                actionWire, new LoaderViewActionPayload(actionBytes));
+        assertArrayEquals(
+                actionBytes,
+                LoaderViewActionPayload.CODEC.decode(actionWire).bytes());
+        assertEquals(
+                "solaris:loader/view_action",
+                LoaderViewActionPayload.TYPE.id().toString());
+
+        byte[] openView = openViewPayload();
         RegistryFriendlyByteBuf openWire =
                 new RegistryFriendlyByteBuf(Unpooled.buffer(), RegistryAccess.EMPTY);
-        LoaderUiPayload.CODEC.encode(
-                openWire, new LoaderUiPayload(uiPayload));
-        assertEquals(uiPayload.length, openWire.readableBytes());
-        var presentation = SolarisForgeLoader.resolveUi(
-                LoaderUiPayload.CODEC.decode(openWire).bytes(), true).orElseThrow();
-        assertEquals(LoaderUiPresentation.Mode.HUD, presentation.mode());
-        assertEquals("x".repeat(LoaderUiPresentation.MAX_BODY_BYTES), presentation.definition().body());
-        SolarisForgeLoader.clearActiveContent();
-        assertTrue(SolarisForgeLoader.resolveUi(uiPayload, true).isEmpty());
+        LoaderViewPayload.CODEC.encode(
+                openWire, new LoaderViewPayload(openView));
+        assertEquals(openView.length, openWire.readableBytes());
+        assertEquals("solaris:loader/view", LoaderViewPayload.TYPE.id().toString());
+        LoaderViewMessage.Open open = assertInstanceOf(
+                LoaderViewMessage.Open.class,
+                SolarisForgeLoader.decodeView(
+                                LoaderViewPayload.CODEC.decode(openWire).bytes(), true)
+                        .orElseThrow());
+        assertEquals("solaris:view-1", open.viewInstanceId());
+        assertEquals(2, open.revision());
+        assertEquals("example:welcome", open.viewId());
+        assertEquals("Welcome", open.title());
+        assertTrue(SolarisForgeLoader.decodeView(openView, false).isEmpty());
         assertEquals("solaris:loader/manifest", LoaderManifestPayload.TYPE.id().toString());
         assertEquals("solaris:loader/ack", LoaderAckPayload.TYPE.id().toString());
         assertEquals("solaris:loader/request", LoaderRequestPayload.TYPE.id().toString());
@@ -187,19 +194,19 @@ final class ForgeLoaderTransportTest {
             @Override
             public Set<LoaderPermission> grantedPermissions() {
                 return Set.of(
-                        LoaderPermission.PRESENT_UI,
-                        LoaderPermission.SEND_INTERACTIONS);
+                        LoaderPermission.PRESENT_VIEWS,
+                        LoaderPermission.SEND_VIEW_ACTIONS);
             }
         };
     }
 
     private static byte[] manifest(String platform) {
         return """
-                {"protocol":2,"bundles":[{
+                {"protocol":3,"bundles":[{
                   "owner":"example","id":"screen","version":"1",
                   "artifact":"client/screen.zip","sha256":"%s","size_bytes":%d,
-                  "loaders":["%s"],"content":["ui","interactions"],
-                  "permissions":["present_ui","send_interactions"],
+                  "loaders":["%s"],"content":["views","view_actions"],
+                  "permissions":["present_views","send_view_actions"],
                   "cache_key":"%s"
                 }]}
                 """.formatted(HASH, ARCHIVE.length, platform, CACHE_KEY)
@@ -212,12 +219,12 @@ final class ForgeLoaderTransportTest {
             try (ZipOutputStream zip = new ZipOutputStream(bytes)) {
                 zip.putNextEntry(new ZipEntry("solaris-client.json"));
                 zip.write("""
-                        {"schema":1,"ui":[{
-                          "id":"example:welcome","title":"Welcome","body":"Forge"
-                        }],"blocks":[],"items":[],"assets":[],"interactions":[{
-                          "id":"example:continue","ui_id":"example:welcome",
-                          "label":"Continue","payload":"accepted"
-                        }]}
+                        {"schema":2,"screens":[{
+                          "id":"example:welcome","kind":"settlement","title":"Welcome",
+                          "widgets":[{
+                            "type":"action_button","action_id":"example:confirm","label":"Confirm"
+                          }]
+                        }],"blocks":[],"items":[],"assets":[]}
                         """.getBytes(StandardCharsets.UTF_8));
                 zip.closeEntry();
             }
@@ -236,18 +243,18 @@ final class ForgeLoaderTransportTest {
         }
     }
 
-    private static byte[] uiPayload(String id) {
-        byte[] bytes = id.getBytes(StandardCharsets.UTF_8);
-        byte[] body = "x".repeat(LoaderUiPresentation.MAX_BODY_BYTES).getBytes(StandardCharsets.UTF_8);
-        return ByteBuffer.allocate(9 + bytes.length + body.length)
-                .order(ByteOrder.BIG_ENDIAN)
-                .putShort((short) dev.solaris.loader.LoaderHandshake.PROTOCOL_VERSION)
-                .put((byte) 1)
-                .putShort((short) bytes.length)
-                .put(bytes)
-                .putShort((short) 0xffff)
-                .putShort((short) body.length)
-                .put(body)
-                .array();
+    private static byte[] openViewPayload() {
+        return """
+                {"protocol":3,"message":"open_view","view_instance_id":"solaris:view-1",
+                 "revision":2,"view_id":"example:welcome","title":"Welcome","model":{
+                   "page":0,"page_count":2,
+                   "rows":[{"cells":["Hamlet","12"]}],
+                   "fields":[{"id":"amount","number":4}],
+                   "actions":[{"action_id":"example:confirm","enabled":true,"label":"Confirm"}],
+                   "tabs":[{"id":"one","label":"One"}],
+                   "resource_entries":[{"id":"example:ruby","have":1,"need":2}],
+                   "markers":[{"marker_id":"anchor"}]
+                 }}
+                """.getBytes(StandardCharsets.UTF_8);
     }
 }

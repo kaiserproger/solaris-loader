@@ -1,7 +1,7 @@
 package dev.solaris.loader.minecraft;
 
 import dev.solaris.loader.LoaderActivatedContent;
-import dev.solaris.loader.LoaderUiDefinition;
+import dev.solaris.loader.LoaderScreenDefinition;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.world.item.ItemStack;
@@ -11,7 +11,7 @@ public final class LoaderMinecraftDisplay {
     }
 
     public static List<ItemStack> forScreen(
-            LoaderUiDefinition screen,
+            LoaderScreenDefinition screen,
             LoaderActivatedContent content) {
         List<ItemStack> stacks = new ArrayList<>(2);
         LoaderMinecraftItem.forScreen(screen, content).ifPresent(stacks::add);

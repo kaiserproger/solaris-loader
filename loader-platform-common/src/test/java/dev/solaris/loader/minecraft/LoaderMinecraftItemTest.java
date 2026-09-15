@@ -5,7 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderItemDefinition;
-import dev.solaris.loader.LoaderUiDefinition;
+import dev.solaris.loader.LoaderScreenDefinition;
+import dev.solaris.loader.LoaderScreenKind;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -14,18 +15,26 @@ import org.junit.jupiter.api.Test;
 final class LoaderMinecraftItemTest {
     @Test
     void referencedItemResolvesFromActivatedContent() {
-        LoaderUiDefinition screen = new LoaderUiDefinition(
+        LoaderScreenDefinition screen = new LoaderScreenDefinition(
                 "example:catalog",
+                LoaderScreenKind.ECONOMY,
                 "Catalog",
-                "A custom item",
                 Optional.of("example:ruby"),
-                Optional.empty());
-        LoaderActivatedContent content = new LoaderActivatedContent(List.of(), Map.of(screen.id(), screen), Map.of(), Map.of(
-                "example:ruby",
-                new LoaderItemDefinition(
+                Optional.empty(),
+                List.of());
+        LoaderActivatedContent content = new LoaderActivatedContent(
+                List.of(),
+                Map.of(screen.id(), screen),
+                Map.of(),
+                Map.of(),
+                Map.of(
                         "example:ruby",
-                        "minecraft:paper",
-                        "Ruby")), Map.of(), Map.of(), Map.of());
+                        new LoaderItemDefinition(
+                                "example:ruby",
+                                "minecraft:paper",
+                                "Ruby")),
+                Map.of(),
+                Map.of());
 
         var item = LoaderMinecraftItem.resolve(screen, content).orElseThrow();
 
@@ -36,12 +45,13 @@ final class LoaderMinecraftItemTest {
 
     @Test
     void undeclaredItemDoesNotResolve() {
-        LoaderUiDefinition screen = new LoaderUiDefinition(
+        LoaderScreenDefinition screen = new LoaderScreenDefinition(
                 "example:catalog",
+                LoaderScreenKind.ECONOMY,
                 "Catalog",
-                "A custom item",
                 Optional.of("example:ruby"),
-                Optional.empty());
+                Optional.empty(),
+                List.of());
         assertTrue(LoaderMinecraftItem
                 .resolve(screen, LoaderActivatedContent.empty())
                 .isEmpty());

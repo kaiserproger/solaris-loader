@@ -5,7 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderBlockDefinition;
-import dev.solaris.loader.LoaderUiDefinition;
+import dev.solaris.loader.LoaderScreenDefinition;
+import dev.solaris.loader.LoaderScreenKind;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -16,12 +17,13 @@ import org.junit.jupiter.api.Test;
 final class LoaderMinecraftBlockTest {
     @Test
     void referencedBlockResolvesAndGeneratesCarrierModels() {
-        LoaderUiDefinition screen = new LoaderUiDefinition(
+        LoaderScreenDefinition screen = new LoaderScreenDefinition(
                 "example:catalog",
+                LoaderScreenKind.CONSTRUCTION,
                 "Catalog",
-                "A custom block",
                 Optional.empty(),
-                Optional.of("example:ruby_block"));
+                Optional.of("example:ruby_block"),
+                List.of());
         LoaderBlockDefinition block = new LoaderBlockDefinition(
                 "example:ruby_block",
                 "example:block/ruby_block",
@@ -30,7 +32,14 @@ final class LoaderMinecraftBlockTest {
                 "other:sapphire_block",
                 "other:block/sapphire_block",
                 "Sapphire Block");
-        LoaderActivatedContent content = new LoaderActivatedContent(List.of(), Map.of(screen.id(), screen), Map.of(block.id(), block, second.id(), second), Map.of(), Map.of(), Map.of(), Map.of());
+        LoaderActivatedContent content = new LoaderActivatedContent(
+                List.of(),
+                Map.of(screen.id(), screen),
+                Map.of(),
+                Map.of(block.id(), block, second.id(), second),
+                Map.of(),
+                Map.of(),
+                Map.of());
 
         assertEquals(
                 block,
@@ -62,12 +71,13 @@ final class LoaderMinecraftBlockTest {
 
     @Test
     void undeclaredBlockDoesNotResolveOrGenerateResources() {
-        LoaderUiDefinition screen = new LoaderUiDefinition(
+        LoaderScreenDefinition screen = new LoaderScreenDefinition(
                 "example:catalog",
+                LoaderScreenKind.CONSTRUCTION,
                 "Catalog",
-                "A custom block",
                 Optional.empty(),
-                Optional.of("example:ruby_block"));
+                Optional.of("example:ruby_block"),
+                List.of());
 
         assertTrue(LoaderMinecraftBlock
                 .resolve(screen, LoaderActivatedContent.empty())

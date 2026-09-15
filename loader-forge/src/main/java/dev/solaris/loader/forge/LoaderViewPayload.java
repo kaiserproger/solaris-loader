@@ -1,24 +1,24 @@
 package dev.solaris.loader.forge;
 
-import dev.solaris.loader.LoaderUiPresentation;
+import dev.solaris.loader.LoaderViewMessage;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-record LoaderUiPayload(byte[] bytes) implements CustomPacketPayload {
-    static final Type<LoaderUiPayload> TYPE =
-            new Type<>(Identifier.parse(LoaderUiPresentation.CHANNEL));
-    static final StreamCodec<RegistryFriendlyByteBuf, LoaderUiPayload> CODEC =
+record LoaderViewPayload(byte[] bytes) implements CustomPacketPayload {
+    static final Type<LoaderViewPayload> TYPE =
+            new Type<>(Identifier.parse(LoaderViewMessage.CHANNEL));
+    static final StreamCodec<RegistryFriendlyByteBuf, LoaderViewPayload> CODEC =
             CustomPacketPayload.codec(
-                    LoaderUiPayload::write,
-                    LoaderUiPayload::new);
+                    LoaderViewPayload::write,
+                    LoaderViewPayload::new);
 
-    LoaderUiPayload {
+    LoaderViewPayload {
         bytes = bytes.clone();
     }
 
-    private LoaderUiPayload(RegistryFriendlyByteBuf buffer) {
+    private LoaderViewPayload(RegistryFriendlyByteBuf buffer) {
         this(read(buffer));
     }
 
@@ -28,8 +28,8 @@ record LoaderUiPayload(byte[] bytes) implements CustomPacketPayload {
 
     private static byte[] read(RegistryFriendlyByteBuf buffer) {
         int length = buffer.readableBytes();
-        if (length > LoaderUiPresentation.MAX_PAYLOAD_BYTES) {
-            throw new IllegalArgumentException("Loader open-screen payload exceeds limit");
+        if (length > LoaderViewMessage.MAX_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("Loader view payload exceeds limit");
         }
         byte[] bytes = new byte[length];
         buffer.readBytes(bytes);

@@ -2,19 +2,16 @@ package dev.solaris.loader.forge;
 
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderHandshake;
-import dev.solaris.loader.LoaderInteractionAction;
-import dev.solaris.loader.LoaderInteractionDefinition;
 import dev.solaris.loader.LoaderOutgoing;
 import dev.solaris.loader.LoaderPermissionController;
 import dev.solaris.loader.LoaderPermissionRequest;
 import dev.solaris.loader.LoaderPlatform;
 import dev.solaris.loader.LoaderRuntimeSettings;
-import dev.solaris.loader.LoaderUiPresentation;
+import dev.solaris.loader.LoaderViewMessage;
 import dev.solaris.loader.LoaderSoundCommand;
 import dev.solaris.loader.minecraft.LoaderMinecraftSound;
+import dev.solaris.loader.minecraft.LoaderMinecraftView;
 import dev.solaris.loader.minecraft.LoaderRuntimeResourcePack;
-import dev.solaris.loader.minecraft.LoaderMinecraftUi;
-import dev.solaris.loader.minecraft.LoaderMinecraftInput;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
@@ -34,8 +31,6 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
-import net.minecraftforge.client.event.AddGuiOverlayLayersEvent;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.event.TickEvent.ClientTickEvent;
 import net.minecraftforge.fml.config.ConfigTracker;
@@ -73,13 +68,7 @@ public final class SolarisForgeLoader {
                 SolarisForgeLoader::onLoggingIn);
         ClientPlayerNetworkEvent.LoggingOut.BUS.addListener(
                 SolarisForgeLoader::onLoggingOut);
-        AddGuiOverlayLayersEvent.BUS.addListener(SolarisForgeLoader::registerGuiLayers);
         channel = buildChannel();
-    }
-
-    private static void registerGuiLayers(AddGuiOverlayLayersEvent event) {
-        event.getLayeredDraw().add(
-                Identifier.parse(LoaderUiPresentation.CHANNEL), LoaderMinecraftUi::renderHud);
     }
 
     private static void onClientSetup(FMLClientSetupEvent event) {
@@ -94,19 +83,12 @@ public final class SolarisForgeLoader {
     }
 
     private static void onClientTickPost(ClientTickEvent.Post event) {
-        LoaderMinecraftInput.tick(Minecraft.getInstance());
         if (MCP_RUNTIME != null && clientSetupComplete) {
             MCP_RUNTIME.afterTick();
         }
     }
 
     private static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
-        Minecraft client = Minecraft.getInstance();
-        Connection origin = event.getConnection();
-        LoaderMinecraftInput.bind(
-                origin,
-                ACTIVE_CONTENT.get(),
-                (interaction, phase) -> sendInteraction(client, origin, interaction, phase));
         publishMcpState();
     }
 
@@ -129,8 +111,8 @@ public final class SolarisForgeLoader {
         PayloadFlow<RegistryFriendlyByteBuf, CustomPacketPayload> play =
                 connection.play().clientbound();
         play.add(
-                LoaderUiPayload.TYPE,
-                LoaderUiPayload.CODEC,
+                LoaderViewPayload.TYPE,
+                LoaderViewPayload.CODEC,
                 (payload, context) -> {
                     Minecraft client = Minecraft.getInstance();
                     Connection origin = context.getConnection();
@@ -139,13 +121,12 @@ public final class SolarisForgeLoader {
                         boolean originActive = origin.isConnected()
                                 && listener != null
                                 && listener.getConnection() == origin;
-                        resolveUi(payload.bytes(), originActive).ifPresent(presentation ->
-                                LoaderMinecraftUi.present(
-                                        presentation,
+                        LoaderViewMessage.decode(
+                                        payload.bytes(), ACTIVE_CONTENT.get(), originActive)
+                                .ifPresent(message -> LoaderMinecraftView.present(
+                                        message,
                                         ACTIVE_CONTENT.get(),
-                                        interaction -> sendInteraction(
-                                                client, origin, interaction,
-                                                LoaderInteractionAction.Phase.TRIGGER)));
+                                        bytes -> sendViewAction(client, origin, bytes)));
                     });
                     context.setPacketHandled(true);
                 });
@@ -166,8 +147,8 @@ public final class SolarisForgeLoader {
         PayloadFlow<RegistryFriendlyByteBuf, CustomPacketPayload> playServerbound =
                 play.serverbound();
         playServerbound.add(
-                LoaderInteractionPayload.TYPE,
-                LoaderInteractionPayload.CODEC,
+                LoaderViewActionPayload.TYPE,
+                LoaderViewActionPayload.CODEC,
                 (payload, context) -> context.setPacketHandled(true));
         flow.add(
                 LoaderManifestPayload.TYPE,
@@ -276,8 +257,7 @@ public final class SolarisForgeLoader {
 
     static void activate(LoaderOutgoing outgoing) {
         if (outgoing.kind() == LoaderOutgoing.Kind.ACKNOWLEDGEMENT) {
-            LoaderMinecraftUi.clear();
-            LoaderMinecraftInput.clear();
+            LoaderMinecraftView.clear();
             LoaderMinecraftSound.clear();
             ACTIVE_CONTENT.set(outgoing.activatedContent());
         }
@@ -288,8 +268,7 @@ public final class SolarisForgeLoader {
     }
 
     static void clearActiveContent() {
-        LoaderMinecraftUi.clear();
-        LoaderMinecraftInput.clear();
+        LoaderMinecraftView.clear();
         LoaderMinecraftSound.clear();
         ACTIVE_CONTENT.set(LoaderActivatedContent.empty());
     }
@@ -317,30 +296,23 @@ public final class SolarisForgeLoader {
                 SolarisForgeLoader::clearActiveContent);
     }
 
-    static Optional<LoaderUiPresentation> resolveUi(
+    static Optional<LoaderViewMessage> decodeView(
             byte[] payload,
             boolean connectionActive) {
-        return LoaderUiPresentation.resolve(payload, ACTIVE_CONTENT.get(), connectionActive);
+        return LoaderViewMessage.decode(payload, ACTIVE_CONTENT.get(), connectionActive);
     }
 
-
-    private static void sendInteraction(
+    private static void sendViewAction(
             Minecraft client,
             Connection origin,
-            LoaderInteractionDefinition interaction,
-            LoaderInteractionAction.Phase phase) {
+            byte[] bytes) {
         var listener = client.getConnection();
         boolean originActive = origin.isConnected()
                 && listener != null
                 && listener.getConnection() == origin;
-        LoaderInteractionAction.encode(
-                        interaction,
-                        phase,
-                        ACTIVE_CONTENT.get(),
-                        originActive)
-                .ifPresent(bytes -> channel.send(
-                        new LoaderInteractionPayload(bytes),
-                        origin));
+        if (originActive) {
+            channel.send(new LoaderViewActionPayload(bytes), origin);
+        }
     }
 
     private static LoaderPermissionController controller(Connection connection) {

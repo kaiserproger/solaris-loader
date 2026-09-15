@@ -37,7 +37,7 @@ final class LoaderPermissionControllerTest {
         List<String> rejected = new ArrayList<>();
 
         controller.acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.FABRIC,
                 "0.1.0",
                 "Example.COM:25565",
@@ -45,7 +45,7 @@ final class LoaderPermissionControllerTest {
                 () -> true,
                 (request, decision) -> {
                     assertEquals("example.com:25565", request.serverIdentity());
-                    assertEquals(List.of(LoaderPermission.PRESENT_UI), request.permissions());
+                    assertEquals(List.of(LoaderPermission.PRESENT_VIEWS), request.permissions());
                     answer.set(decision);
                 },
                 outgoing::add,
@@ -60,7 +60,7 @@ final class LoaderPermissionControllerTest {
         assertFalse(Files.exists(cacheDirectory.resolve("example")));
 
         new LoaderPermissionController(decisions).acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.FABRIC,
                 "0.1.0",
                 "example.com:25565",
@@ -86,7 +86,7 @@ final class LoaderPermissionControllerTest {
 
         LoaderPermissionController first = new LoaderPermissionController(decisions);
         first.acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.NEOFORGE,
                 "0.1.0",
                 "play.example:25565",
@@ -100,7 +100,7 @@ final class LoaderPermissionControllerTest {
         assertEquals(LoaderOutgoing.Kind.ACKNOWLEDGEMENT, outgoing.get(0).kind());
 
         new LoaderPermissionController(decisions).acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.NEOFORGE,
                 "0.1.0",
                 "PLAY.EXAMPLE:25565",
@@ -117,7 +117,7 @@ final class LoaderPermissionControllerTest {
 
         AtomicReference<LoaderPermissionRequest> otherServer = new AtomicReference<>();
         new LoaderPermissionController(decisions).acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.NEOFORGE,
                 "0.1.0",
                 "other.example:25565",
@@ -159,7 +159,7 @@ final class LoaderPermissionControllerTest {
         List<LoaderOutgoing> outgoing = new ArrayList<>();
 
         controller.acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.FABRIC,
                 "0.1.0",
                 "stale.example:25565",
@@ -179,7 +179,7 @@ final class LoaderPermissionControllerTest {
 
         AtomicReference<LoaderPermissionRequest> promptedAgain = new AtomicReference<>();
         new LoaderPermissionController(decisions).acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.FABRIC,
                 "0.1.0",
                 "stale.example:25565",
@@ -204,7 +204,7 @@ final class LoaderPermissionControllerTest {
         List<LoaderOutgoing> newOutgoing = new ArrayList<>();
 
         oldConnection.acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.FORGE,
                 "0.1.0",
                 "transfer.example:25565",
@@ -216,7 +216,7 @@ final class LoaderPermissionControllerTest {
                     throw new AssertionError(reason);
                 });
         newConnection.acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.FORGE,
                 "0.1.0",
                 "transfer.example:25565",
@@ -255,7 +255,7 @@ final class LoaderPermissionControllerTest {
         List<String> rejected = new ArrayList<>();
 
         controller.acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.FABRIC,
                 "0.1.0",
                 "store.example:25565",
@@ -273,7 +273,7 @@ final class LoaderPermissionControllerTest {
 
         AtomicReference<LoaderPermissionRequest> promptedAgain = new AtomicReference<>();
         controller.acceptManifest(
-                manifest("present_ui", "ui"),
+                manifest("present_views", "views"),
                 LoaderPlatform.FABRIC,
                 "0.1.0",
                 "store.example:25565",
@@ -302,7 +302,7 @@ final class LoaderPermissionControllerTest {
 
     private static byte[] manifest(String permission, String content) {
         return """
-                {"protocol":2,"bundles":[{
+                {"protocol":3,"bundles":[{
                   "owner":"example","id":"screen","version":"1",
                   "artifact":"client/screen.zip","sha256":"%s","size_bytes":%d,
                   "loaders":["fabric","neoforge","forge"],"content":["%s"],

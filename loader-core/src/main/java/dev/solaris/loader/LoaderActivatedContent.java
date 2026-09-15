@@ -3,13 +3,14 @@ package dev.solaris.loader;
 import java.util.List;
 import java.util.Map;
 
+/** The immutable, validated registry a live Loader connection activated. */
 public record LoaderActivatedContent(
         List<String> cacheKeys,
-        Map<String, LoaderUiDefinition> ui,
+        Map<String, LoaderScreenDefinition> screens,
+        Map<String, LoaderWorldPreviewDefinition> worldPreviews,
         Map<String, LoaderBlockDefinition> blocks,
         Map<String, LoaderItemDefinition> items,
         Map<String, LoaderAssetDefinition> assets,
-        Map<String, LoaderInteractionDefinition> interactions,
         Map<String, LoaderSoundDefinition> sounds) {
     private static final LoaderActivatedContent EMPTY =
             new LoaderActivatedContent(
@@ -17,11 +18,11 @@ public record LoaderActivatedContent(
 
     public LoaderActivatedContent {
         cacheKeys = List.copyOf(cacheKeys);
-        ui = Map.copyOf(ui);
+        screens = Map.copyOf(screens);
+        worldPreviews = Map.copyOf(worldPreviews);
         blocks = Map.copyOf(blocks);
         items = Map.copyOf(items);
         assets = Map.copyOf(assets);
-        interactions = Map.copyOf(interactions);
         sounds = Map.copyOf(sounds);
     }
 

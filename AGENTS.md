@@ -30,5 +30,13 @@ Requires Java 25. MCP runs need `SOLARIS_CLIENT_MCP_TOKEN` (and optionally
 SOLARIS_CLIENT_MCP_TOKEN="$(openssl rand -hex 32)" ./gradlew --no-configuration-cache :fabric-agent:runClientMcp
 ```
 
-Keep the protocol-2 Loader wire format and module APIs unchanged; this repo
-owns the bridge/Java/platform modules, not the core harness, CI, or docs.
+Keep the Loader wire protocol **3** and client artifact index **schema 2**
+contract: `loader-core` owns every codec and validation (protocol 3 handshake
+with `views`/`view_actions`/`world_previews`/`world_selection` content kinds,
+the schema-2 `screens` index with its eight widget types and bounded
+`world_previews`, the `solaris:loader/view` and `solaris:loader/view_action`
+wire-3 view messages and the protocol-3 sound channel), the three platform
+adapters supply platform identity, native payload registration and lifecycle
+only, and `loader-platform-common` owns rendering. Schema-1 indexes and the
+removed UI/interaction shapes are deleted rather than bridged; this repo owns
+the bridge/Java/platform modules, not the core harness, CI, or docs.

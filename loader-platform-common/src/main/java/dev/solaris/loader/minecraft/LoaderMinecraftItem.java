@@ -2,7 +2,7 @@ package dev.solaris.loader.minecraft;
 
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderItemDefinition;
-import dev.solaris.loader.LoaderUiDefinition;
+import dev.solaris.loader.LoaderScreenDefinition;
 import java.util.Optional;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -15,14 +15,14 @@ public final class LoaderMinecraftItem {
     }
 
     public static Optional<ItemStack> forScreen(
-            LoaderUiDefinition screen,
+            LoaderScreenDefinition screen,
             LoaderActivatedContent content) {
         return resolve(screen, content)
                 .flatMap(LoaderMinecraftItem::create);
     }
 
     static Optional<LoaderItemDefinition> resolve(
-            LoaderUiDefinition screen,
+            LoaderScreenDefinition screen,
             LoaderActivatedContent content) {
         return screen.itemId()
                 .map(content.items()::get)

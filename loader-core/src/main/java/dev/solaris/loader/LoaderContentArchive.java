@@ -1,12 +1,7 @@
 package dev.solaris.loader;
 
-import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
-import com.google.gson.JsonPrimitive;
-import com.google.gson.annotations.SerializedName;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -23,41 +18,60 @@ import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
+/**
+ * Activation of one verified schema-2 Loader client artifact: a closed index, a
+ * bounded registry and cross-checked content, permission and asset references.
+ */
 final class LoaderContentArchive {
     private static final String INDEX_PATH = "solaris-client.json";
-    private static final int INDEX_SCHEMA = 1;
+    private static final int INDEX_SCHEMA = 2;
     private static final int MAX_INDEX_BYTES = 64 * 1024;
-    private static final int MAX_UI_DEFINITIONS = 64;
+    private static final int MAX_SCREENS = 64;
+    private static final int MAX_WORLD_PREVIEWS = 64;
     private static final int MAX_BLOCKS_PER_BUNDLE = 1;
     private static final int MAX_ACTIVATED_BLOCKS = 8;
     private static final int MAX_ITEMS = 128;
     private static final int MAX_ASSETS = 128;
-    private static final int MAX_INTERACTIONS = 64;
     private static final int MAX_SOUNDS = 64;
-    private static final int MAX_INTERACTIONS_PER_UI = 8;
-    private static final int MAX_IDENTIFIER_BYTES = 128;
-    private static final int MAX_TITLE_BYTES = 128;
-    private static final int MAX_BODY_BYTES = 8 * 1024;
-    private static final int MAX_INTERACTION_LABEL_BYTES = 64;
-    private static final int MAX_INTERACTION_PAYLOAD_BYTES = 4 * 1024;
     private static final int MAX_ARCHIVE_PATH_BYTES = 256;
     private static final long MAX_ACTIVATED_ASSET_BYTES = 64L * 1024L * 1024L;
-    private static final Gson GSON = new Gson();
-    private static final Set<String> INDEX_FIELDS =
-            Set.of("schema", "ui", "blocks", "items", "assets", "interactions", "sounds");
-    private static final Set<String> UI_FIELDS =
-            Set.of("id", "title", "body", "item_id", "block_id");
+    private static final Set<String> INDEX_FIELDS = Set.of(
+            "schema", "screens", "world_previews", "blocks", "items", "assets", "sounds");
+    private static final Set<String> SCREEN_FIELDS =
+            Set.of("id", "kind", "title", "item_id", "block_id", "widgets");
+    private static final Set<String> PREVIEW_FIELDS = Set.of(
+            "id",
+            "blueprint_id",
+            "content_hash",
+            "rotation",
+            "size_x",
+            "size_y",
+            "size_z",
+            "blocks");
+    private static final Set<String> LOCAL_BLOCK_FIELDS = Set.of("x", "y", "z", "block_id");
     private static final Set<String> BLOCK_FIELDS = Set.of("id", "model", "name");
     private static final Set<String> ITEM_FIELDS = Set.of("id", "base_item", "name");
-    private static final Set<String> ASSET_FIELDS =
-            Set.of("id", "path", "sha256", "size_bytes");
-    private static final Set<String> INTERACTION_FIELDS =
-            Set.of("id", "ui_id", "label", "payload", "key");
+    private static final Set<String> ASSET_FIELDS = Set.of("id", "path", "sha256", "size_bytes");
     private static final Set<String> SOUND_FIELDS = Set.of("id");
+    private static final Set<String> PAGED_TABLE_FIELDS = Set.of("type", "id", "columns");
+    private static final Set<String> COLUMN_FIELDS =
+            Set.of("id", "label", "align", "width_bucket");
+    private static final Set<String> TABS_FIELDS = Set.of("type", "id", "entries");
+    private static final Set<String> ENTRY_FIELDS = Set.of("id", "label");
+    private static final Set<String> INPUT_NUMBER_FIELDS =
+            Set.of("type", "id", "label", "min", "max", "step");
+    private static final Set<String> INPUT_TEXT_FIELDS = Set.of("type", "id", "label", "max_bytes");
+    private static final Set<String> SELECT_ENUM_FIELDS = Set.of("type", "id", "label", "options");
+    private static final Set<String> RESOURCE_PANEL_FIELDS = Set.of("type", "id", "label", "entries");
+    private static final Set<String> ACTION_BUTTON_FIELDS =
+            Set.of("type", "action_id", "label", "enabled", "deny_reason");
+    private static final Set<String> WORLD_MARKER_FIELDS =
+            Set.of("type", "id", "label", "action_id", "preview_id", "formation", "radius");
 
     private LoaderContentArchive() {
     }
@@ -65,13 +79,12 @@ final class LoaderContentArchive {
     static LoaderActivatedContent activate(
             LoaderManifest manifest,
             Path cacheDirectory) {
-        LinkedHashMap<String, LoaderUiDefinition> ui = new LinkedHashMap<>();
+        LinkedHashMap<String, LoaderScreenDefinition> screens = new LinkedHashMap<>();
+        LinkedHashMap<String, LoaderWorldPreviewDefinition> worldPreviews = new LinkedHashMap<>();
         LinkedHashMap<String, LoaderBlockDefinition> blocks = new LinkedHashMap<>();
         LinkedHashMap<String, LoaderItemDefinition> items = new LinkedHashMap<>();
         LinkedHashMap<String, LoaderAssetDefinition> assets = new LinkedHashMap<>();
         LinkedHashMap<String, LoaderSoundDefinition> sounds = new LinkedHashMap<>();
-        LinkedHashMap<String, LoaderInteractionDefinition> interactions =
-                new LinkedHashMap<>();
         List<String> cacheKeys = new ArrayList<>();
         long activatedAssetBytes = 0;
         for (LoaderBundle bundle : manifest.bundles()) {
@@ -83,27 +96,27 @@ final class LoaderContentArchive {
                     activateBundle(
                             bundle,
                             archive,
-                            ui,
+                            screens,
+                            worldPreviews,
                             blocks,
                             items,
                             assets,
-                            interactions,
                             sounds,
                             activatedAssetBytes));
             cacheKeys.add(bundle.cacheKey());
         }
         return new LoaderActivatedContent(
-                cacheKeys, ui, blocks, items, assets, interactions, sounds);
+                cacheKeys, screens, worldPreviews, blocks, items, assets, sounds);
     }
 
     private static long activateBundle(
             LoaderBundle bundle,
             byte[] archive,
-            Map<String, LoaderUiDefinition> activatedUi,
+            Map<String, LoaderScreenDefinition> activatedScreens,
+            Map<String, LoaderWorldPreviewDefinition> activatedWorldPreviews,
             Map<String, LoaderBlockDefinition> activatedBlocks,
             Map<String, LoaderItemDefinition> activatedItems,
             Map<String, LoaderAssetDefinition> activatedAssets,
-            Map<String, LoaderInteractionDefinition> activatedInteractions,
             Map<String, LoaderSoundDefinition> activatedSounds,
             long activatedAssetBytes) {
         try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(archive))) {
@@ -120,11 +133,11 @@ final class LoaderContentArchive {
                 throw new IllegalArgumentException("Loader activated sounds exceed registry limit");
             }
             ensureRegistryBounds(
-                    activatedUi.size() + index.ui().size(),
+                    activatedScreens.size() + index.screens().size(),
+                    activatedWorldPreviews.size() + index.worldPreviews().size(),
                     activatedBlocks.size() + index.blocks().size(),
                     activatedItems.size() + index.items().size(),
                     activatedAssets.size() + index.assets().size(),
-                    activatedInteractions.size() + index.interactions().size(),
                     Math.addExact(activatedAssetBytes, bundleAssetBytes));
             Map<String, AssetIndex> assetsByPath = new HashMap<>();
             for (AssetIndex asset : index.assets()) {
@@ -172,18 +185,16 @@ final class LoaderContentArchive {
                         "Loader archive is missing indexed asset " + assetsByPath.keySet().iterator().next());
             }
 
-            for (UiIndex screen : index.ui()) {
-                LoaderUiDefinition previous = activatedUi.putIfAbsent(
-                        screen.id(),
-                        new LoaderUiDefinition(
-                                screen.id(),
-                                screen.title(),
-                                screen.body(),
-                                java.util.Optional.ofNullable(screen.itemId()),
-                                java.util.Optional.ofNullable(screen.blockId())));
-                if (previous != null) {
+            for (LoaderScreenDefinition screen : index.screens()) {
+                if (activatedScreens.putIfAbsent(screen.id(), screen) != null) {
                     throw new IllegalArgumentException(
                             "duplicate activated Loader screen " + screen.id());
+                }
+            }
+            for (LoaderWorldPreviewDefinition preview : index.worldPreviews()) {
+                if (activatedWorldPreviews.putIfAbsent(preview.id(), preview) != null) {
+                    throw new IllegalArgumentException(
+                            "duplicate activated Loader world preview " + preview.id());
                 }
             }
             for (BlockIndex block : index.blocks()) {
@@ -216,20 +227,6 @@ final class LoaderContentArchive {
                     throw new IllegalArgumentException("duplicate activated Loader sound " + sound.id());
                 }
             }
-            for (InteractionIndex interaction : index.interactions()) {
-                LoaderInteractionDefinition previous = activatedInteractions.putIfAbsent(
-                        interaction.id(),
-                        new LoaderInteractionDefinition(
-                                interaction.id(),
-                                interaction.uiId(),
-                                interaction.label(),
-                                interaction.payload(),
-                                interaction.key()));
-                if (previous != null) {
-                    throw new IllegalArgumentException(
-                            "duplicate activated Loader interaction " + interaction.id());
-                }
-            }
             return bundleAssetBytes;
         } catch (IOException error) {
             throw new IllegalArgumentException("reading Loader content archive", error);
@@ -237,130 +234,382 @@ final class LoaderContentArchive {
     }
 
     private static ArchiveIndex parseIndex(byte[] bytes) {
-        try {
-            JsonElement document =
-                    JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8));
-            validateClosedIndex(document);
-            ArchiveIndex index = GSON.fromJson(document, ArchiveIndex.class);
-            if (index == null
-                    || index.schema() != INDEX_SCHEMA
-                    || index.ui() == null
-                    || index.blocks() == null
-                    || index.items() == null
-                    || index.assets() == null
-                    || index.interactions() == null) {
+        JsonObject index = LoaderJson.document(bytes, MAX_INDEX_BYTES, "Loader archive index");
+        LoaderJson.rejectUnknown(index, INDEX_FIELDS, "Loader archive index");
+        LoaderJson.integer(
+                index, "schema", INDEX_SCHEMA, INDEX_SCHEMA, "Loader archive index schema");
+        return new ArchiveIndex(
+                screens(index),
+                worldPreviews(index),
+                blocks(index),
+                items(index),
+                assets(index),
+                sounds(index));
+    }
+
+    private static List<LoaderScreenDefinition> screens(JsonObject index) {
+        List<JsonElement> entries = LoaderJson.optionalArray(
+                index, "screens", MAX_SCREENS, "Loader screen index");
+        List<LoaderScreenDefinition> screens = new ArrayList<>(entries.size());
+        Set<String> screenIds = new HashSet<>();
+        for (JsonElement entry : entries) {
+            JsonObject screen = LoaderJson.object(entry, "Loader screen");
+            LoaderJson.rejectUnknown(screen, SCREEN_FIELDS, "Loader screen");
+            String id = LoaderJson.identifier(screen, "id", "Loader screen id");
+            LoaderScreenKind kind = LoaderScreenKind.fromWireName(LoaderJson.nonEmpty(
+                    screen, "kind", LoaderJson.MAX_IDENTIFIER_BYTES, "Loader screen kind"));
+            String title = LoaderJson.nonEmpty(
+                    screen, "title", LoaderScreenDefinition.MAX_TITLE_BYTES, "Loader screen title");
+            Optional<String> itemId = LoaderJson.optionalIdentifier(
+                    screen, "item_id", "Loader screen item id");
+            Optional<String> blockId = LoaderJson.optionalIdentifier(
+                    screen, "block_id", "Loader screen block id");
+            if (!screenIds.add(id)) {
                 throw new IllegalArgumentException(
-                        "Loader archive index must declare schema, ui, blocks, items, assets, and interactions");
+                        "Loader archive contains duplicate screen id " + id);
             }
-            return index;
-        } catch (JsonParseException error) {
-            throw new IllegalArgumentException("Loader archive index is malformed", error);
+            screens.add(new LoaderScreenDefinition(
+                    id, kind, title, itemId, blockId, widgets(screen)));
         }
+        return List.copyOf(screens);
     }
 
-    private static void validateClosedIndex(JsonElement document) {
-        if (!document.isJsonObject()) {
-            throw new IllegalArgumentException("Loader archive index must be a JSON object");
+    private static List<LoaderWidget> widgets(JsonObject screen) {
+        List<JsonElement> entries = LoaderJson.array(
+                screen,
+                "widgets",
+                LoaderWidget.MAX_WIDGETS_PER_SCREEN,
+                "Loader screen widgets");
+        List<LoaderWidget> widgets = new ArrayList<>(entries.size());
+        Set<String> widgetIds = new HashSet<>();
+        for (JsonElement entry : entries) {
+            JsonObject widget = LoaderJson.object(entry, "Loader widget");
+            widgets.add(widget(widget, widgetIds));
         }
-        JsonObject index = document.getAsJsonObject();
-        rejectUnknown(index, INDEX_FIELDS, "Loader archive index");
-        requireNumber(index, "schema", "Loader archive index schema");
-        validateArrayItems(index.get("ui"), UI_FIELDS, "Loader screen");
-        validateArrayItems(index.get("blocks"), BLOCK_FIELDS, "Loader block");
-        validateArrayItems(index.get("items"), ITEM_FIELDS, "Loader item");
-        validateArrayItems(index.get("assets"), ASSET_FIELDS, "Loader asset");
-        validateArrayItems(index.get("sounds"), SOUND_FIELDS, "Loader sound");
-        validateArrayItems(
-                index.get("interactions"),
-                INTERACTION_FIELDS,
-                "Loader interaction");
+        return List.copyOf(widgets);
     }
 
-    private static void validateArrayItems(
-            JsonElement value,
-            Set<String> fields,
-            String name) {
-        if (value == null || !value.isJsonArray()) {
-            return;
-        }
-        for (JsonElement item : value.getAsJsonArray()) {
-            if (!item.isJsonObject()) {
-                throw new IllegalArgumentException(name + " must be a JSON object");
+    private static LoaderWidget widget(JsonObject widget, Set<String> widgetIds) {
+        String type = LoaderJson.nonEmpty(
+                widget, "type", LoaderJson.MAX_IDENTIFIER_BYTES, "Loader widget type");
+        return switch (type) {
+            case "paged_table" -> {
+                LoaderJson.rejectUnknown(widget, PAGED_TABLE_FIELDS, "Loader paged_table widget");
+                yield new LoaderWidget.PagedTable(widgetId(widget, widgetIds), columns(widget));
             }
-            JsonObject object = item.getAsJsonObject();
-            rejectUnknown(object, fields, name);
-            requireString(object, "id", name + " id");
-            if (fields.contains("title")) {
-                requireString(object, "title", "Loader screen title");
-                requireString(object, "body", "Loader screen body");
-                if (object.has("item_id")) {
-                    requireString(object, "item_id", "Loader screen item id");
-                }
-                if (object.has("block_id")) {
-                    requireString(object, "block_id", "Loader screen block id");
-                }
-            } else if (fields.contains("model")) {
-                requireString(object, "model", "Loader block model");
-                requireString(object, "name", "Loader block name");
-            } else if (fields.contains("base_item")) {
-                requireString(object, "base_item", "Loader item base item");
-                requireString(object, "name", "Loader item name");
-            } else if (fields.contains("path")) {
-                requireString(object, "path", "Loader asset path");
-                requireString(object, "sha256", "Loader asset SHA-256");
-                requireNumber(object, "size_bytes", "Loader asset size");
-            } else if (fields.contains("label")) {
-                if (object.has("ui_id")) {
-                    requireString(object, "ui_id", "Loader interaction UI id");
-                }
-                if (object.has("key")) {
-                    requireString(object, "key", "Loader interaction key");
-                }
-                requireString(object, "label", "Loader interaction label");
-                requireString(object, "payload", "Loader interaction payload");
+            case "tabs" -> {
+                LoaderJson.rejectUnknown(widget, TABS_FIELDS, "Loader tabs widget");
+                yield new LoaderWidget.Tabs(
+                        widgetId(widget, widgetIds), entries(widget, "entries", "Loader tab entry"));
             }
-        }
+            case "input_number" -> {
+                LoaderJson.rejectUnknown(widget, INPUT_NUMBER_FIELDS, "Loader input_number widget");
+                yield inputNumber(widget, widgetIds);
+            }
+            case "input_text" -> {
+                LoaderJson.rejectUnknown(widget, INPUT_TEXT_FIELDS, "Loader input_text widget");
+                yield new LoaderWidget.InputText(
+                        widgetId(widget, widgetIds),
+                        label(widget),
+                        (int) LoaderJson.integer(
+                                widget,
+                                "max_bytes",
+                                LoaderWidget.MIN_INPUT_TEXT_BYTES,
+                                LoaderWidget.MAX_INPUT_TEXT_BYTES,
+                                "Loader input_text max bytes"));
+            }
+            case "select_enum" -> {
+                LoaderJson.rejectUnknown(widget, SELECT_ENUM_FIELDS, "Loader select_enum widget");
+                yield new LoaderWidget.SelectEnum(
+                        widgetId(widget, widgetIds),
+                        label(widget),
+                        entries(widget, "options", "Loader select option"));
+            }
+            case "resource_panel" -> {
+                LoaderJson.rejectUnknown(
+                        widget, RESOURCE_PANEL_FIELDS, "Loader resource_panel widget");
+                yield new LoaderWidget.ResourcePanel(
+                        widgetId(widget, widgetIds),
+                        label(widget),
+                        entries(widget, "entries", "Loader resource entry"));
+            }
+            case "action_button" -> {
+                LoaderJson.rejectUnknown(
+                        widget, ACTION_BUTTON_FIELDS, "Loader action_button widget");
+                yield new LoaderWidget.ActionButton(
+                        LoaderJson.identifier(widget, "action_id", "Loader action button action id"),
+                        label(widget),
+                        LoaderJson.optionalFlag(widget, "enabled", "Loader action button enabled")
+                                .orElse(true),
+                        LoaderJson.optionalText(
+                                widget,
+                                "deny_reason",
+                                LoaderWidget.MAX_DENY_REASON_BYTES,
+                                "Loader action button deny reason"));
+            }
+            case "world_marker" -> {
+                LoaderJson.rejectUnknown(
+                        widget, WORLD_MARKER_FIELDS, "Loader world_marker widget");
+                yield new LoaderWidget.WorldMarker(
+                        widgetId(widget, widgetIds),
+                        label(widget),
+                        LoaderJson.identifier(widget, "action_id", "Loader world marker action id"),
+                        LoaderJson.optionalIdentifier(
+                                widget, "preview_id", "Loader world marker preview id"),
+                        LoaderJson.optionalFormation(
+                                widget, "formation", "Loader world marker formation"),
+                        LoaderJson.optionalNumber(
+                                widget,
+                                "radius",
+                                0.0,
+                                LoaderWidget.MAX_MARKER_RADIUS,
+                                "Loader world marker radius"));
+            }
+            default -> throw new IllegalArgumentException(
+                    "Loader widget contains unknown type " + type);
+        };
     }
 
-    private static void requireString(
-            JsonObject object,
+    private static String widgetId(JsonObject widget, Set<String> widgetIds) {
+        String id = LoaderJson.identifier(widget, "id", "Loader widget id");
+        if (!widgetIds.add(id)) {
+            throw new IllegalArgumentException("Loader screen repeats widget id " + id);
+        }
+        return id;
+    }
+
+    private static String label(JsonObject widget) {
+        return LoaderJson.nonEmpty(
+                widget, "label", LoaderWidget.MAX_LABEL_BYTES, "Loader widget label");
+    }
+
+    private static LoaderWidget.InputNumber inputNumber(
+            JsonObject widget,
+            Set<String> widgetIds) {
+        String id = widgetId(widget, widgetIds);
+        Optional<Double> min = LoaderJson.optionalNumber(widget, "min", "Loader input_number min");
+        Optional<Double> max = LoaderJson.optionalNumber(widget, "max", "Loader input_number max");
+        if (min.isPresent() && max.isPresent() && min.orElseThrow() > max.orElseThrow()) {
+            throw new IllegalArgumentException("Loader input_number min exceeds its max");
+        }
+        Optional<Double> step = LoaderJson.optionalNumber(widget, "step", "Loader input_number step");
+        if (step.isPresent() && step.orElseThrow() <= 0.0) {
+            throw new IllegalArgumentException("Loader input_number step must be positive");
+        }
+        return new LoaderWidget.InputNumber(id, label(widget), min, max, step);
+    }
+
+    private static List<LoaderWidget.Column> columns(JsonObject table) {
+        List<JsonElement> entries = LoaderJson.array(
+                table, "columns", LoaderWidget.MAX_COLUMNS, "Loader paged_table columns");
+        if (entries.isEmpty()) {
+            throw new IllegalArgumentException("Loader paged_table requires at least one column");
+        }
+        List<LoaderWidget.Column> columns = new ArrayList<>(entries.size());
+        Set<String> columnIds = new HashSet<>();
+        for (JsonElement entry : entries) {
+            JsonObject column = LoaderJson.object(entry, "Loader column");
+            LoaderJson.rejectUnknown(column, COLUMN_FIELDS, "Loader column");
+            String id = LoaderJson.identifier(column, "id", "Loader column id");
+            if (!columnIds.add(id)) {
+                throw new IllegalArgumentException("Loader paged_table repeats column id " + id);
+            }
+            columns.add(new LoaderWidget.Column(
+                    id,
+                    LoaderJson.nonEmpty(
+                            column, "label", LoaderWidget.MAX_LABEL_BYTES, "Loader column label"),
+                    LoaderWidget.Align.fromWireName(LoaderJson.nonEmpty(
+                            column, "align", LoaderJson.MAX_IDENTIFIER_BYTES, "Loader column align")),
+                    (int) LoaderJson.integer(
+                            column,
+                            "width_bucket",
+                            LoaderWidget.MIN_WIDTH_BUCKET,
+                            LoaderWidget.MAX_WIDTH_BUCKET,
+                            "Loader column width bucket")));
+        }
+        return List.copyOf(columns);
+    }
+
+    private static List<LoaderWidget.Entry> entries(
+            JsonObject widget,
             String field,
             String name) {
-        JsonElement value = object.get(field);
-        if (value == null
-                || !value.isJsonPrimitive()
-                || !value.getAsJsonPrimitive().isString()) {
-            throw new IllegalArgumentException(name + " must be a JSON string");
+        List<JsonElement> values = LoaderJson.array(
+                widget, field, LoaderWidget.MAX_ENTRIES, "Loader widget " + field);
+        if (values.isEmpty()) {
+            throw new IllegalArgumentException(name + " requires at least one entry");
         }
+        List<LoaderWidget.Entry> entries = new ArrayList<>(values.size());
+        Set<String> ids = new HashSet<>();
+        for (JsonElement value : values) {
+            JsonObject entry = LoaderJson.object(value, name);
+            LoaderJson.rejectUnknown(entry, ENTRY_FIELDS, name);
+            String id = LoaderJson.identifier(entry, "id", name + " id");
+            if (!ids.add(id)) {
+                throw new IllegalArgumentException(name + " repeats id " + id);
+            }
+            entries.add(new LoaderWidget.Entry(
+                    id,
+                    LoaderJson.nonEmpty(entry, "label", LoaderWidget.MAX_LABEL_BYTES, name + " label")));
+        }
+        return List.copyOf(entries);
     }
 
-    private static void requireNumber(
-            JsonObject object,
-            String field,
-            String name) {
-        JsonElement value = object.get(field);
-        if (value == null || !value.isJsonPrimitive()) {
-            throw new IllegalArgumentException(name + " must be a JSON number");
+    private static List<LoaderWorldPreviewDefinition> worldPreviews(JsonObject index) {
+        List<JsonElement> entries = LoaderJson.optionalArray(
+                index, "world_previews", MAX_WORLD_PREVIEWS, "Loader world preview index");
+        List<LoaderWorldPreviewDefinition> previews = new ArrayList<>(entries.size());
+        Set<String> previewIds = new HashSet<>();
+        for (JsonElement entry : entries) {
+            JsonObject preview = LoaderJson.object(entry, "Loader world preview");
+            LoaderJson.rejectUnknown(preview, PREVIEW_FIELDS, "Loader world preview");
+            String id = LoaderJson.identifier(preview, "id", "Loader world preview id");
+            String blueprintId = LoaderJson.identifier(
+                    preview, "blueprint_id", "Loader world preview blueprint id");
+            requireNamespaced(blueprintId, "Loader world preview blueprint id");
+            String contentHash = LoaderJson.nonEmpty(
+                    preview, "content_hash", 64, "Loader world preview content hash");
+            if (!contentHash.matches("[0-9a-f]{64}")) {
+                throw new IllegalArgumentException(
+                        "Loader world preview content hash must be 64 lowercase hexadecimal characters");
+            }
+            int rotation = (int) LoaderJson.integer(
+                    preview,
+                    "rotation",
+                    0,
+                    LoaderWorldPreviewDefinition.MAX_ROTATION,
+                    "Loader world preview rotation");
+            int sizeX = axis(preview, "size_x");
+            int sizeY = axis(preview, "size_y");
+            int sizeZ = axis(preview, "size_z");
+            if (!previewIds.add(id)) {
+                throw new IllegalArgumentException(
+                        "Loader archive contains duplicate world preview id " + id);
+            }
+            previews.add(new LoaderWorldPreviewDefinition(
+                    id,
+                    blueprintId,
+                    contentHash,
+                    rotation,
+                    sizeX,
+                    sizeY,
+                    sizeZ,
+                    localBlocks(preview, sizeX, sizeY, sizeZ)));
         }
-        JsonPrimitive primitive = value.getAsJsonPrimitive();
-        if (!primitive.isNumber()
-                || primitive.getAsBigDecimal().stripTrailingZeros().scale() > 0) {
-            throw new IllegalArgumentException(name + " must be a JSON number");
+        return List.copyOf(previews);
+    }
+
+    private static int axis(JsonObject preview, String field) {
+        return (int) LoaderJson.integer(
+                preview, field, 0, LoaderWorldPreviewDefinition.MAX_AXIS, "Loader world preview " + field);
+    }
+
+    private static List<LoaderWorldPreviewDefinition.Block> localBlocks(
+            JsonObject preview,
+            int sizeX,
+            int sizeY,
+            int sizeZ) {
+        List<JsonElement> entries = LoaderJson.array(
+                preview,
+                "blocks",
+                LoaderWorldPreviewDefinition.MAX_BLOCKS,
+                "Loader world preview blocks");
+        List<LoaderWorldPreviewDefinition.Block> blocks = new ArrayList<>(entries.size());
+        for (JsonElement entry : entries) {
+            JsonObject block = LoaderJson.object(entry, "Loader world preview block");
+            LoaderJson.rejectUnknown(block, LOCAL_BLOCK_FIELDS, "Loader world preview block");
+            int x = (int) LoaderJson.integer(block, "x", 0, sizeX - 1, "Loader world preview block x");
+            int y = (int) LoaderJson.integer(block, "y", 0, sizeY - 1, "Loader world preview block y");
+            int z = (int) LoaderJson.integer(block, "z", 0, sizeZ - 1, "Loader world preview block z");
+            String blockId = LoaderJson.identifier(
+                    block, "block_id", "Loader world preview block id");
+            requireNamespaced(blockId, "Loader world preview block id");
+            blocks.add(new LoaderWorldPreviewDefinition.Block(x, y, z, blockId));
         }
+        return List.copyOf(blocks);
+    }
+
+    private static List<BlockIndex> blocks(JsonObject index) {
+        List<JsonElement> entries = LoaderJson.optionalArray(
+                index, "blocks", MAX_BLOCKS_PER_BUNDLE, "Loader block index");
+        List<BlockIndex> blocks = new ArrayList<>(entries.size());
+        for (JsonElement entry : entries) {
+            JsonObject block = LoaderJson.object(entry, "Loader block");
+            LoaderJson.rejectUnknown(block, BLOCK_FIELDS, "Loader block");
+            blocks.add(new BlockIndex(
+                    LoaderJson.identifier(block, "id", "Loader block id"),
+                    LoaderJson.identifier(block, "model", "Loader block model"),
+                    LoaderJson.nonEmpty(
+                            block,
+                            "name",
+                            LoaderScreenDefinition.MAX_TITLE_BYTES,
+                            "Loader block name")));
+        }
+        return List.copyOf(blocks);
+    }
+
+    private static List<ItemIndex> items(JsonObject index) {
+        List<JsonElement> entries = LoaderJson.optionalArray(index, "items", MAX_ITEMS, "Loader item index");
+        List<ItemIndex> items = new ArrayList<>(entries.size());
+        for (JsonElement entry : entries) {
+            JsonObject item = LoaderJson.object(entry, "Loader item");
+            LoaderJson.rejectUnknown(item, ITEM_FIELDS, "Loader item");
+            items.add(new ItemIndex(
+                    LoaderJson.identifier(item, "id", "Loader item id"),
+                    LoaderJson.identifier(item, "base_item", "Loader item base item"),
+                    LoaderJson.nonEmpty(
+                            item,
+                            "name",
+                            LoaderScreenDefinition.MAX_TITLE_BYTES,
+                            "Loader item name")));
+        }
+        return List.copyOf(items);
+    }
+
+    private static List<AssetIndex> assets(JsonObject index) {
+        List<JsonElement> entries = LoaderJson.optionalArray(index, "assets", MAX_ASSETS, "Loader asset index");
+        List<AssetIndex> assets = new ArrayList<>(entries.size());
+        for (JsonElement entry : entries) {
+            JsonObject asset = LoaderJson.object(entry, "Loader asset");
+            LoaderJson.rejectUnknown(asset, ASSET_FIELDS, "Loader asset");
+            assets.add(new AssetIndex(
+                    LoaderJson.identifier(asset, "id", "Loader asset id"),
+                    LoaderJson.nonEmpty(
+                            asset, "path", MAX_ARCHIVE_PATH_BYTES, "Loader asset path"),
+                    LoaderJson.nonEmpty(asset, "sha256", 64, "Loader asset SHA-256"),
+                    LoaderJson.integer(
+                            asset,
+                            "size_bytes",
+                            1,
+                            MAX_ACTIVATED_ASSET_BYTES,
+                            "Loader asset size")));
+        }
+        return List.copyOf(assets);
+    }
+
+    private static List<SoundIndex> sounds(JsonObject index) {
+        List<JsonElement> entries = LoaderJson.optionalArray(index, "sounds", MAX_SOUNDS, "Loader sound index");
+        List<SoundIndex> sounds = new ArrayList<>(entries.size());
+        for (JsonElement entry : entries) {
+            JsonObject sound = LoaderJson.object(entry, "Loader sound");
+            LoaderJson.rejectUnknown(sound, SOUND_FIELDS, "Loader sound");
+            sounds.add(new SoundIndex(LoaderJson.identifier(sound, "id", "Loader sound id")));
+        }
+        return List.copyOf(sounds);
     }
 
     static void ensureRegistryBounds(
-            int uiCount,
+            int screenCount,
+            int worldPreviewCount,
             int blockCount,
             int itemCount,
             int assetCount,
-            int interactionCount,
             long assetBytes) {
-        if (uiCount > MAX_UI_DEFINITIONS
+        if (screenCount > MAX_SCREENS
+                || worldPreviewCount > MAX_WORLD_PREVIEWS
                 || blockCount > MAX_ACTIVATED_BLOCKS
                 || itemCount > MAX_ITEMS
-                || assetCount > MAX_ASSETS
-                || interactionCount > MAX_INTERACTIONS) {
+                || assetCount > MAX_ASSETS) {
             throw new IllegalArgumentException(
                     "Loader activated content exceeds registry limits");
         }
@@ -372,37 +621,29 @@ final class LoaderContentArchive {
         }
     }
 
-    private static void rejectUnknown(
-            JsonObject object,
-            Set<String> allowed,
-            String name) {
-        for (String field : object.keySet()) {
-            if (!allowed.contains(field)) {
-                throw new IllegalArgumentException(
-                        name + " contains unknown field " + field);
-            }
-        }
-    }
-
     private static long validateIndex(
             LoaderBundle bundle,
             ArchiveIndex index) {
-        if (index.ui().size() > MAX_UI_DEFINITIONS
-                || index.blocks().size() > MAX_BLOCKS_PER_BUNDLE
-                || index.items().size() > MAX_ITEMS
-                || index.assets().size() > MAX_ASSETS
-                || index.interactions().size() > MAX_INTERACTIONS) {
-            throw new IllegalArgumentException("Loader archive index exceeds content limits");
-        }
-        boolean uiDeclared = bundle.content().contains(LoaderContentKind.UI);
-        boolean blocksDeclared = bundle.content().contains(LoaderContentKind.BLOCKS);
-        boolean itemsDeclared = bundle.content().contains(LoaderContentKind.ITEMS);
-        boolean assetsDeclared = bundle.content().contains(LoaderContentKind.ASSETS);
-        boolean interactionsDeclared =
-                bundle.content().contains(LoaderContentKind.INTERACTIONS);
-        if (uiDeclared != !index.ui().isEmpty()) {
+        boolean viewsDeclared = declared(bundle, LoaderContentKind.VIEWS);
+        boolean previewsDeclared = declared(bundle, LoaderContentKind.WORLD_PREVIEWS);
+        boolean blocksDeclared = declared(bundle, LoaderContentKind.BLOCKS);
+        boolean itemsDeclared = declared(bundle, LoaderContentKind.ITEMS);
+        boolean assetsDeclared = declared(bundle, LoaderContentKind.ASSETS);
+        boolean soundsDeclared = declared(bundle, LoaderContentKind.SOUNDS);
+        if (viewsDeclared != !index.screens().isEmpty()) {
             throw new IllegalArgumentException(
                     "Loader screen index does not match the bundle content declaration");
+        }
+        if (viewsDeclared
+                && !bundle.permissions().contains(LoaderPermission.PRESENT_VIEWS)) {
+            throw new IllegalArgumentException(
+                    "Loader screen content requires present_views permission");
+        }
+        if (previewsDeclared != !index.worldPreviews().isEmpty()
+                || previewsDeclared
+                        && !bundle.permissions().contains(LoaderPermission.PRESENT_WORLD_PREVIEWS)) {
+            throw new IllegalArgumentException(
+                    "Loader world previews require matching content and present_world_previews");
         }
         if (blocksDeclared != !index.blocks().isEmpty()) {
             throw new IllegalArgumentException(
@@ -426,32 +667,20 @@ final class LoaderContentArchive {
             throw new IllegalArgumentException(
                     "Loader asset index does not match the bundle content declaration");
         }
-        if (interactionsDeclared != !index.interactions().isEmpty()) {
-            throw new IllegalArgumentException(
-                    "Loader interaction index does not match the bundle content declaration");
-        }
-        boolean soundsDeclared = bundle.content().contains(LoaderContentKind.SOUNDS);
         if (soundsDeclared != !index.sounds().isEmpty()
                 || soundsDeclared && !bundle.permissions().contains(LoaderPermission.PLAY_SOUNDS)) {
             throw new IllegalArgumentException("Loader sounds require matching content and play_sounds");
         }
-        if (index.sounds().size() > MAX_SOUNDS) {
-            throw new IllegalArgumentException("Loader sound index exceeds content limit");
-        }
 
         Set<String> ids = new HashSet<>();
-        Set<String> uiIds = new HashSet<>();
         Set<String> blockIds = new HashSet<>();
         Set<String> itemIds = new HashSet<>();
-        for (UiIndex screen : index.ui()) {
+        for (LoaderScreenDefinition screen : index.screens()) {
             requireOwnedIdentifier(screen.id(), bundle.owner(), "screen id");
-            requireText(screen.title(), MAX_TITLE_BYTES, "screen title");
-            requireText(screen.body(), MAX_BODY_BYTES, "screen body");
             if (!ids.add(screen.id())) {
                 throw new IllegalArgumentException(
                         "Loader archive contains duplicate content id " + screen.id());
             }
-            uiIds.add(screen.id());
         }
         Set<String> assetPaths = new HashSet<>();
         for (AssetIndex asset : index.assets()) {
@@ -460,7 +689,6 @@ final class LoaderContentArchive {
         for (BlockIndex block : index.blocks()) {
             requireOwnedIdentifier(block.id(), bundle.owner(), "block id");
             requireOwnedIdentifier(block.model(), bundle.owner(), "block model");
-            requireText(block.name(), MAX_TITLE_BYTES, "block name");
             String modelPath = modelDefinitionPath(block.model());
             if (!assetPaths.contains(modelPath)) {
                 throw new IllegalArgumentException(
@@ -475,7 +703,6 @@ final class LoaderContentArchive {
         for (ItemIndex item : index.items()) {
             requireOwnedIdentifier(item.id(), bundle.owner(), "item id");
             requireOwnedIdentifier(item.baseItem(), "minecraft", "item base item");
-            requireText(item.name(), MAX_TITLE_BYTES, "item name");
             String modelPath = itemDefinitionPath(item.id());
             if (!assetPaths.contains(modelPath)) {
                 throw new IllegalArgumentException(
@@ -487,21 +714,29 @@ final class LoaderContentArchive {
             }
             itemIds.add(item.id());
         }
-        for (UiIndex screen : index.ui()) {
-            if (screen.itemId() != null) {
-                requireOwnedIdentifier(screen.itemId(), bundle.owner(), "screen item id");
-                if (!itemIds.contains(screen.itemId())) {
+        for (LoaderScreenDefinition screen : index.screens()) {
+            if (screen.itemId().isPresent()) {
+                String itemId = screen.itemId().orElseThrow();
+                requireOwnedIdentifier(itemId, bundle.owner(), "screen item id");
+                if (!itemIds.contains(itemId)) {
                     throw new IllegalArgumentException(
-                            "Loader screen references an undeclared item " + screen.itemId());
+                            "Loader screen references an undeclared item " + itemId);
                 }
             }
-            if (screen.blockId() != null) {
-                requireOwnedIdentifier(screen.blockId(), bundle.owner(), "screen block id");
-                if (!blockIds.contains(screen.blockId())) {
+            if (screen.blockId().isPresent()) {
+                String blockId = screen.blockId().orElseThrow();
+                requireOwnedIdentifier(blockId, bundle.owner(), "screen block id");
+                if (!blockIds.contains(blockId)) {
                     throw new IllegalArgumentException(
-                            "Loader screen references an undeclared block "
-                                    + screen.blockId());
+                            "Loader screen references an undeclared block " + blockId);
                 }
+            }
+        }
+        for (LoaderWorldPreviewDefinition preview : index.worldPreviews()) {
+            requireOwnedIdentifier(preview.id(), bundle.owner(), "world preview id");
+            if (!ids.add(preview.id())) {
+                throw new IllegalArgumentException(
+                        "Loader archive contains duplicate content id " + preview.id());
             }
         }
         long totalAssetBytes = 0;
@@ -512,15 +747,9 @@ final class LoaderContentArchive {
                 throw new IllegalArgumentException(
                         "Loader asset path must start with assets/");
             }
-            if (asset.sha256() == null
-                    || !asset.sha256().matches("[0-9a-f]{64}")) {
+            if (!asset.sha256().matches("[0-9a-f]{64}")) {
                 throw new IllegalArgumentException(
                         "Loader asset SHA-256 must be lowercase hexadecimal");
-            }
-            if (asset.sizeBytes() <= 0
-                    || asset.sizeBytes() > MAX_ACTIVATED_ASSET_BYTES) {
-                throw new IllegalArgumentException(
-                        "Loader asset size is outside the activation limit");
             }
             totalAssetBytes = Math.addExact(totalAssetBytes, asset.sizeBytes());
             if (totalAssetBytes > MAX_ACTIVATED_ASSET_BYTES) {
@@ -543,41 +772,11 @@ final class LoaderContentArchive {
                 throw new IllegalArgumentException("Loader sound is missing its verified OGG asset");
             }
         }
-        Map<String, Integer> interactionsPerUi = new HashMap<>();
-        for (InteractionIndex interaction : index.interactions()) {
-            requireOwnedIdentifier(interaction.id(), bundle.owner(), "interaction id");
-            if (interaction.uiId() == null && interaction.key() == null) {
-                throw new IllegalArgumentException("Loader interaction requires ui_id or key");
-            }
-            if (interaction.key() != null
-                    && !LoaderInteractionDefinition.isKeyboardKey(interaction.key())) {
-                throw new IllegalArgumentException("Loader interaction key is not a named keyboard key");
-            }
-            if (interaction.uiId() != null) {
-                requireOwnedIdentifier(interaction.uiId(), bundle.owner(), "interaction UI id");
-                if (!uiIds.contains(interaction.uiId())) {
-                    throw new IllegalArgumentException(
-                            "Loader interaction references an undeclared UI " + interaction.uiId());
-                }
-                int count = interactionsPerUi.merge(interaction.uiId(), 1, Integer::sum);
-                if (count > MAX_INTERACTIONS_PER_UI) {
-                    throw new IllegalArgumentException("Loader UI exceeds its interaction limit");
-                }
-            }
-            requireText(
-                    interaction.label(),
-                    MAX_INTERACTION_LABEL_BYTES,
-                    "interaction label");
-            requireBoundedText(
-                    interaction.payload(),
-                    MAX_INTERACTION_PAYLOAD_BYTES,
-                    "interaction payload");
-            if (!ids.add(interaction.id())) {
-                throw new IllegalArgumentException(
-                        "Loader archive contains duplicate content id " + interaction.id());
-            }
-        }
         return totalAssetBytes;
+    }
+
+    private static boolean declared(LoaderBundle bundle, LoaderContentKind kind) {
+        return bundle.content().contains(kind);
     }
 
     private static String itemDefinitionPath(String itemId) {
@@ -643,7 +842,7 @@ final class LoaderContentArchive {
             String value,
             String owner,
             String name) {
-        requireText(value, MAX_IDENTIFIER_BYTES, name);
+        requireText(value, LoaderJson.MAX_IDENTIFIER_BYTES, name);
         String prefix = owner + ":";
         if (!value.startsWith(prefix) || value.length() == prefix.length()) {
             throw new IllegalArgumentException(name + " must be owned by " + owner);
@@ -658,6 +857,27 @@ final class LoaderContentArchive {
                     || character == '-'
                     || index > owner.length() && character == '/';
             if (!separator && !allowed) {
+                throw new IllegalArgumentException(name + " contains invalid characters");
+            }
+        }
+    }
+
+    private static void requireNamespaced(String value, String name) {
+        int separator = value.indexOf(':');
+        if (separator <= 0
+                || separator == value.length() - 1
+                || value.indexOf(':', separator + 1) >= 0) {
+            throw new IllegalArgumentException(name + " must be a namespaced identifier");
+        }
+        for (int index = 0; index < value.length(); index++) {
+            char character = value.charAt(index);
+            boolean allowed = character >= 'a' && character <= 'z'
+                    || character >= '0' && character <= '9'
+                    || character == '_'
+                    || character == '.'
+                    || character == '-'
+                    || character == '/';
+            if (!allowed && !(index == separator && character == ':')) {
                 throw new IllegalArgumentException(name + " contains invalid characters");
             }
         }
@@ -690,17 +910,11 @@ final class LoaderContentArchive {
     }
 
     private static void requireText(String value, int maxBytes, String name) {
-        requireBoundedText(value, maxBytes, name);
-        if (value.isEmpty()) {
+        if (value == null
+                || value.isEmpty()
+                || value.getBytes(StandardCharsets.UTF_8).length > maxBytes) {
             throw new IllegalArgumentException(
                     name + " must contain 1..=" + maxBytes + " bytes");
-        }
-    }
-
-    private static void requireBoundedText(String value, int maxBytes, String name) {
-        if (value == null || value.getBytes(StandardCharsets.UTF_8).length > maxBytes) {
-            throw new IllegalArgumentException(
-                    name + " must contain 0..=" + maxBytes + " bytes");
         }
     }
 
@@ -714,27 +928,15 @@ final class LoaderContentArchive {
     }
 
     private record ArchiveIndex(
-            int schema,
-            List<UiIndex> ui,
+            List<LoaderScreenDefinition> screens,
+            List<LoaderWorldPreviewDefinition> worldPreviews,
             List<BlockIndex> blocks,
             List<ItemIndex> items,
             List<AssetIndex> assets,
-            List<InteractionIndex> interactions,
             List<SoundIndex> sounds) {
-        private ArchiveIndex {
-            sounds = sounds == null ? List.of() : sounds;
-        }
     }
 
     private record SoundIndex(String id) {
-    }
-
-    private record UiIndex(
-            String id,
-            String title,
-            String body,
-            @SerializedName("item_id") String itemId,
-            @SerializedName("block_id") String blockId) {
     }
 
     private record BlockIndex(
@@ -745,7 +947,7 @@ final class LoaderContentArchive {
 
     private record ItemIndex(
             String id,
-            @SerializedName("base_item") String baseItem,
+            String baseItem,
             String name) {
     }
 
@@ -753,14 +955,6 @@ final class LoaderContentArchive {
             String id,
             String path,
             String sha256,
-            @SerializedName("size_bytes") long sizeBytes) {
-    }
-
-    private record InteractionIndex(
-            String id,
-            @SerializedName("ui_id") String uiId,
-            String label,
-            String payload,
-            String key) {
+            long sizeBytes) {
     }
 }

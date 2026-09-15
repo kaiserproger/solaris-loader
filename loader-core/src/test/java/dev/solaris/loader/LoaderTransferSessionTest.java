@@ -121,17 +121,17 @@ final class LoaderTransferSessionTest {
 
             @Override
             public Set<LoaderPermission> grantedPermissions() {
-                return Set.of(LoaderPermission.PRESENT_UI);
+                return Set.of(LoaderPermission.PRESENT_VIEWS);
             }
         };
     }
 
     private static byte[] manifest(int size, String sha256, String cacheKey) {
         return """
-                {"protocol":2,"bundles":[{
+                {"protocol":3,"bundles":[{
                   "owner":"example","id":"screen","version":"1",
                   "artifact":"client/screen.zip","sha256":"%s","size_bytes":%d,
-                  "loaders":["fabric"],"content":["ui"],"permissions":["present_ui"],
+                  "loaders":["fabric"],"content":["views"],"permissions":["present_views"],
                   "cache_key":"%s"
                 }]}
                 """.formatted(sha256, size, cacheKey).getBytes(StandardCharsets.UTF_8);

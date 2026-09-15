@@ -7,16 +7,17 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 final class LoaderLiveGateFixtureTest {
     private static final String CONTENT =
-            "[\"blocks\",\"items\",\"ui\",\"assets\",\"interactions\",\"sounds\"]";
+            "[\"blocks\",\"items\",\"views\",\"view_actions\",\"assets\"]";
     private static final String PERMISSIONS =
-            "[\"register_blocks\",\"register_items\",\"present_ui\","
-                    + "\"load_assets\",\"send_interactions\",\"play_sounds\"]";
+            "[\"register_blocks\",\"register_items\",\"present_views\","
+                    + "\"send_view_actions\",\"load_assets\"]";
 
     @TempDir
     Path cacheDirectory;
@@ -31,7 +32,7 @@ final class LoaderLiveGateFixtureTest {
         writeCache("sapphire-live", sapphireHash, sapphire);
 
         byte[] manifest = """
-                {"protocol":2,"bundles":[
+                {"protocol":3,"bundles":[
                   %s,
                   %s
                 ]}
@@ -44,14 +45,35 @@ final class LoaderLiveGateFixtureTest {
                 new LoaderClientTransport().acceptManifest(manifest, environment(), cacheDirectory);
         assertEquals(LoaderOutgoing.Kind.ACKNOWLEDGEMENT, outgoing.kind());
         LoaderActivatedContent active = outgoing.activatedContent();
+
+        LoaderScreenDefinition rubyScreen = active.screens().get("ruby-live:showcase");
+        assertEquals(LoaderScreenKind.SETTLEMENT, rubyScreen.kind());
+        assertEquals("Ruby Loader Fixture", rubyScreen.title());
+        assertEquals("ruby-live:ruby", rubyScreen.itemId().orElseThrow());
+        assertEquals("ruby-live:ruby_block", rubyScreen.blockId().orElseThrow());
         assertEquals(
-                "ruby-live:ruby",
-                active.ui().get("ruby-live:showcase").itemId().orElseThrow());
-        assertEquals(
-                "sapphire-live:sapphire_block",
-                active.ui().get("sapphire-live:showcase").blockId().orElseThrow());
-        assertTrue(active.interactions().containsKey("ruby-live:confirm"));
-        assertTrue(active.interactions().containsKey("sapphire-live:confirm"));
+                List.of(
+                        new LoaderWidget.PagedTable(
+                                "roster",
+                                List.of(new LoaderWidget.Column(
+                                        "name", "Name", LoaderWidget.Align.LEFT, 2))),
+                        new LoaderWidget.ResourcePanel(
+                                "cost",
+                                "Cost",
+                                List.of(new LoaderWidget.Entry("ruby", "Ruby"))),
+                        new LoaderWidget.ActionButton(
+                                "confirm", "Confirm Ruby", true, Optional.empty())),
+                rubyScreen.widgets());
+
+        LoaderScreenDefinition sapphireScreen = active.screens().get("sapphire-live:showcase");
+        assertEquals("sapphire-live:sapphire", sapphireScreen.itemId().orElseThrow());
+        assertEquals("sapphire-live:sapphire_block", sapphireScreen.blockId().orElseThrow());
+        assertTrue(active.blocks().containsKey("ruby-live:ruby_block"));
+        assertTrue(active.blocks().containsKey("sapphire-live:sapphire_block"));
+        assertTrue(active.items().containsKey("ruby-live:ruby"));
+        assertTrue(active.items().containsKey("sapphire-live:sapphire"));
+        assertTrue(active.assets().containsKey("ruby-live:ruby_item_definition"));
+        assertTrue(active.assets().containsKey("sapphire-live:sapphire_block_model"));
     }
 
     private static byte[] archive(String owner) throws Exception {
@@ -92,10 +114,9 @@ final class LoaderLiveGateFixtureTest {
                 return Set.of(
                         LoaderPermission.REGISTER_BLOCKS,
                         LoaderPermission.REGISTER_ITEMS,
-                        LoaderPermission.PRESENT_UI,
-                        LoaderPermission.LOAD_ASSETS,
-                        LoaderPermission.SEND_INTERACTIONS,
-                        LoaderPermission.PLAY_SOUNDS);
+                        LoaderPermission.PRESENT_VIEWS,
+                        LoaderPermission.SEND_VIEW_ACTIONS,
+                        LoaderPermission.LOAD_ASSETS);
             }
 
             @Override

@@ -4,7 +4,6 @@ import com.google.gson.Gson;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
-import com.google.gson.JsonParser;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,8 +14,9 @@ import java.util.Map;
 import java.util.Set;
 
 public final class LoaderHandshake {
-    public static final int PROTOCOL_VERSION = 2;
+    public static final int PROTOCOL_VERSION = 3;
     public static final int MAX_MANIFEST_BYTES = 32_767;
+    public static final int MAX_VIEW_MESSAGE_BYTES = 64 * 1024;
     private static final long MAX_BUNDLE_BYTES = 64L * 1024L * 1024L;
     private static final Gson GSON = new Gson();
     private static final Set<String> MANIFEST_FIELDS = Set.of("protocol", "bundles");
@@ -31,6 +31,9 @@ public final class LoaderHandshake {
             "content",
             "permissions",
             "cache_key");
+    private static final Set<String> TEXT_FIELDS =
+            Set.of("owner", "id", "version", "artifact", "sha256", "cache_key");
+    private static final Set<String> LIST_FIELDS = Set.of("loaders", "content", "permissions");
 
     private LoaderHandshake() {
     }
@@ -102,12 +105,10 @@ public final class LoaderHandshake {
             byte[] payload,
             LoaderPlatform platform,
             String loaderVersion) {
-        if (payload.length == 0 || payload.length > MAX_MANIFEST_BYTES) {
-            throw new IllegalArgumentException("loader manifest size is outside 1..=" + MAX_MANIFEST_BYTES);
-        }
         LoaderManifest manifest;
         try {
-            JsonElement document = JsonParser.parseString(new String(payload, StandardCharsets.UTF_8));
+            JsonObject document = LoaderJson.document(
+                    payload, MAX_MANIFEST_BYTES, "loader manifest");
             validateClosedSchema(document);
             manifest = GSON.fromJson(document, LoaderManifest.class);
         } catch (JsonParseException error) {
@@ -117,28 +118,32 @@ public final class LoaderHandshake {
         return manifest;
     }
 
-    private static void validateClosedSchema(JsonElement document) {
-        if (!document.isJsonObject()) {
-            throw new IllegalArgumentException("loader manifest must be a JSON object");
-        }
-        JsonObject manifest = document.getAsJsonObject();
-        rejectUnknownFields(manifest, MANIFEST_FIELDS, "loader manifest");
+    private static void validateClosedSchema(JsonObject manifest) {
+        LoaderJson.rejectUnknown(manifest, MANIFEST_FIELDS, "loader manifest");
+        LoaderJson.integer(
+                manifest,
+                "protocol",
+                Integer.MIN_VALUE,
+                Integer.MAX_VALUE,
+                "loader manifest protocol");
         JsonElement bundles = manifest.get("bundles");
         if (bundles == null || !bundles.isJsonArray()) {
             return;
         }
         for (JsonElement bundle : bundles.getAsJsonArray()) {
-            if (!bundle.isJsonObject()) {
-                throw new IllegalArgumentException("loader bundle must be a JSON object");
+            JsonObject object = LoaderJson.object(bundle, "loader bundle");
+            LoaderJson.rejectUnknown(object, BUNDLE_FIELDS, "loader bundle");
+            for (String field : TEXT_FIELDS) {
+                LoaderJson.string(
+                        LoaderJson.require(object, field, "loader bundle " + field),
+                        "loader bundle " + field);
             }
-            rejectUnknownFields(bundle.getAsJsonObject(), BUNDLE_FIELDS, "loader bundle");
-        }
-    }
-
-    private static void rejectUnknownFields(JsonObject object, Set<String> allowed, String name) {
-        for (String field : object.keySet()) {
-            if (!allowed.contains(field)) {
-                throw new IllegalArgumentException(name + " contains unknown field " + field);
+            LoaderJson.integer(
+                    object, "size_bytes", Long.MIN_VALUE, Long.MAX_VALUE, "loader bundle size");
+            for (String field : LIST_FIELDS) {
+                for (JsonElement entry : LoaderJson.array(object, field, 64, "loader bundle " + field)) {
+                    LoaderJson.string(entry, "loader bundle " + field + " entry");
+                }
             }
         }
     }
@@ -208,9 +213,11 @@ public final class LoaderHandshake {
         return switch (content) {
             case BLOCKS -> LoaderPermission.REGISTER_BLOCKS;
             case ITEMS -> LoaderPermission.REGISTER_ITEMS;
-            case UI -> LoaderPermission.PRESENT_UI;
+            case VIEWS -> LoaderPermission.PRESENT_VIEWS;
+            case VIEW_ACTIONS -> LoaderPermission.SEND_VIEW_ACTIONS;
             case ASSETS -> LoaderPermission.LOAD_ASSETS;
-            case INTERACTIONS -> LoaderPermission.SEND_INTERACTIONS;
+            case WORLD_PREVIEWS -> LoaderPermission.PRESENT_WORLD_PREVIEWS;
+            case WORLD_SELECTION -> LoaderPermission.SEND_WORLD_SELECTION;
             case SOUNDS -> LoaderPermission.PLAY_SOUNDS;
         };
     }

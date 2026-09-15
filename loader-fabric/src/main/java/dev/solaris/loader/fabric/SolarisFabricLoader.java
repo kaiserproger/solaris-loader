@@ -1,20 +1,18 @@
 package dev.solaris.loader.fabric;
 
 import dev.solaris.loader.LoaderActivatedContent;
-import dev.solaris.loader.LoaderInteractionAction;
-import dev.solaris.loader.LoaderInteractionDefinition;
 import dev.solaris.loader.LoaderOutgoing;
 import dev.solaris.loader.LoaderPermissionController;
 import dev.solaris.loader.LoaderPermissionRequest;
 import dev.solaris.loader.LoaderPlatform;
 import dev.solaris.loader.LoaderRuntimeSettings;
-import dev.solaris.loader.LoaderUiPresentation;
 import dev.solaris.loader.LoaderSoundCommand;
+import dev.solaris.loader.LoaderViewMessage;
 import dev.solaris.loader.minecraft.LoaderMinecraftSound;
 import dev.solaris.loader.fabric.mixin.ClientCommonPacketListenerAccessor;
 import dev.solaris.loader.fabric.mixin.PackRepositoryAccessor;
 import dev.solaris.loader.minecraft.LoaderRuntimeResourcePack;
-import dev.solaris.loader.minecraft.LoaderMinecraftUi;
+import dev.solaris.loader.minecraft.LoaderMinecraftView;
 import dev.solaris.loader.minecraft.LoaderMinecraftBlock;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -32,11 +30,9 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientConfigurationNetworkin
 import net.fabricmc.fabric.api.client.networking.v1.ClientConfigurationConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.fabric.api.networking.v1.PacketSender;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
-import dev.solaris.loader.minecraft.LoaderMinecraftInput;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.DisconnectedScreen;
@@ -47,7 +43,6 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
-import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.repository.RepositorySource;
 
 public final class SolarisFabricLoader implements ClientModInitializer {
@@ -75,23 +70,15 @@ public final class SolarisFabricLoader implements ClientModInitializer {
                     ignored -> mcpRuntime.afterTick());
         }
         ClientPlayConnectionEvents.JOIN.register((handler, sender, joinedClient) -> {
-            Connection origin = handler.getConnection();
-            LoaderMinecraftInput.bind(
-                    origin,
-                    ACTIVE_CONTENT.get(),
-                    (interaction, phase) -> sendInteraction(joinedClient, origin, interaction, phase));
             if (mcpRuntime != null) {
                 mcpRuntime.publishState();
             }
         });
-        ClientTickEvents.END_CLIENT_TICK.register(LoaderMinecraftInput::tick);
         PackRepositoryAccessor repository =
                 (PackRepositoryAccessor) client.getResourcePackRepository();
         repository.solaris$setSources(mutablePackSources(
                 repository.solaris$sources(),
                 RESOURCE_PACK.repositorySource()));
-        HudElementRegistry.addLast(
-                Identifier.parse(LoaderUiPresentation.CHANNEL), LoaderMinecraftUi::renderHud);
         PayloadTypeRegistry.clientboundConfiguration()
                 .register(LoaderManifestPayload.TYPE, LoaderManifestPayload.CODEC);
         PayloadTypeRegistry.clientboundConfiguration()
@@ -101,11 +88,11 @@ public final class SolarisFabricLoader implements ClientModInitializer {
         PayloadTypeRegistry.serverboundConfiguration()
                 .register(LoaderRequestPayload.TYPE, LoaderRequestPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay()
-                .register(LoaderUiPayload.TYPE, LoaderUiPayload.CODEC);
+                .register(LoaderViewPayload.TYPE, LoaderViewPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay()
                 .register(LoaderSoundPayload.TYPE, LoaderSoundPayload.CODEC);
         PayloadTypeRegistry.serverboundPlay()
-                .register(LoaderInteractionPayload.TYPE, LoaderInteractionPayload.CODEC);
+                .register(LoaderViewActionPayload.TYPE, LoaderViewActionPayload.CODEC);
         if (!ClientConfigurationNetworking.registerGlobalReceiver(
                 LoaderManifestPayload.TYPE, SolarisFabricLoader::handleManifest)) {
             throw new IllegalStateException("Solaris Loader manifest receiver is already registered");
@@ -132,7 +119,7 @@ public final class SolarisFabricLoader implements ClientModInitializer {
                     }
                 });
         ClientPlayNetworking.registerGlobalReceiver(
-                LoaderUiPayload.TYPE,
+                LoaderViewPayload.TYPE,
                 (payload, context) -> {
                     Connection origin =
                             context.packetContext().orElseThrow(PacketContext.CONNECTION);
@@ -141,13 +128,13 @@ public final class SolarisFabricLoader implements ClientModInitializer {
                         boolean originActive = origin.isConnected()
                                 && listener != null
                                 && listener.getConnection() == origin;
-                        resolveUi(payload.bytes(), originActive).ifPresent(presentation ->
-                                LoaderMinecraftUi.present(
-                                        presentation,
+                        LoaderViewMessage.decode(
+                                        payload.bytes(), ACTIVE_CONTENT.get(), originActive)
+                                .ifPresent(message -> LoaderMinecraftView.present(
+                                        message,
                                         ACTIVE_CONTENT.get(),
-                                        interaction -> sendInteraction(
-                                                context.client(), origin, interaction,
-                                                LoaderInteractionAction.Phase.TRIGGER)));
+                                        actionBytes -> sendViewAction(
+                                                context.client(), origin, actionBytes)));
                     });
                 });
         ClientPlayNetworking.registerGlobalReceiver(
@@ -253,8 +240,7 @@ public final class SolarisFabricLoader implements ClientModInitializer {
 
     static void activate(LoaderOutgoing outgoing) {
         if (outgoing.kind() == LoaderOutgoing.Kind.ACKNOWLEDGEMENT) {
-            LoaderMinecraftUi.clear();
-            LoaderMinecraftInput.clear();
+            LoaderMinecraftView.clear();
             LoaderMinecraftSound.clear();
             ACTIVE_CONTENT.set(outgoing.activatedContent());
         }
@@ -265,8 +251,7 @@ public final class SolarisFabricLoader implements ClientModInitializer {
     }
 
     static void clearActiveContent() {
-        LoaderMinecraftUi.clear();
-        LoaderMinecraftInput.clear();
+        LoaderMinecraftView.clear();
         LoaderMinecraftSound.clear();
         ACTIVE_CONTENT.set(LoaderActivatedContent.empty());
     }
@@ -291,29 +276,23 @@ public final class SolarisFabricLoader implements ClientModInitializer {
                 });
     }
 
-    static Optional<LoaderUiPresentation> resolveUi(
+    static Optional<LoaderViewMessage> decodeView(
             byte[] payload,
             boolean connectionActive) {
-        return LoaderUiPresentation.resolve(payload, ACTIVE_CONTENT.get(), connectionActive);
+        return LoaderViewMessage.decode(payload, ACTIVE_CONTENT.get(), connectionActive);
     }
 
-
-    private static void sendInteraction(
+    private static void sendViewAction(
             Minecraft client,
             Connection origin,
-            LoaderInteractionDefinition interaction,
-            LoaderInteractionAction.Phase phase) {
+            byte[] bytes) {
         var listener = client.getConnection();
         boolean originActive = origin.isConnected()
                 && listener != null
                 && listener.getConnection() == origin;
-        LoaderInteractionAction.encode(
-                        interaction,
-                        phase,
-                        ACTIVE_CONTENT.get(),
-                        originActive)
-                .ifPresent(bytes ->
-                        ClientPlayNetworking.send(new LoaderInteractionPayload(bytes)));
+        if (originActive) {
+            ClientPlayNetworking.send(new LoaderViewActionPayload(bytes));
+        }
     }
 
     private static LoaderPermissionController controller(Object connection) {

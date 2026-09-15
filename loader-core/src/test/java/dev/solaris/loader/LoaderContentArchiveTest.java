@@ -24,267 +24,253 @@ final class LoaderContentArchiveTest {
     void verifiedArchiveActivatesClosedScreensAndAssetsBeforeAck() throws Exception {
         byte[] asset = "logo".getBytes(StandardCharsets.UTF_8);
         byte[] archive = LoaderTestArchive.screenAndAsset(asset);
-        String hash = LoaderTestArchive.sha256(archive);
-        Files.createDirectories(cacheDirectory.resolve("example/content/1"));
-        Files.write(cacheDirectory.resolve("example/content/1/" + hash + ".bundle"), archive);
+        LoaderTestBundles.writeCache(cacheDirectory, archive);
 
         LoaderOutgoing outgoing = new LoaderClientTransport().acceptManifest(
-                manifest(
-                        archive,
-                        hash,
-                        "[\"ui\",\"assets\"]",
-                        "[\"present_ui\",\"load_assets\"]"),
-                environment(Set.of(
-                        LoaderPermission.PRESENT_UI,
-                        LoaderPermission.LOAD_ASSETS)),
+                LoaderTestBundles.manifest(archive, "[\"views\",\"assets\"]", "[\"present_views\",\"load_assets\"]"),
+                LoaderTestBundles.environment(
+                        LoaderPermission.PRESENT_VIEWS,
+                        LoaderPermission.LOAD_ASSETS),
                 cacheDirectory);
 
         assertEquals(LoaderOutgoing.Kind.ACKNOWLEDGEMENT, outgoing.kind());
         LoaderActivatedContent active = outgoing.activatedContent();
-        assertEquals("Welcome", active.ui().get("example:welcome").title());
+        LoaderScreenDefinition screen = active.screens().get("example:welcome");
+        assertEquals("Welcome", screen.title());
+        assertEquals(LoaderScreenKind.SETTLEMENT, screen.kind());
+        assertEquals(
+                List.of(new LoaderWidget.Tabs(
+                        "pages", List.of(new LoaderWidget.Entry("one", "One")))),
+                screen.widgets());
         assertArrayEquals(asset, active.assets().get("example:logo").bytes());
         assertEquals(1, active.cacheKeys().size());
         byte[] returnedBytes = active.assets().get("example:logo").bytes();
         returnedBytes[0] = 'X';
         assertArrayEquals(asset, active.assets().get("example:logo").bytes());
         assertThrows(UnsupportedOperationException.class, active.assets()::clear);
+        assertThrows(UnsupportedOperationException.class, active.screens()::clear);
+        assertTrue(new String(outgoing.bytes(), StandardCharsets.UTF_8)
+                .contains("\"protocol\":3"));
     }
 
     @Test
-    void verifiedInteractionIsOwnedBoundedAndEncodesOnlyWhileActive() throws Exception {
-        byte[] archive = LoaderTestArchive.screenAndInteraction();
-        String hash = LoaderTestArchive.sha256(archive);
-        writeCache(archive);
+    void itemScreenActivatesOnlyWithItsOwnedDefinitionAsset() throws Exception {
+        LoaderActivatedContent active = LoaderTestBundles.activate(
+                cacheDirectory,
+                LoaderTestArchive.screenAndItem(),
+                "[\"views\",\"items\",\"assets\"]",
+                "[\"present_views\",\"register_items\",\"load_assets\"]",
+                LoaderPermission.PRESENT_VIEWS,
+                LoaderPermission.REGISTER_ITEMS,
+                LoaderPermission.LOAD_ASSETS);
 
-        LoaderOutgoing outgoing = new LoaderClientTransport()
-                .acceptManifest(
-                        manifest(
-                                archive,
-                                hash,
-                                "[\"ui\",\"interactions\"]",
-                                "[\"present_ui\",\"send_interactions\"]"),
-                        environment(Set.of(
-                                LoaderPermission.PRESENT_UI,
-                                LoaderPermission.SEND_INTERACTIONS)),
-                        cacheDirectory);
-        LoaderActivatedContent active = outgoing.activatedContent();
-
-        LoaderInteractionDefinition interaction =
-                active.interactions().get("example:continue");
-        assertEquals("example:welcome", interaction.uiId());
-        assertEquals("Continue", interaction.label());
-        assertTrue(LoaderInteractionAction.encode(
-                interaction, LoaderInteractionAction.Phase.TRIGGER, active, true).isPresent());
-        assertTrue(LoaderInteractionAction.encode(
-                interaction, LoaderInteractionAction.Phase.TRIGGER,
-                LoaderActivatedContent.empty(), true).isEmpty());
-        assertTrue(LoaderInteractionAction.encode(
-                interaction, LoaderInteractionAction.Phase.TRIGGER, active, false).isEmpty());
-        assertTrue(LoaderInteractionAction.encode(
-                interaction, LoaderInteractionAction.Phase.PRESS, active, true).isEmpty());
-        assertThrows(UnsupportedOperationException.class, active.interactions()::clear);
-    }
-
-    @Test
-    void keyboardOnlyBundleNeedsNoUiAndEncodesOnlyKeyPhases() throws Exception {
-        byte[] archive = LoaderTestArchive.archive(
-                """
-                {"schema":1,"ui":[],"blocks":[],"items":[],"assets":[],"interactions":[{
-                  "id":"example:jump","key":"key.keyboard.space","label":"Jump","payload":"jump"
-                }]}
-                """, Map.of());
-        writeCache(archive);
-        LoaderActivatedContent active = new LoaderClientTransport().acceptManifest(
-                manifest(archive, LoaderTestArchive.sha256(archive),
-                        "[\"interactions\"]", "[\"send_interactions\"]"),
-                environment(Set.of(LoaderPermission.SEND_INTERACTIONS)),
-                cacheDirectory).activatedContent();
-        LoaderInteractionDefinition jump = active.interactions().get("example:jump");
-        assertTrue(LoaderInteractionAction.encode(
-                jump, LoaderInteractionAction.Phase.TRIGGER, active, true).isEmpty());
-        assertTrue(LoaderInteractionAction.encode(
-                jump, LoaderInteractionAction.Phase.PRESS, active, true).isPresent());
-        assertTrue(LoaderInteractionAction.encode(
-                jump, LoaderInteractionAction.Phase.RELEASE, active, false).isEmpty());
-    }
-
-    @Test
-    void keyboardDeclarationRejectsMissingOrInvalidInputSources() throws Exception {
-        for (String source : List.of("", ",\"key\":\"key.mouse.left\"",
-                ",\"key\":\"key.keyboard.unknown\"", ",\"key\":null")) {
-            byte[] archive = LoaderTestArchive.archive(
-                    """
-                    {"schema":1,"ui":[],"blocks":[],"items":[],"assets":[],"interactions":[{
-                      "id":"example:jump","label":"Jump","payload":""%s
-                    }]}
-                    """.formatted(source), Map.of());
-            writeCache(archive);
-            assertThrows(IllegalArgumentException.class, () ->
-                    new LoaderClientTransport().acceptManifest(
-                            manifest(archive, LoaderTestArchive.sha256(archive),
-                                    "[\"interactions\"]", "[\"send_interactions\"]"),
-                            environment(Set.of(LoaderPermission.SEND_INTERACTIONS)),
-                            cacheDirectory));
-        }
-    }
-
-    @Test
-    void verifiedItemDefinitionActivatesForItsReferencingScreen() throws Exception {
-        byte[] archive = LoaderTestArchive.screenAndItem();
-        String hash = LoaderTestArchive.sha256(archive);
-        writeCache(archive);
-
-        LoaderOutgoing outgoing = new LoaderClientTransport()
-                .acceptManifest(
-                        manifest(
-                                archive,
-                                hash,
-                                "[\"ui\",\"items\",\"assets\"]",
-                                "[\"present_ui\",\"register_items\",\"load_assets\"]"),
-                        environment(Set.of(
-                                LoaderPermission.PRESENT_UI,
-                                LoaderPermission.REGISTER_ITEMS,
-                                LoaderPermission.LOAD_ASSETS)),
-                        cacheDirectory);
-        LoaderActivatedContent active = outgoing.activatedContent();
-
-        LoaderItemDefinition item = active.items().get("example:ruby");
-        assertEquals("minecraft:paper", item.baseItem());
-        assertEquals("Ruby", item.name());
+        assertEquals("minecraft:paper", active.items().get("example:ruby").baseItem());
+        assertEquals("Ruby", active.items().get("example:ruby").name());
         assertEquals(
                 "example:ruby",
-                active.ui().get("example:catalog").itemId().orElseThrow());
+                active.screens().get("example:catalog").itemId().orElseThrow());
         assertTrue(active.assets().containsKey("example:ruby_definition"));
         assertThrows(UnsupportedOperationException.class, active.items()::clear);
-    }
 
-    @Test
-    void itemRequiresItsOwnedDefinitionAsset() throws Exception {
-        byte[] archive = LoaderTestArchive.archive(
+        byte[] missingDefinition = LoaderTestArchive.archive(
                 """
-                {"schema":1,"ui":[],"blocks":[],"items":[{
+                {"schema":2,"screens":[{
+                  "id":"example:catalog","kind":"economy","title":"Catalog",
+                  "item_id":"example:ruby","widgets":[]}],
+                "world_previews":[],"blocks":[],"items":[{
                   "id":"example:ruby","base_item":"minecraft:paper","name":"Ruby"
-                }],"assets":[],"interactions":[]}
+                }],"assets":[],"sounds":[]}
                 """,
                 Map.of());
-        writeCache(archive);
-
+        LoaderTestBundles.writeCache(cacheDirectory, missingDefinition);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                archive,
-                                LoaderTestArchive.sha256(archive),
-                                "[\"items\"]",
-                                "[\"register_items\"]"),
-                        environment(Set.of(LoaderPermission.REGISTER_ITEMS)),
+                        LoaderTestBundles.manifest(missingDefinition, "[\"items\"]", "[\"register_items\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.REGISTER_ITEMS),
                         cacheDirectory));
     }
 
     @Test
-    void verifiedBlockModelActivatesForItsReferencingScreen() throws Exception {
+    void blockScreenBindsItsOwnedModelAndCarrierState() throws Exception {
         byte[] archive = LoaderTestArchive.screenAndBlock();
-        String hash = LoaderTestArchive.sha256(archive);
-        writeCache(archive);
+        String content = "[\"views\",\"blocks\",\"assets\"]";
+        String permissions = "[\"present_views\",\"register_blocks\",\"load_assets\"]";
+        LoaderActivatedContent active = LoaderTestBundles.activate(
+                cacheDirectory,
+                archive,
+                content,
+                permissions,
+                LoaderPermission.PRESENT_VIEWS,
+                LoaderPermission.REGISTER_BLOCKS,
+                LoaderPermission.LOAD_ASSETS);
 
-        LoaderOutgoing outgoing = new LoaderClientTransport()
-                .acceptManifest(
-                        manifest(
-                                archive,
-                                hash,
-                                "[\"ui\",\"blocks\",\"assets\"]",
-                                "[\"present_ui\",\"register_blocks\",\"load_assets\"]"),
-                        environment(Set.of(
-                                LoaderPermission.PRESENT_UI,
-                                LoaderPermission.REGISTER_BLOCKS,
-                                LoaderPermission.LOAD_ASSETS)),
-                        cacheDirectory);
-        LoaderActivatedContent active = outgoing.activatedContent();
-
-        assertTrue(new String(outgoing.bytes(), StandardCharsets.UTF_8)
-                .contains("\"carrier_block_state_ids\":{\"example:ruby_block\":321}"));
-        LoaderBlockDefinition block = active.blocks().get("example:ruby_block");
-        assertEquals("example:block/ruby_block", block.model());
-        assertEquals("Ruby Block", block.name());
+        assertEquals("example:block/ruby_block", active.blocks().get("example:ruby_block").model());
         assertEquals(
                 "example:ruby_block",
-                active.ui().get("example:catalog").blockId().orElseThrow());
-        assertTrue(active.assets().containsKey("example:ruby_block_model"));
-        assertThrows(UnsupportedOperationException.class, active.blocks()::clear);
-    }
+                active.screens().get("example:catalog").blockId().orElseThrow());
+        assertTrue(new String(
+                        LoaderHandshake.acknowledgement(
+                                LoaderHandshake.inspectManifest(
+                                        LoaderTestBundles.manifest(archive, content, permissions),
+                                        LoaderPlatform.FABRIC,
+                                        "0.1.0"),
+                                LoaderTestBundles.environment(
+                                        LoaderPermission.PRESENT_VIEWS,
+                                        LoaderPermission.REGISTER_BLOCKS,
+                                        LoaderPermission.LOAD_ASSETS),
+                                active),
+                        StandardCharsets.UTF_8)
+                .contains("\"carrier_block_state_ids\":{\"example:ruby_block\":321}"));
 
-    @Test
-    void blockRequiresItsOwnedModelAsset() throws Exception {
-        byte[] archive = LoaderTestArchive.archive(
+        byte[] missingModel = LoaderTestArchive.archive(
                 """
-                {"schema":1,"ui":[],"blocks":[{
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[{
                   "id":"example:ruby_block","model":"example:block/ruby_block",
                   "name":"Ruby Block"
-                }],"items":[],"assets":[],"interactions":[]}
+                }],"items":[],"assets":[],"sounds":[]}
                 """,
                 Map.of());
-        writeCache(archive);
-
+        LoaderTestBundles.writeCache(cacheDirectory, missingModel);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                archive,
-                                LoaderTestArchive.sha256(archive),
-                                "[\"blocks\"]",
-                                "[\"register_blocks\"]"),
-                        environment(Set.of(LoaderPermission.REGISTER_BLOCKS)),
+                        LoaderTestBundles.manifest(missingModel, "[\"blocks\"]", "[\"register_blocks\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.REGISTER_BLOCKS),
                         cacheDirectory));
     }
 
     @Test
-    void interactionMustBeOwnedAndReferenceItsDeclaredScreen() throws Exception {
-        byte[] foreign = LoaderTestArchive.archive(
+    void screensMayOnlyReferenceTheirOwnDeclaredItemAndBlock() throws Exception {
+        byte[] undeclaredBlock = LoaderTestArchive.archive(
                 """
-                {"schema":1,"ui":[{
-                  "id":"example:welcome","title":"Welcome","body":"Body"
-                }],"blocks":[],"items":[],"assets":[],"interactions":[{
-                  "id":"other:continue","ui_id":"example:welcome",
-                  "label":"Continue","payload":"accepted"
-                }]}
-                """,
-                Map.of());
-        writeCache(foreign);
+                {"schema":2,"screens":[{
+                  "id":"example:catalog","kind":"construction","title":"Catalog",
+                  "block_id":"example:missing","widgets":[]}],
+                "world_previews":[],"blocks":[{
+                  "id":"example:ruby_block","model":"example:block/ruby_block",
+                  "name":"Ruby Block"
+                }],"items":[],"assets":[{
+                  "id":"example:ruby_block_model",
+                  "path":"assets/example/models/block/ruby_block.json",
+                  "sha256":"%s","size_bytes":2
+                }],"sounds":[]}
+                """.formatted(LoaderTestArchive.sha256("{}".getBytes(StandardCharsets.UTF_8))),
+                Map.of(
+                        "assets/example/models/block/ruby_block.json",
+                        "{}".getBytes(StandardCharsets.UTF_8)));
+        LoaderTestBundles.writeCache(cacheDirectory, undeclaredBlock);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                foreign,
-                                LoaderTestArchive.sha256(foreign),
-                                "[\"ui\",\"interactions\"]",
-                                "[\"present_ui\",\"send_interactions\"]"),
-                        environment(Set.of(
-                                LoaderPermission.PRESENT_UI,
-                                LoaderPermission.SEND_INTERACTIONS)),
+                        LoaderTestBundles.manifest(
+                                undeclaredBlock,
+                                "[\"views\",\"blocks\",\"assets\"]",
+                                "[\"present_views\",\"register_blocks\",\"load_assets\"]"),
+                        LoaderTestBundles.environment(
+                                LoaderPermission.PRESENT_VIEWS,
+                                LoaderPermission.REGISTER_BLOCKS,
+                                LoaderPermission.LOAD_ASSETS),
                         cacheDirectory));
 
-        byte[] missingScreen = LoaderTestArchive.archive(
+        byte[] foreignBlock = LoaderTestArchive.archive(
                 """
-                {"schema":1,"ui":[{
-                  "id":"example:welcome","title":"Welcome","body":"Body"
-                }],"blocks":[],"items":[],"assets":[],"interactions":[{
-                  "id":"example:continue","ui_id":"example:missing",
-                  "label":"Continue","payload":"accepted"
-                }]}
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[{
+                  "id":"other:ruby_block","model":"example:block/ruby_block",
+                  "name":"Ruby Block"
+                }],"items":[],"assets":[],"sounds":[]}
                 """,
                 Map.of());
-        writeCache(missingScreen);
+        LoaderTestBundles.writeCache(cacheDirectory, foreignBlock);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                missingScreen,
-                                LoaderTestArchive.sha256(missingScreen),
-                                "[\"ui\",\"interactions\"]",
-                                "[\"present_ui\",\"send_interactions\"]"),
-                        environment(Set.of(
-                                LoaderPermission.PRESENT_UI,
-                                LoaderPermission.SEND_INTERACTIONS)),
+                        LoaderTestBundles.manifest(foreignBlock, "[\"blocks\"]", "[\"register_blocks\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.REGISTER_BLOCKS),
+                        cacheDirectory));
+    }
+
+    @Test
+    void worldPreviewsRequireMatchingContentAndPermission() throws Exception {
+        String content = "[\"world_previews\"]";
+        String permissions = "[\"present_world_previews\"]";
+        byte[] preview = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[],"world_previews":[{
+                  "id":"example:camp","blueprint_id":"example:camp",
+                  "content_hash":"%s","rotation":3,"size_x":4,"size_y":2,"size_z":1,
+                  "blocks":[{"x":0,"y":0,"z":0,"block_id":"minecraft:oak_planks"},
+                            {"x":3,"y":1,"z":0,"block_id":"example:ruby_block"}]
+                }],"blocks":[],"items":[],"assets":[],"sounds":[]}
+                """.formatted("a".repeat(64)),
+                Map.of());
+        LoaderActivatedContent active = LoaderTestBundles.activate(
+                cacheDirectory,
+                preview,
+                content,
+                permissions,
+                LoaderPermission.PRESENT_WORLD_PREVIEWS);
+        LoaderWorldPreviewDefinition definition = active.worldPreviews().get("example:camp");
+        assertEquals("example:camp", definition.blueprintId());
+        assertEquals("a".repeat(64), definition.contentHash());
+        assertEquals(3, definition.rotation());
+        assertEquals(
+                new LoaderWorldPreviewDefinition.Block(0, 0, 0, "minecraft:oak_planks"),
+                definition.blocks().get(0));
+        assertEquals(2, definition.blocks().size());
+
+        byte[] undeclared = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[],"items":[],
+                 "assets":[],"sounds":[]}
+                """,
+                Map.of());
+        LoaderTestBundles.writeCache(cacheDirectory, undeclared);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoaderClientTransport().acceptManifest(
+                        LoaderTestBundles.manifest(undeclared, content, permissions),
+                        LoaderTestBundles.environment(LoaderPermission.PRESENT_WORLD_PREVIEWS),
+                        cacheDirectory));
+
+        LoaderTestBundles.writeCache(cacheDirectory, preview);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoaderClientTransport().acceptManifest(
+                        LoaderTestBundles.manifest(preview, content, "[\"load_assets\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.LOAD_ASSETS),
+                        cacheDirectory));
+    }
+
+    @Test
+    void screenIndexRequiresItsContentDeclaration() throws Exception {
+        byte[] undeclaredScreens = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[{
+                  "id":"example:welcome","kind":"settlement","title":"Welcome","widgets":[]
+                }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
+                """,
+                Map.of());
+        LoaderTestBundles.writeCache(cacheDirectory, undeclaredScreens);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoaderClientTransport().acceptManifest(
+                        LoaderTestBundles.manifest(undeclaredScreens, "[\"items\"]", "[\"register_items\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.REGISTER_ITEMS),
+                        cacheDirectory));
+
+        byte[] withoutScreens = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[],"blocks":[],"items":[],"assets":[]}
+                """,
+                Map.of());
+        LoaderTestBundles.writeCache(cacheDirectory, withoutScreens);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoaderClientTransport().acceptManifest(
+                        LoaderTestBundles.manifest(
+                                withoutScreens, "[\"views\"]", "[\"present_views\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.PRESENT_VIEWS),
                         cacheDirectory));
     }
 
@@ -296,36 +282,59 @@ final class LoaderContentArchiveTest {
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                archive,
-                                hash,
-                                "[\"future\"]",
-                                "[\"register_blocks\"]"),
-                        environment(Set.of(LoaderPermission.REGISTER_BLOCKS)),
+                        LoaderTestBundles.manifest(archive, hash, "[\"future\"]", "[\"register_blocks\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.REGISTER_BLOCKS),
                         cacheDirectory));
         assertFalse(Files.exists(cacheDirectory.resolve("example")));
+    }
+
+    @Test
+    void legacySchemaOneAndUiInteractionIndexesFailClosed() throws Exception {
+        for (String index : List.of(
+                """
+                {"schema":1,"ui":[{
+                  "id":"example:welcome","title":"Welcome","body":"Body"
+                }],"blocks":[],"items":[],"assets":[],"interactions":[]}
+                """,
+                """
+                {"schema":2,"ui":[{
+                  "id":"example:welcome","title":"Welcome","body":"Body"
+                }],"screens":[],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
+                """,
+                """
+                {"schema":2,"screens":[{
+                  "id":"example:welcome","kind":"settlement","title":"Welcome","widgets":[]
+                }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[],
+                "interactions":[]}
+                """)) {
+            byte[] archive = LoaderTestArchive.archive(index, Map.of());
+            LoaderTestBundles.writeCache(cacheDirectory, archive);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new LoaderClientTransport().acceptManifest(
+                            LoaderTestBundles.manifest(archive, "[\"views\"]", "[\"present_views\"]"),
+                            LoaderTestBundles.environment(LoaderPermission.PRESENT_VIEWS),
+                            cacheDirectory));
+        }
     }
 
     @Test
     void closedIndexRejectsUnknownFieldsBeforeAcknowledgement() throws Exception {
         byte[] archive = LoaderTestArchive.archive(
                 """
-                {"schema":1,"ui":[{
-                  "id":"example:welcome","title":"Welcome","body":"Body"
-                }],"blocks":[],"items":[],"assets":[],"interactions":[],"future":true}
+                {"schema":2,"screens":[{
+                  "id":"example:welcome","kind":"settlement","title":"Welcome","widgets":[]
+                }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[],
+                "future":true}
                 """,
                 Map.of());
-        writeCache(archive);
+        LoaderTestBundles.writeCache(cacheDirectory, archive);
 
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                archive,
-                                LoaderTestArchive.sha256(archive),
-                                "[\"ui\"]",
-                                "[\"present_ui\"]"),
-                        environment(Set.of(LoaderPermission.PRESENT_UI)),
+                        LoaderTestBundles.manifest(archive, "[\"views\"]", "[\"present_views\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.PRESENT_VIEWS),
                         cacheDirectory));
     }
 
@@ -334,191 +343,146 @@ final class LoaderContentArchiveTest {
         byte[] expectedAsset = new byte[] {'x'};
         byte[] archive = LoaderTestArchive.archive(
                 """
-                {"schema":1,"ui":[],"blocks":[],"items":[],"assets":[{
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[],"items":[],"assets":[{
                   "id":"example:logo","path":"assets/example/logo.bin",
                   "sha256":"%s","size_bytes":1
-                }],"interactions":[]}
+                }],"sounds":[]}
                 """.formatted(LoaderTestArchive.sha256(expectedAsset)),
                 Map.of("assets/example/logo.bin", new byte[] {'y'}));
-        writeCache(archive);
+        LoaderTestBundles.writeCache(cacheDirectory, archive);
 
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                archive,
-                                LoaderTestArchive.sha256(archive),
-                                "[\"assets\"]",
-                                "[\"load_assets\"]"),
-                        environment(Set.of(LoaderPermission.LOAD_ASSETS)),
+                        LoaderTestBundles.manifest(archive, "[\"assets\"]", "[\"load_assets\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.LOAD_ASSETS),
                         cacheDirectory));
     }
 
     @Test
     void indexRequiresExactJsonTypes() throws Exception {
-        byte[] stringSchema = LoaderTestArchive.archive(
+        for (String index : List.of(
                 """
-                {"schema":"1","ui":[{
-                  "id":"example:welcome","title":"Welcome","body":"Body"
-                }],"blocks":[],"items":[],"assets":[],"interactions":[]}
+                {"schema":"2","screens":[],"world_previews":[],"blocks":[],"items":[],
+                 "assets":[],"sounds":[]}
                 """,
-                Map.of());
-        writeCache(stringSchema);
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                stringSchema,
-                                LoaderTestArchive.sha256(stringSchema),
-                                "[\"ui\"]",
-                                "[\"present_ui\"]"),
-                        environment(Set.of(LoaderPermission.PRESENT_UI)),
-                        cacheDirectory));
-
-        byte[] numericTitle = LoaderTestArchive.archive(
                 """
-                {"schema":1,"ui":[{
-                  "id":"example:welcome","title":7,"body":"Body"
-                }],"blocks":[],"items":[],"assets":[],"interactions":[]}
+                {"schema":2,"screens":[{
+                  "id":"example:welcome","kind":"settlement","title":7,"widgets":[]
+                }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
                 """,
-                Map.of());
-        writeCache(numericTitle);
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                numericTitle,
-                                LoaderTestArchive.sha256(numericTitle),
-                                "[\"ui\"]",
-                                "[\"present_ui\"]"),
-                        environment(Set.of(LoaderPermission.PRESENT_UI)),
-                        cacheDirectory));
+                """
+                {"schema":2,"screens":[{
+                  "id":"example:welcome","kind":"settlement","title":"Welcome",
+                  "widgets":[{"type":"input_text","id":"note","label":"Note","max_bytes":"8"}]}
+                }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
+                """)) {
+            byte[] archive = LoaderTestArchive.archive(index, Map.of());
+            LoaderTestBundles.writeCache(cacheDirectory, archive);
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> new LoaderClientTransport().acceptManifest(
+                            LoaderTestBundles.manifest(archive, "[\"views\"]", "[\"present_views\"]"),
+                            LoaderTestBundles.environment(LoaderPermission.PRESENT_VIEWS),
+                            cacheDirectory));
+        }
     }
 
     @Test
     void archiveMustStartWithItsIndexAndUseCanonicalDeclaredPaths() throws Exception {
         byte[] leadingEntry = LoaderTestArchive.archiveWithLeadingEntry(
                 """
-                {"schema":1,"ui":[{
-                  "id":"example:welcome","title":"Welcome","body":"Body"
-                }],"blocks":[],"items":[],"assets":[],"interactions":[]}
+                {"schema":2,"screens":[{
+                  "id":"example:welcome","kind":"settlement","title":"Welcome","widgets":[]
+                }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
                 """);
-        writeCache(leadingEntry);
+        LoaderTestBundles.writeCache(cacheDirectory, leadingEntry);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                leadingEntry,
-                                LoaderTestArchive.sha256(leadingEntry),
-                                "[\"ui\"]",
-                                "[\"present_ui\"]"),
-                        environment(Set.of(LoaderPermission.PRESENT_UI)),
+                        LoaderTestBundles.manifest(leadingEntry, "[\"views\"]", "[\"present_views\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.PRESENT_VIEWS),
                         cacheDirectory));
 
         byte[] escapingPath = LoaderTestArchive.archive(
                 """
-                {"schema":1,"ui":[],"blocks":[],"items":[],"assets":[{
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[],"items":[],"assets":[{
                   "id":"example:logo","path":"assets/../logo.bin",
                   "sha256":"%s","size_bytes":1
-                }],"interactions":[]}
+                }],"sounds":[]}
                 """.formatted(LoaderTestArchive.sha256(new byte[] {'x'})),
                 Map.of("assets/../logo.bin", new byte[] {'x'}));
-        writeCache(escapingPath);
+        LoaderTestBundles.writeCache(cacheDirectory, escapingPath);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
-                        manifest(
-                                escapingPath,
-                                LoaderTestArchive.sha256(escapingPath),
-                                "[\"assets\"]",
-                                "[\"load_assets\"]"),
-                        environment(Set.of(LoaderPermission.LOAD_ASSETS)),
+                        LoaderTestBundles.manifest(escapingPath, "[\"assets\"]", "[\"load_assets\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.LOAD_ASSETS),
                         cacheDirectory));
+
+        byte[] undeclaredEntry = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[],"items":[],
+                 "assets":[],"sounds":[]}
+                """,
+                Map.of("assets/example/extra.bin", new byte[] {'x'}));
+        LoaderTestBundles.writeCache(cacheDirectory, undeclaredEntry);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoaderClientTransport().acceptManifest(
+                        LoaderTestBundles.manifest(undeclaredEntry, "[\"assets\"]", "[\"load_assets\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.LOAD_ASSETS),
+                        cacheDirectory));
+    }
+
+    @Test
+    void soundsActivateOnlyWithTheirVerifiedOwnedOggAsset() throws Exception {
+        byte[] ogg = new byte[] {'O', 'g', 'g', 'S'};
+        byte[] archive = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[],"items":[],"assets":[{
+                  "id":"example:tone_asset","path":"assets/example/sounds/tone.ogg",
+                  "sha256":"%s","size_bytes":%d
+                }],"sounds":[{"id":"example:tone"}]}
+                """.formatted(LoaderTestArchive.sha256(ogg), ogg.length),
+                Map.of("assets/example/sounds/tone.ogg", ogg));
+        LoaderActivatedContent active = LoaderTestBundles.activate(
+                cacheDirectory,
+                archive,
+                "[\"assets\",\"sounds\"]",
+                "[\"load_assets\",\"play_sounds\"]",
+                LoaderPermission.LOAD_ASSETS,
+                LoaderPermission.PLAY_SOUNDS);
+        assertTrue(active.sounds().containsKey("example:tone"));
+        assertEquals(
+                "assets/example/sounds/tone.ogg",
+                active.sounds().get("example:tone").archivePath());
+        assertEquals(Map.of(), active.screens());
     }
 
     @Test
     void combinedRegistryLimitsAreClosed() {
         assertDoesNotThrow(() -> LoaderContentArchive.ensureRegistryBounds(
-                64,
-                8,
-                128,
-                128,
-                64,
-                64L * 1024L * 1024L));
+                64, 64, 8, 128, 128, 64L * 1024L * 1024L));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderContentArchive.ensureRegistryBounds(65, 64, 8, 128, 128, 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderContentArchive.ensureRegistryBounds(64, 65, 8, 128, 128, 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderContentArchive.ensureRegistryBounds(64, 64, 9, 128, 128, 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderContentArchive.ensureRegistryBounds(64, 64, 8, 129, 128, 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderContentArchive.ensureRegistryBounds(64, 64, 8, 128, 129, 0));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> LoaderContentArchive.ensureRegistryBounds(
-                        65, 1, 128, 128, 64, 0));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> LoaderContentArchive.ensureRegistryBounds(
-                        64, 9, 128, 128, 64, 0));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> LoaderContentArchive.ensureRegistryBounds(
-                        64, 1, 129, 128, 64, 0));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> LoaderContentArchive.ensureRegistryBounds(
-                        64, 1, 128, 129, 64, 0));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> LoaderContentArchive.ensureRegistryBounds(
-                        64, 1, 128, 128, 65, 0));
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> LoaderContentArchive.ensureRegistryBounds(
-                        64,
-                        1,
-                        128,
-                        128,
-                        64,
-                        64L * 1024L * 1024L + 1));
+                        64, 64, 8, 128, 128, 64L * 1024L * 1024L + 1));
     }
 
-    private void writeCache(byte[] archive) throws Exception {
-        String hash = LoaderTestArchive.sha256(archive);
-        Files.createDirectories(cacheDirectory.resolve("example/content/1"));
-        Files.write(cacheDirectory.resolve("example/content/1/" + hash + ".bundle"), archive);
-    }
-
-    private static LoaderEnvironment environment(Set<LoaderPermission> permissions) {
-        return new LoaderEnvironment() {
-            @Override
-            public LoaderPlatform platform() {
-                return LoaderPlatform.FABRIC;
-            }
-
-            @Override
-            public String loaderVersion() {
-                return "0.1.0";
-            }
-
-            @Override
-            public Set<LoaderPermission> grantedPermissions() {
-                return permissions;
-            }
-
-            @Override
-            public List<Integer> carrierBlockStateIds() {
-                return List.of(321, 654);
-            }
-        };
-    }
-
-    private static byte[] manifest(
-            byte[] archive,
-            String hash,
-            String content,
-            String permissions) {
-        return """
-                {"protocol":2,"bundles":[{
-                  "owner":"example","id":"content","version":"1",
-                  "artifact":"client/content.zip","sha256":"%s","size_bytes":%d,
-                  "loaders":["fabric"],"content":%s,"permissions":%s,
-                  "cache_key":"example:content/1/%s"
-                }]}
-                """.formatted(hash, archive.length, content, permissions, hash)
-                .getBytes(StandardCharsets.UTF_8);
-    }
 }

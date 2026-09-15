@@ -27,10 +27,17 @@ final class LoaderRuntimeResourcePackTest {
         Object origin = new Object();
         AtomicBoolean active = new AtomicBoolean(true);
         byte[] logo = "logo".getBytes(StandardCharsets.UTF_8);
-        LoaderActivatedContent content = new LoaderActivatedContent(List.of("example:content/1/hash"), Map.of(), Map.of(), Map.of(), Map.of("example:logo", new LoaderAssetDefinition(
-                "example:logo",
-                "assets/example/textures/gui/logo.bin",
-                logo)), Map.of(), Map.of());
+        LoaderActivatedContent content = new LoaderActivatedContent(
+                List.of("example:content/1/hash"),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of("example:logo", new LoaderAssetDefinition(
+                        "example:logo",
+                        "assets/example/textures/gui/logo.bin",
+                        logo)),
+                Map.of());
 
         runtime.publish(origin, active::get, content);
         List<Pack> packs = new ArrayList<>();
@@ -69,23 +76,37 @@ final class LoaderRuntimeResourcePackTest {
     void invalidOrDuplicateMinecraftResourcePathsFailBeforePublication() {
         LoaderRuntimeResourcePack runtime = new LoaderRuntimeResourcePack();
         Object origin = new Object();
-        LoaderActivatedContent outsideAssets = new LoaderActivatedContent(List.of(), Map.of(), Map.of(), Map.of(), Map.of("example:logo", new LoaderAssetDefinition(
-                "example:logo",
-                "client/example/logo.bin",
-                new byte[] {1})), Map.of(), Map.of());
+        LoaderActivatedContent outsideAssets = new LoaderActivatedContent(
+                List.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of("example:logo", new LoaderAssetDefinition(
+                        "example:logo",
+                        "client/example/logo.bin",
+                        new byte[] {1})),
+                Map.of());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> runtime.publish(origin, () -> true, outsideAssets));
 
-        LoaderActivatedContent duplicatePath = new LoaderActivatedContent(List.of(), Map.of(), Map.of(), Map.of(), Map.of(
-                "example:first", new LoaderAssetDefinition(
-                        "example:first",
-                        "assets/example/shared.bin",
-                        new byte[] {1}),
-                "example:second", new LoaderAssetDefinition(
-                        "example:second",
-                        "assets/example/shared.bin",
-                        new byte[] {2})), Map.of(), Map.of());
+        LoaderActivatedContent duplicatePath = new LoaderActivatedContent(
+                List.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(),
+                Map.of(
+                        "example:first", new LoaderAssetDefinition(
+                                "example:first",
+                                "assets/example/shared.bin",
+                                new byte[] {1}),
+                        "example:second", new LoaderAssetDefinition(
+                                "example:second",
+                                "assets/example/shared.bin",
+                                new byte[] {2})),
+                Map.of());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> runtime.publish(origin, () -> true, duplicatePath));

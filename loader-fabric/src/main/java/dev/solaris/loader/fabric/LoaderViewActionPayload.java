@@ -1,24 +1,24 @@
-package dev.solaris.loader.neoforge;
+package dev.solaris.loader.fabric;
 
-import dev.solaris.loader.LoaderUiPresentation;
+import dev.solaris.loader.LoaderViewActionRequest;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.resources.Identifier;
 
-record LoaderUiPayload(byte[] bytes) implements CustomPacketPayload {
-    static final Type<LoaderUiPayload> TYPE =
-            new Type<>(Identifier.parse(LoaderUiPresentation.CHANNEL));
-    static final StreamCodec<FriendlyByteBuf, LoaderUiPayload> CODEC =
+record LoaderViewActionPayload(byte[] bytes) implements CustomPacketPayload {
+    static final Type<LoaderViewActionPayload> TYPE =
+            new Type<>(Identifier.parse(LoaderViewActionRequest.CHANNEL));
+    static final StreamCodec<FriendlyByteBuf, LoaderViewActionPayload> CODEC =
             CustomPacketPayload.codec(
-                    LoaderUiPayload::write,
-                    LoaderUiPayload::new);
+                    LoaderViewActionPayload::write,
+                    LoaderViewActionPayload::new);
 
-    LoaderUiPayload {
+    LoaderViewActionPayload {
         bytes = bytes.clone();
     }
 
-    private LoaderUiPayload(FriendlyByteBuf buffer) {
+    private LoaderViewActionPayload(FriendlyByteBuf buffer) {
         this(read(buffer));
     }
 
@@ -28,8 +28,8 @@ record LoaderUiPayload(byte[] bytes) implements CustomPacketPayload {
 
     private static byte[] read(FriendlyByteBuf buffer) {
         int length = buffer.readableBytes();
-        if (length > LoaderUiPresentation.MAX_PAYLOAD_BYTES) {
-            throw new IllegalArgumentException("Loader open-screen payload exceeds limit");
+        if (length > LoaderViewActionRequest.MAX_PAYLOAD_BYTES) {
+            throw new IllegalArgumentException("Loader view action payload exceeds limit");
         }
         byte[] bytes = new byte[length];
         buffer.readBytes(bytes);
