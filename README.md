@@ -1,9 +1,10 @@
 # Solaris Loader
 
 Optional **client-side mod** for [Solaris](https://github.com/kaiserproger/solaris)
-servers whose Luau plugins provide custom views, assets, sounds, items and
-blocks. If the server uses only server-side plugins, an ordinary vanilla client
-is enough.
+servers whose plugins — retained Luau `0.6.0` or WebAssembly components of the
+`solaris:plugin` `0.7.0` contract — provide custom views, HUDs, assets, sounds,
+items and blocks. If the server uses only server-side plugins, an ordinary
+vanilla client is enough.
 
 This is not a server plugin, modpack, launcher, or replacement for Fabric,
 NeoForge, or Forge. Players do not need Gradle, Rust, MCP, or an API token.
@@ -27,8 +28,10 @@ JAR. Fabric requires the separate Fabric API mod. A `SHA256SUMS` release asset
 allows verification with `sha256sum -c SHA256SUMS --ignore-missing` on Linux;
 on Windows, compare `Get-FileHash FILE.jar -Algorithm SHA256` with that file.
 
-Current Loader protocol is **3** with client artifact index **schema 2**, plugin
-API **0.6.0**. These are alpha contracts:
+Current Loader protocol is **3** with client artifact index **schema 2**. The
+plugin API the Loader carries is **0.6.0** for retained Luau packages and
+**0.7.0** for WebAssembly components; the Loader itself handles the same typed
+view, HUD, sound and item surface for both. These are alpha contracts:
 match the server's declared compatibility, not just similar version numbers.
 Schema-1 bundles, the removed UI/interaction content kinds and wire-2 messages
 fail closed instead of being bridged. Releases remain previews, not broad
@@ -72,7 +75,8 @@ then activates content. **Deny** disconnects without requesting those bundles.
 A different server address or permission set prompts again.
 
 Decisions and verified content are cached under `~/.solaris/loader-cache/`.
-Active content, the open view and Loader sounds are cleared on disconnect.
+Active content, the open modal, every HUD instance with its held bindings, and
+Loader sounds are cleared on disconnect.
 Only approve servers you trust; a matching content hash establishes byte
 identity, not that a server is trustworthy.
 
@@ -147,7 +151,19 @@ screen declares one of the six kinds `settlement`, `construction`, `economy`,
 `garrison`, `army` or `hud` and a bounded widget list from `paged_table`,
 `tabs`, `input_number`, `input_text`, `select_enum`, `resource_panel`,
 `action_button` and `world_marker`; there is no HTML/JS, arbitrary Java,
-filesystem access or client-side scripting. Each block declaration (`id`, owner
+filesystem access or client-side scripting.
+
+A `hud` screen is non-modal: each owner's HUD is its own instance, several stay
+visible at once, and an update or close names one exact instance and revision, so
+a HUD never takes, replaces or closes the modal screen. A `hud` screen may also
+declare up to eight `input_bindings` (`key`, `press_action`, `release_action`):
+canonical `key.keyboard.*` names bound to owner-qualified view action ids, which
+require `view_actions` content and `send_view_actions`. The client resolves every
+declared key through Minecraft's own input table before installing the view; an
+unknown, unbound or duplicated key refuses the whole view with no bindings rather
+than guessing a key.
+
+Each block declaration (`id`, owner
 `model`, and `name`) is backed by its exact verified model asset. Each item
 names a known vanilla base item and requires its exact verified
 `assets/<namespace>/items/<path>.json` definition; a screen may reference one
@@ -165,28 +181,41 @@ The three adapters publish the resulting immutable registry before sending the
 acknowledgement and keep it available in Play. Unknown archive fields or
 entries and mismatched asset bytes fail before acknowledgement. An acknowledged
 Loader session can receive
-`solaris:loader/view` in Play. One shared presenter renders the presented model
-of the exact originating connection as a paginated view screen: a paged table
-of rows, tabs, typed inputs, a resource panel, action buttons honouring
-`enabled` and showing `deny_reason`, and the `reason` line, with the declared
-item/block displays. Referenced items render
+`solaris:loader/view` in Play. One shared renderer serves both view modes. A
+modal view screen is the paginated presentation for the exact originating
+connection - a paged table of rows, tabs, typed inputs, a resource panel, action
+buttons honouring `enabled` and showing `deny_reason`, and the `reason` line,
+with the declared item/block displays - and its caption is the activated screen
+declaration's own bounded `title`, never the wire `view_id`. A `hud` instance
+renders only its declared widgets, so a widgetless HUD draws nothing while still
+hosting its declared bindings. Both modes open with the authoritative model the
+`open_view` carried. Referenced items render
 through a local vanilla stack with Minecraft 26.1.2's owner-namespaced
 `ITEM_MODEL`; no late registry mutation is used. `open_view` carries
 `view_instance_id`, `revision`, `view_id`, `title` and the model;
 `present_view` replaces the model and resets the action sequence; `close_view`
 and disconnect clear the view. A disabled action sends nothing, and every
 action carries the exact instance id, revision and action id with an increasing
-`action_sequence` per connection and view instance. The server accepts the
+`action_sequence` per connection and view instance. A declared key's press and
+release edges travel as the same `view_action` message with the live instance,
+revision and sequence. Presses that open or close a screen do not become
+gameplay actions. Declared F2/F11 may report edges while preserving vanilla
+screenshots/fullscreen; autorepeat is not an edge. Losing gameplay input focus
+(a GUI, a hidden player, an inactive window) emits exactly one release per held
+binding before the physical key-up. The server accepts the
 bounded action only from the exact acknowledged Play session, re-reads the
 instance, revision, owner and presented typed field schema, and delivers
-`on_loader_view_action(event)` solely to the Lua plugin owning the view
+`on_loader_view_action(event)` solely to the plugin owning the view
 namespace; stale revisions, foreign owners, substituted field ids or types and
 client-minted values are refused. Client-side `cancel_selection` and
 `view_request` (`settlement` or `army`) use the same closed JSON
-contract; the Loader registers no key binding of its own, and there is no
-wire-2 fallback and no client Lua runtime.
-Activation and disconnect clear the open view, Loader sound playback and the
-active registry, so queued work or content from one server cannot reach a later
+contract; the Loader registers only the bindings an activated `hud` screen
+declares - no rebinding, client-side scripting, fallback key table, wire-2
+fallback or client Lua runtime.
+
+Activation and disconnect clear the open modal, every HUD instance with its held
+bindings and action sink, Loader sound playback and the active registry, so
+queued work or content from one server cannot reach a later
 connection. Declared
 `assets/<namespace>/<path>` bytes now form one
 transient required Minecraft client resource pack. The acknowledgement waits
@@ -200,6 +229,10 @@ hash-verified artifacts and retains it only in the acknowledged Play session.
 Server grants, placement, projection, break drops, persistence, and pickup
 preserve the exact owner identity through that mapping; no client runtime id
 enters canonical world or inventory state.
+Installing or enabling a Loader adapter needs a client restart before those
+native carriers exist; joining a new server with an already installed adapter
+only activates verified per-connection content and reloads its resource pack,
+not the frozen block registry.
 
 `solaris:loader/sound` resolves only an activated sound on its originating
 connection. The shared native presenter supports personal or fixed-position

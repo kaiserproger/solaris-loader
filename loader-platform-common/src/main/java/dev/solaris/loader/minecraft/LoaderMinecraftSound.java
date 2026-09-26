@@ -22,6 +22,11 @@ import net.minecraft.sounds.SoundSource;
 /** Verified resource preparation and client-thread playback shared by all adapters. */
 public final class LoaderMinecraftSound {
     private static final Set<Identifier> PLAYED = new HashSet<>();
+    private static final Set<Identifier> STARTED_THIS_TICK = new HashSet<>();
+    private static final int MAX_STARTS_PER_TICK = 8;
+    private static final int MAX_ENCODED_BYTES = 256 * 1024;
+    private static final int MAX_DECODED_BYTES = 192_000;
+    private static long startedTick = Long.MIN_VALUE;
 
     private LoaderMinecraftSound() { }
 
@@ -31,10 +36,26 @@ public final class LoaderMinecraftSound {
             Identifier id = Identifier.parse(soundId);
             Identifier clip = Identifier.fromNamespaceAndPath(id.getNamespace(), "sounds/" + id.getPath() + ".ogg");
             byte[] bytes = resources.get(clip);
-            if (bytes == null) { throw new IllegalArgumentException("Loader sound has no verified OGG: " + id); }
+            if (bytes == null || bytes.length > MAX_ENCODED_BYTES) {
+                throw new IllegalArgumentException("Loader sound is missing or too large: " + id);
+            }
             try (JOrbisAudioStream stream = new JOrbisAudioStream(new ByteArrayInputStream(bytes))) {
-                if (stream.getFormat().getChannels() != 1 || !stream.read(4096).hasRemaining()) {
-                    throw new IllegalArgumentException("Loader sounds must contain mono OGG Vorbis audio: " + id);
+                var format = stream.getFormat();
+                if (format.getChannels() != 1 || format.getFrameSize() != 2
+                        || format.getSampleRate() < 8000 || format.getSampleRate() > 48000) {
+                    throw new IllegalArgumentException("Loader sound must be mono PCM at 8..48 kHz: " + id);
+                }
+                int decoded = 0;
+                int maxDurationBytes = (int) (format.getSampleRate() * format.getFrameSize() * 2);
+                int read;
+                while ((read = stream.read(4096).remaining()) > 0) {
+                    decoded += read;
+                    if (decoded > Math.min(MAX_DECODED_BYTES, maxDurationBytes)) {
+                        throw new IllegalArgumentException("Loader sound exceeds two decoded seconds: " + id);
+                    }
+                }
+                if (decoded == 0) {
+                    throw new IllegalArgumentException("Loader sound is empty: " + id);
                 }
             } catch (IOException error) {
                 throw new IllegalArgumentException("Invalid Loader OGG sound: " + id, error);
@@ -62,6 +83,18 @@ public final class LoaderMinecraftSound {
         Identifier id = Identifier.parse(command.definition().id());
         if (command.mode() == 0) {
             client.getSoundManager().stop(id, SoundSource.MASTER);
+            PLAYED.remove(id);
+            return;
+        }
+        if (client.level == null) {
+            return;
+        }
+        long tick = client.level.getGameTime();
+        if (tick != startedTick) {
+            startedTick = tick;
+            STARTED_THIS_TICK.clear();
+        }
+        if (STARTED_THIS_TICK.size() >= MAX_STARTS_PER_TICK || !STARTED_THIS_TICK.add(id)) {
             return;
         }
         if (client.getSoundManager().getSoundEvent(id) == null) {
@@ -69,6 +102,7 @@ public final class LoaderMinecraftSound {
         }
         boolean relative = command.mode() == 1;
         PLAYED.add(id);
+        client.getSoundManager().stop(id, SoundSource.MASTER);
         client.getSoundManager().play(new SimpleSoundInstance(
                 id, SoundSource.MASTER, command.volume(), command.pitch(), SoundInstance.createUnseededRandom(),
                 false, 0, relative ? SoundInstance.Attenuation.NONE : SoundInstance.Attenuation.LINEAR,
@@ -76,9 +110,10 @@ public final class LoaderMinecraftSound {
     }
 
     public static void clear() {
-        if (PLAYED.isEmpty()) { return; }
         var manager = Minecraft.getInstance().getSoundManager();
         for (Identifier id : PLAYED) { manager.stop(id, SoundSource.MASTER); }
         PLAYED.clear();
+        STARTED_THIS_TICK.clear();
+        startedTick = Long.MIN_VALUE;
     }
 }

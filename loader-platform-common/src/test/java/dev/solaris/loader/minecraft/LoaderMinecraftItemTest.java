@@ -21,6 +21,7 @@ final class LoaderMinecraftItemTest {
                 "Catalog",
                 Optional.of("example:ruby"),
                 Optional.empty(),
+                List.of(),
                 List.of());
         LoaderActivatedContent content = new LoaderActivatedContent(
                 List.of(),
@@ -51,6 +52,7 @@ final class LoaderMinecraftItemTest {
                 "Catalog",
                 Optional.of("example:ruby"),
                 Optional.empty(),
+                List.of(),
                 List.of());
         assertTrue(LoaderMinecraftItem
                 .resolve(screen, LoaderActivatedContent.empty())

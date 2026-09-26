@@ -341,13 +341,15 @@ final class LoaderContentArchiveTest {
     @Test
     void exactAssetBytesAreVerifiedBeforeAcknowledgement() throws Exception {
         byte[] expectedAsset = new byte[] {'x'};
-        byte[] archive = LoaderTestArchive.archive(
+        String index =
                 """
                 {"schema":2,"screens":[],"world_previews":[],"blocks":[],"items":[],"assets":[{
                   "id":"example:logo","path":"assets/example/logo.bin",
                   "sha256":"%s","size_bytes":1
                 }],"sounds":[]}
-                """.formatted(LoaderTestArchive.sha256(expectedAsset)),
+                """.formatted(LoaderTestArchive.sha256(expectedAsset));
+        byte[] archive = LoaderTestArchive.archive(
+                index,
                 Map.of("assets/example/logo.bin", new byte[] {'y'}));
         LoaderTestBundles.writeCache(cacheDirectory, archive);
 
@@ -355,6 +357,15 @@ final class LoaderContentArchiveTest {
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
                         LoaderTestBundles.manifest(archive, "[\"assets\"]", "[\"load_assets\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.LOAD_ASSETS),
+                        cacheDirectory));
+
+        byte[] missing = LoaderTestArchive.archive(index, Map.of());
+        LoaderTestBundles.writeCache(cacheDirectory, missing);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoaderClientTransport().acceptManifest(
+                        LoaderTestBundles.manifest(missing, "[\"assets\"]", "[\"load_assets\"]"),
                         LoaderTestBundles.environment(LoaderPermission.LOAD_ASSETS),
                         cacheDirectory));
     }

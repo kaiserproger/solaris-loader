@@ -122,8 +122,12 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 minecraft.gameMode.startDestroyBlock(pos(action.target), action.face);
                 minecraft.player.swing(InteractionHand.MAIN_HAND);
                 action.started.complete(null);
-            } else if (minecraft.gameMode.continueDestroyBlock(pos(action.target), action.face)) {
-                minecraft.player.swing(InteractionHand.MAIN_HAND);
+            } else {
+                action.continueCalls++;
+                if (minecraft.gameMode.continueDestroyBlock(pos(action.target), action.face)) {
+                    action.continueAccepted++;
+                    minecraft.player.swing(InteractionHand.MAIN_HAND);
+                }
             }
         } catch (RuntimeException error) {
             ACTIVE_BLOCK_BREAK.compareAndSet(action, null);
@@ -158,7 +162,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
 
     @Override
     public ScenarioBlockPair findUnobstructedPlaceablePair(ScenarioReach reach) throws Exception {
-        return executor.callOnClientThread(() -> findPlaceablePairOnClientThread(reach, false, true));
+        return executor.callOnClientThread(() -> findPlaceablePairOnClientThread(reach, false, true, false, PLACE_DIRECTIONS));
     }
 
     @Override
@@ -2213,6 +2217,15 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             return null;
         });
     }
+    private void finishBlockBreak(BlockBreakAutomation action) throws Exception {
+        executor.callOnClientThread(() -> {
+            Minecraft minecraft = requireInPlay();
+            ACTIVE_BLOCK_BREAK.compareAndSet(action, null);
+            minecraft.options.keyAttack.setDown(false);
+            return null;
+        });
+    }
+
 
     @Override
     public ScenarioBreakResult breakBlock(
@@ -2252,7 +2265,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 selected = sample.selectedItem();
                 if (becameAir && !breakStopped) {
                     breakStopped = true;
-                    stopBlockBreak(action);
+                    finishBlockBreak(action);
                 }
                 if (becameAir) {
                     break;
@@ -2263,7 +2276,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             } while (true);
 
             if (!becameAir) {
-                return new ScenarioBreakResult(true, false, sawDrop, false, selected);
+                String detail = executor.callOnClientThread(action::diagnostic);
+                return new ScenarioBreakResult(true, false, sawDrop, false, selected, detail);
             }
 
             InventoryPickupResult pickup = waitForInventoryPickup(
@@ -2397,7 +2411,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 selected = sample.selectedItem();
                 if (becameAir && !breakStopped) {
                     breakStopped = true;
-                    stopBlockBreak(action);
+                    finishBlockBreak(action);
                 }
                 if (becameAir && sawDrop) {
                     return new ScenarioBreakResult(true, true, true, false, selected);
@@ -2406,7 +2420,11 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     break;
                 }
             } while (true);
-            return new ScenarioBreakResult(true, becameAir, sawDrop, false, selected);
+            if (!becameAir) {
+                String detail = executor.callOnClientThread(action::diagnostic);
+                return new ScenarioBreakResult(true, false, sawDrop, false, selected, detail);
+            }
+            return new ScenarioBreakResult(true, true, sawDrop, false, selected);
         } finally {
             if (!breakStopped) {
                 stopBlockBreak(action);
@@ -2465,7 +2483,32 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         int expectedSelectedCount,
         Duration timeout
     ) throws Exception {
-        return collectVisibleItemDrop(near, expectedDropItemId, null, expectedSelectedCount, timeout);
+        return collectVisibleItemDrop(
+            near,
+            expectedDropItemId,
+            null,
+            executor.callOnClientThread(() -> inventoryCountOnClientThread(expectedDropItemId)),
+            expectedSelectedCount,
+            timeout
+        );
+    }
+
+    @Override
+    public ScenarioBreakResult collectVisibleItemDropFromInitialCount(
+        ScenarioBlockTarget near,
+        String expectedDropItemId,
+        int initialInventoryCount,
+        int expectedSelectedCount,
+        Duration timeout
+    ) throws Exception {
+        return collectVisibleItemDrop(
+            near,
+            expectedDropItemId,
+            null,
+            initialInventoryCount,
+            expectedSelectedCount,
+            timeout
+        );
     }
 
     @Override
@@ -2480,6 +2523,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             near,
             expectedDropItemId,
             expectedIdentity,
+            executor.callOnClientThread(() -> inventoryCountOnClientThread(expectedDropItemId)),
             expectedSelectedCount,
             timeout
         );
@@ -2489,10 +2533,10 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         ScenarioBlockTarget near,
         String expectedDropItemId,
         ScenarioItemDropIdentity expectedIdentity,
+        int initialCount,
         int expectedSelectedCount,
         Duration timeout
     ) throws Exception {
-        int initialCount = executor.callOnClientThread(() -> inventoryCountOnClientThread(expectedDropItemId));
         long deadlineNanos = System.nanoTime() + timeout.toNanos();
         int detourDirection = 0;
         int preferredDetourDirection = 1;
@@ -2558,13 +2602,15 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                         clearance.left(),
                         clearance.right()
                     );
-                    minecraft.options.keySprint.setDown(true);
-                    minecraft.options.keyUp.setDown(nextDetourDirection == 0);
-                    minecraft.options.keyJump.setDown(stepUp);
-                    minecraft.options.keyLeft.setDown(nextDetourDirection < 0);
-                    minecraft.options.keyRight.setDown(nextDetourDirection > 0);
-                    boolean visible = dropPosition != null;
                     Vec3 playerPosition = minecraft.player.position();
+                    boolean approaching = playerPosition.distanceToSqr(target)
+                        > PICKUP_APPROACH_DISTANCE_SQUARED;
+                    minecraft.options.keySprint.setDown(approaching);
+                    minecraft.options.keyUp.setDown(approaching && nextDetourDirection == 0);
+                    minecraft.options.keyJump.setDown(approaching && stepUp);
+                    minecraft.options.keyLeft.setDown(approaching && nextDetourDirection < 0);
+                    minecraft.options.keyRight.setDown(approaching && nextDetourDirection > 0);
+                    boolean visible = dropPosition != null;
                     return new PickupSample(
                         visible,
                         selectedItemOnClientThread(),
@@ -3198,6 +3244,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             reach,
             requireDryTarget,
             requirePlayerClearance,
+            true,
             PLACE_DIRECTIONS
         );
     }
@@ -3206,6 +3253,16 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         ScenarioReach reach,
         boolean requireDryTarget,
         boolean requirePlayerClearance,
+        Direction[] directions
+    ) {
+        return findPlaceablePairOnClientThread(reach, requireDryTarget, requirePlayerClearance, true, directions);
+    }
+
+    private static ScenarioBlockPair findPlaceablePairOnClientThread(
+        ScenarioReach reach,
+        boolean requireDryTarget,
+        boolean requirePlayerClearance,
+        boolean requireDirtSupport,
         Direction[] directions
     ) {
         Minecraft minecraft = requireInPlay();
@@ -3225,6 +3282,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                             reach,
                             requireDryTarget,
                             requirePlayerClearance,
+                            requireDirtSupport,
                             directions
                         );
                         if (pair != null) {
@@ -3599,14 +3657,23 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         ScenarioReach reach,
         boolean requireDryTarget,
         boolean requirePlayerClearance,
+        boolean requireDirtSupport,
         Direction[] directions
     ) {
         if (!isSolidLoaded(clicked)) {
             return null;
         }
         String clickedBlockId = blockIdAt(clicked);
-        if (!dropsAsDirt(clickedBlockId)) {
+        if (requireDirtSupport && !dropsAsDirt(clickedBlockId)) {
             return null;
+        }
+        if (!requireDirtSupport) {
+            Minecraft minecraft = requireInPlay();
+            BlockState state = minecraft.level.getBlockState(clicked);
+            if (!state.isCollisionShapeFullBlock(minecraft.level, clicked)
+                || state.getMenuProvider(minecraft.level, clicked) != null) {
+                return null;
+            }
         }
         for (Direction direction : directions) {
             BlockPos target = clicked.relative(direction);
@@ -4504,10 +4571,18 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         private final Direction face;
         private final CompletableFuture<Void> started = new CompletableFuture<>();
         private boolean startSent;
+        private int continueCalls;
+        private int continueAccepted;
 
         private BlockBreakAutomation(ScenarioBlockTarget target, Direction face) {
             this.target = target;
             this.face = face;
+        }
+
+        private String diagnostic() {
+            return "start_sent=" + startSent
+                + " continue_calls=" + continueCalls
+                + " continue_accepted=" + continueAccepted;
         }
     }
 

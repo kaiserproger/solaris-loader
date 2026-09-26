@@ -22,3 +22,6 @@ versionRange="[26.1.2]"
 ordering="NONE"
 side="CLIENT"
 
+[[mixins]]
+config="solaris-loader-input.mixins.json"
+

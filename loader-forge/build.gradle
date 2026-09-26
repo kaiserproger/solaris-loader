@@ -60,6 +60,7 @@ minecraft {
             jvmArgs '-Djava.net.preferIPv6Addresses=system',
                 '-XX:+UseCompactObjectHeaders'
             args '--username', clientMcpUsername.get()
+            args '--mixin.config', 'solaris-loader-input.mixins.json'
             environment 'MCP_MAPPINGS', '{mcp_mappings}'
             environment 'MOD_CLASSES', '{source_roots}'
             environment 'SOLARIS_CLIENT_MCP_TOKEN', clientMcpToken.get()
@@ -79,6 +80,7 @@ minecraft {
 tasks.named('jar', Jar) {
     dependsOn project(':loader-core').tasks.named('classes')
     from project(':loader-core').layout.buildDirectory.dir('classes/java/main')
+    manifest.attributes('MixinConfigs': 'solaris-loader-input.mixins.json')
 }
 
 tasks.configureEach {

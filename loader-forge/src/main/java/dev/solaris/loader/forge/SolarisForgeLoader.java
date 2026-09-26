@@ -31,6 +31,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
+import net.minecraftforge.client.event.AddGuiOverlayLayersEvent;
 import net.minecraftforge.client.event.ClientPlayerNetworkEvent;
 import net.minecraftforge.event.TickEvent.ClientTickEvent;
 import net.minecraftforge.fml.config.ConfigTracker;
@@ -68,7 +70,13 @@ public final class SolarisForgeLoader {
                 SolarisForgeLoader::onLoggingIn);
         ClientPlayerNetworkEvent.LoggingOut.BUS.addListener(
                 SolarisForgeLoader::onLoggingOut);
+        AddGuiOverlayLayersEvent.BUS.addListener(SolarisForgeLoader::registerGuiLayers);
         channel = buildChannel();
+    }
+
+    private static void registerGuiLayers(AddGuiOverlayLayersEvent event) {
+        event.getLayeredDraw().add(
+                Identifier.parse(LoaderMinecraftView.HUD_LAYER), LoaderMinecraftView::renderHud);
     }
 
     private static void onClientSetup(FMLClientSetupEvent event) {

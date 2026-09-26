@@ -34,10 +34,12 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.registries.DeferredBlock;
@@ -83,10 +85,16 @@ public final class SolarisNeoForgeLoader {
         BLOCKS.register(modBus);
         ITEMS.register(modBus);
         modBus.addListener(SolarisNeoForgeLoader::registerPayloads);
+        modBus.addListener(SolarisNeoForgeLoader::registerGuiLayers);
         NeoForge.EVENT_BUS.addListener(SolarisNeoForgeLoader::onClientTickPre);
         NeoForge.EVENT_BUS.addListener(SolarisNeoForgeLoader::onClientTickPost);
         NeoForge.EVENT_BUS.addListener(SolarisNeoForgeLoader::onLoggingIn);
         NeoForge.EVENT_BUS.addListener(SolarisNeoForgeLoader::onLoggingOut);
+    }
+
+    private static void registerGuiLayers(RegisterGuiLayersEvent event) {
+        event.registerAboveAll(
+                Identifier.parse(LoaderMinecraftView.HUD_LAYER), LoaderMinecraftView::renderHud);
     }
 
     private static void onClientTickPre(ClientTickEvent.Pre event) {

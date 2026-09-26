@@ -33,6 +33,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.fabricmc.fabric.api.networking.v1.PacketSender;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.DisconnectedScreen;
@@ -43,6 +44,7 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.chat.CommonComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.repository.RepositorySource;
 
 public final class SolarisFabricLoader implements ClientModInitializer {
@@ -79,6 +81,8 @@ public final class SolarisFabricLoader implements ClientModInitializer {
         repository.solaris$setSources(mutablePackSources(
                 repository.solaris$sources(),
                 RESOURCE_PACK.repositorySource()));
+        HudElementRegistry.addLast(
+                Identifier.parse(LoaderMinecraftView.HUD_LAYER), LoaderMinecraftView::renderHud);
         PayloadTypeRegistry.clientboundConfiguration()
                 .register(LoaderManifestPayload.TYPE, LoaderManifestPayload.CODEC);
         PayloadTypeRegistry.clientboundConfiguration()

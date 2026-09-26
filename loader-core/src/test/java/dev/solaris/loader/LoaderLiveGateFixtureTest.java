@@ -7,7 +7,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -42,28 +41,21 @@ final class LoaderLiveGateFixtureTest {
                 .getBytes(StandardCharsets.UTF_8);
 
         LoaderOutgoing outgoing =
-                new LoaderClientTransport().acceptManifest(manifest, environment(), cacheDirectory);
+                new LoaderClientTransport().acceptManifest(
+                        manifest, environment(LoaderPlatform.FABRIC), cacheDirectory);
         assertEquals(LoaderOutgoing.Kind.ACKNOWLEDGEMENT, outgoing.kind());
         LoaderActivatedContent active = outgoing.activatedContent();
 
         LoaderScreenDefinition rubyScreen = active.screens().get("ruby-live:showcase");
         assertEquals(LoaderScreenKind.SETTLEMENT, rubyScreen.kind());
-        assertEquals("Ruby Loader Fixture", rubyScreen.title());
         assertEquals("ruby-live:ruby", rubyScreen.itemId().orElseThrow());
         assertEquals("ruby-live:ruby_block", rubyScreen.blockId().orElseThrow());
-        assertEquals(
-                List.of(
-                        new LoaderWidget.PagedTable(
-                                "roster",
-                                List.of(new LoaderWidget.Column(
-                                        "name", "Name", LoaderWidget.Align.LEFT, 2))),
-                        new LoaderWidget.ResourcePanel(
-                                "cost",
-                                "Cost",
-                                List.of(new LoaderWidget.Entry("ruby", "Ruby"))),
-                        new LoaderWidget.ActionButton(
-                                "confirm", "Confirm Ruby", true, Optional.empty())),
-                rubyScreen.widgets());
+
+        LoaderScreenDefinition rubyHud = active.screens().get("ruby-live:hud");
+        assertEquals(LoaderScreenKind.HUD, rubyHud.kind());
+        LoaderScreenDefinition rubyInput = active.screens().get("ruby-live:input");
+        assertEquals(LoaderScreenKind.HUD, rubyInput.kind());
+        assertEquals(List.of(), rubyInput.widgets());
 
         LoaderScreenDefinition sapphireScreen = active.screens().get("sapphire-live:showcase");
         assertEquals("sapphire-live:sapphire", sapphireScreen.itemId().orElseThrow());
@@ -71,9 +63,20 @@ final class LoaderLiveGateFixtureTest {
         assertTrue(active.blocks().containsKey("ruby-live:ruby_block"));
         assertTrue(active.blocks().containsKey("sapphire-live:sapphire_block"));
         assertTrue(active.items().containsKey("ruby-live:ruby"));
+        assertTrue(active.items().containsKey("ruby-live:blade"));
         assertTrue(active.items().containsKey("sapphire-live:sapphire"));
         assertTrue(active.assets().containsKey("ruby-live:ruby_item_definition"));
+        assertTrue(active.assets().containsKey("ruby-live:blade_item_definition"));
         assertTrue(active.assets().containsKey("sapphire-live:sapphire_block_model"));
+
+        for (LoaderPlatform platform : List.of(LoaderPlatform.NEOFORGE, LoaderPlatform.FORGE)) {
+            LoaderOutgoing other = new LoaderClientTransport().acceptManifest(
+                    manifest, environment(platform), cacheDirectory);
+            assertEquals(LoaderOutgoing.Kind.ACKNOWLEDGEMENT, other.kind());
+            assertEquals(active.items().keySet(), other.activatedContent().items().keySet());
+            assertEquals(active.blocks().keySet(), other.activatedContent().blocks().keySet());
+            assertEquals(active.assets().keySet(), other.activatedContent().assets().keySet());
+        }
     }
 
     private static byte[] archive(String owner) throws Exception {
@@ -97,11 +100,11 @@ final class LoaderLiveGateFixtureTest {
                 """.formatted(owner, hash, size, CONTENT, PERMISSIONS);
     }
 
-    private static LoaderEnvironment environment() {
+    private static LoaderEnvironment environment(LoaderPlatform platform) {
         return new LoaderEnvironment() {
             @Override
             public LoaderPlatform platform() {
-                return LoaderPlatform.FABRIC;
+                return platform;
             }
 
             @Override

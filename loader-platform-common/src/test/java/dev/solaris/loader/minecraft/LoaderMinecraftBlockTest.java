@@ -23,6 +23,7 @@ final class LoaderMinecraftBlockTest {
                 "Catalog",
                 Optional.empty(),
                 Optional.of("example:ruby_block"),
+                List.of(),
                 List.of());
         LoaderBlockDefinition block = new LoaderBlockDefinition(
                 "example:ruby_block",
@@ -77,6 +78,7 @@ final class LoaderMinecraftBlockTest {
                 "Catalog",
                 Optional.empty(),
                 Optional.of("example:ruby_block"),
+                List.of(),
                 List.of());
 
         assertTrue(LoaderMinecraftBlock

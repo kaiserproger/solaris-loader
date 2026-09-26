@@ -981,7 +981,7 @@ final class ClientCommandsTest {
                 "click_screen_button",
                 """
                 {
-                  "expected_screen_class": "dev.solaris.loader.fabric.LoaderTextScreen",
+                  "expected_screen_class": "dev.solaris.loader.minecraft.LoaderViewScreen",
                   "expected_title": "Ruby Loader Fixture",
                   "button_label": "Confirm Ruby"
                 }
@@ -989,7 +989,7 @@ final class ClientCommandsTest {
             )).get("status").getAsString()
         );
         assertEquals(
-            "dev.solaris.loader.fabric.LoaderTextScreen",
+            "dev.solaris.loader.minecraft.LoaderViewScreen",
             client.expectedScreenClass
         );
         assertEquals("Ruby Loader Fixture", client.expectedScreenTitle);

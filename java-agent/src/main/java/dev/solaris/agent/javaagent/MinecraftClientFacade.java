@@ -869,7 +869,8 @@ public final class MinecraftClientFacade implements ClientFacade {
     ) throws Exception {
         MinecraftClientExecutor executor = new MinecraftClientExecutor();
         String blockId = executor.callOnClientThread(() -> blockIdAt(x, y, z));
-        ScenarioBreakResult result = new MinecraftScenarioClient(executor).breakBlock(
+        ScenarioBreakResult result = breakAndCollectDrop(
+            new MinecraftScenarioClient(executor),
             new ScenarioBlockTarget(x, y, z, face, "mcp", blockId),
             expectedDropItemId,
             expectedDropCount,
@@ -884,6 +885,42 @@ public final class MinecraftClientFacade implements ClientFacade {
         response.addProperty("selected_item_count", result.selectedItem().count());
         response.addProperty("pickup_detail", result.pickupDetail());
         return response;
+    }
+
+    static ScenarioBreakResult breakAndCollectDrop(
+        ScenarioClient client,
+        ScenarioBlockTarget target,
+        String expectedDropItemId,
+        int expectedDropCount,
+        Duration timeout
+    ) throws Exception {
+        if (expectedDropCount == 0) {
+            return client.breakBlock(target, expectedDropItemId, 0, timeout);
+        }
+        int initialInventoryCount = client.inventoryCount(expectedDropItemId);
+        ScenarioBreakResult broken = client.breakBlockUntilDropVisible(
+            target,
+            expectedDropItemId,
+            timeout
+        );
+        if (!broken.started() || !broken.becameAir() || !broken.sawDrop()) {
+            return broken;
+        }
+        ScenarioBreakResult pickup = client.collectVisibleItemDropFromInitialCount(
+            target,
+            expectedDropItemId,
+            initialInventoryCount,
+            expectedDropCount,
+            timeout
+        );
+        return new ScenarioBreakResult(
+            broken.started(),
+            broken.becameAir(),
+            broken.sawDrop(),
+            pickup.pickupRestored(),
+            pickup.selectedItem(),
+            pickup.pickupDetail()
+        );
     }
 
     @Override

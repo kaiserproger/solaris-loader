@@ -411,6 +411,16 @@ interface ScenarioClient {
         throw new UnsupportedOperationException("scenario client does not support visible item drop pickup probes");
     }
 
+    default ScenarioBreakResult collectVisibleItemDropFromInitialCount(
+        ScenarioBlockTarget near,
+        String expectedDropItemId,
+        int initialInventoryCount,
+        int expectedSelectedCount,
+        Duration timeout
+    ) throws Exception {
+        return collectVisibleItemDrop(near, expectedDropItemId, expectedSelectedCount, timeout);
+    }
+
     default ScenarioBreakResult collectVisibleItemDropByIdentity(
         ScenarioBlockTarget near,
         String expectedDropItemId,

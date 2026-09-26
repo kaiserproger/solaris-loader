@@ -1051,7 +1051,7 @@ final class PlayableRealClientLoopScenario {
         }
         ScenarioBlockPair pair = client.findUnobstructedPlaceablePair(ScenarioReach.WITHIN_SURVIVAL_REACH);
         if (pair == null) {
-            observations.add("blocked: no loaded dry target found for crafting table placement");
+            observations.add("blocked: no loaded unobstructed target found for crafting table placement");
             return new CraftingTableOpenResult(new ClientScenarioReport("blocked", id, observations), null);
         }
         observations.add(

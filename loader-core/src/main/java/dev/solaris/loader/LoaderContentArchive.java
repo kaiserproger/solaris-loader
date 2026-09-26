@@ -43,7 +43,9 @@ final class LoaderContentArchive {
     private static final Set<String> INDEX_FIELDS = Set.of(
             "schema", "screens", "world_previews", "blocks", "items", "assets", "sounds");
     private static final Set<String> SCREEN_FIELDS =
-            Set.of("id", "kind", "title", "item_id", "block_id", "widgets");
+            Set.of("id", "kind", "title", "item_id", "block_id", "widgets", "input_bindings");
+    private static final Set<String> INPUT_BINDING_FIELDS =
+            Set.of("key", "press_action", "release_action");
     private static final Set<String> PREVIEW_FIELDS = Set.of(
             "id",
             "blueprint_id",
@@ -269,9 +271,71 @@ final class LoaderContentArchive {
                         "Loader archive contains duplicate screen id " + id);
             }
             screens.add(new LoaderScreenDefinition(
-                    id, kind, title, itemId, blockId, widgets(screen)));
+                    id, kind, title, itemId, blockId, widgets(screen), inputBindings(screen, kind)));
         }
         return List.copyOf(screens);
+    }
+
+    /**
+     * The optional {@code input_bindings} of one screen: a bounded, key-unique
+     * and action-distinct declaration of native keyboard edges. Only a HUD
+     * screen may declare bindings; every name is validated here and resolved
+     * against the client's native input table before a view is installed.
+     */
+    private static List<LoaderInputBinding> inputBindings(
+            JsonObject screen,
+            LoaderScreenKind kind) {
+        List<JsonElement> entries = LoaderJson.optionalArray(
+                screen,
+                "input_bindings",
+                LoaderInputBinding.MAX_BINDINGS_PER_SCREEN,
+                "Loader screen input bindings");
+        if (entries.isEmpty()) {
+            return List.of();
+        }
+        if (kind != LoaderScreenKind.HUD) {
+            throw new IllegalArgumentException(
+                    "Loader input bindings require the hud screen kind");
+        }
+        List<LoaderInputBinding> bindings = new ArrayList<>(entries.size());
+        Set<String> keys = new HashSet<>();
+        Set<String> actions = new HashSet<>();
+        for (JsonElement entry : entries) {
+            JsonObject binding = LoaderJson.object(entry, "Loader input binding");
+            LoaderJson.rejectUnknown(binding, INPUT_BINDING_FIELDS, "Loader input binding");
+            String key = bindingKey(binding);
+            if (!keys.add(key)) {
+                throw new IllegalArgumentException(
+                        "Loader screen repeats input binding key " + key);
+            }
+            String pressAction = LoaderJson.identifier(
+                    binding, "press_action", "Loader input binding press action");
+            String releaseAction = LoaderJson.identifier(
+                    binding, "release_action", "Loader input binding release action");
+            if (!actions.add(pressAction) || !actions.add(releaseAction)) {
+                throw new IllegalArgumentException(
+                        "Loader screen repeats input binding action id");
+            }
+            bindings.add(new LoaderInputBinding(key, pressAction, releaseAction));
+        }
+        return List.copyOf(bindings);
+    }
+
+    private static String bindingKey(JsonObject binding) {
+        String key = LoaderJson.nonEmpty(
+                binding, "key", LoaderInputBinding.MAX_KEY_BYTES, "Loader input binding key");
+        if (!key.startsWith(LoaderInputBinding.KEY_PREFIX)) {
+            throw new IllegalArgumentException(
+                    "Loader input binding key must be a native "
+                            + LoaderInputBinding.KEY_PREFIX
+                            + "* name");
+        }
+        if (!key.substring(LoaderInputBinding.KEY_PREFIX.length())
+                .matches("[a-z0-9]+(\\.[a-z0-9]+)*")) {
+            throw new IllegalArgumentException(
+                    "Loader input binding key is not a canonical native keyboard name");
+        }
+        return key;
     }
 
     private static List<LoaderWidget> widgets(JsonObject screen) {
@@ -714,6 +778,10 @@ final class LoaderContentArchive {
             }
             itemIds.add(item.id());
         }
+        Set<String> previewIds = new HashSet<>();
+        for (LoaderWorldPreviewDefinition preview : index.worldPreviews()) {
+            previewIds.add(preview.id());
+        }
         for (LoaderScreenDefinition screen : index.screens()) {
             if (screen.itemId().isPresent()) {
                 String itemId = screen.itemId().orElseThrow();
@@ -730,6 +798,30 @@ final class LoaderContentArchive {
                     throw new IllegalArgumentException(
                             "Loader screen references an undeclared block " + blockId);
                 }
+            }
+            for (LoaderWidget widget : screen.widgets()) {
+                if (widget instanceof LoaderWidget.WorldMarker marker
+                        && marker.previewId().isPresent()
+                        && !previewIds.contains(marker.previewId().orElseThrow())) {
+                    throw new IllegalArgumentException(
+                            "Loader screen references an undeclared world preview "
+                                    + marker.previewId().orElseThrow());
+                }
+            }
+            if (screen.inputBindings().isEmpty()) {
+                continue;
+            }
+            if (!declared(bundle, LoaderContentKind.VIEW_ACTIONS)
+                    || !bundle.permissions().contains(LoaderPermission.SEND_VIEW_ACTIONS)) {
+                throw new IllegalArgumentException(
+                        "Loader input bindings require view_actions content and "
+                                + "send_view_actions permission");
+            }
+            for (LoaderInputBinding binding : screen.inputBindings()) {
+                requireOwnedIdentifier(
+                        binding.pressAction(), bundle.owner(), "input binding press action");
+                requireOwnedIdentifier(
+                        binding.releaseAction(), bundle.owner(), "input binding release action");
             }
         }
         for (LoaderWorldPreviewDefinition preview : index.worldPreviews()) {

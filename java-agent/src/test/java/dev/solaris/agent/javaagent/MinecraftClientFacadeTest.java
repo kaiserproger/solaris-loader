@@ -108,6 +108,41 @@ final class MinecraftClientFacadeTest {
     }
 
     @Test
+    void positiveBreakCollectsTheVisibleDropButZeroDropPreservesDirectBreak() throws Exception {
+        ScenarioBlockTarget target = new ScenarioBlockTarget(2, 64, -3, "up", "test", "minecraft:dirt");
+        ScenarioHeldItem held = new ScenarioHeldItem("minecraft:dirt", 1);
+        RespawnScenarioClient client = new RespawnScenarioClient(true);
+        client.visibleBreakResult = new ScenarioBreakResult(true, true, true, false, held);
+        client.collectedResult = new ScenarioBreakResult(true, true, true, true, held, "collected");
+
+        ScenarioBreakResult positive = MinecraftClientFacade.breakAndCollectDrop(
+            client,
+            target,
+            "minecraft:dirt",
+            1,
+            Duration.ofSeconds(5)
+        );
+        assertTrue(positive.passed());
+        assertEquals(1, client.visibleBreakCalls);
+        assertEquals(1, client.collectCalls);
+        assertEquals(client.inventoryCount, client.collectInitialInventoryCount);
+        assertEquals(0, client.directBreakCalls);
+
+        client.directBreakResult = new ScenarioBreakResult(true, true, false, false, held);
+        ScenarioBreakResult zero = MinecraftClientFacade.breakAndCollectDrop(
+            client,
+            target,
+            "minecraft:snowball",
+            0,
+            Duration.ofSeconds(5)
+        );
+        assertEquals(client.directBreakResult, zero);
+        assertEquals(1, client.directBreakCalls);
+        assertEquals(1, client.visibleBreakCalls);
+        assertEquals(1, client.collectCalls);
+    }
+
+    @Test
     void interactEntityReturnsTheObservedVanillaResultForTheCanonicalTarget() throws Exception {
         RespawnScenarioClient client = new RespawnScenarioClient(true);
         ScenarioEntityIdentity identity = new ScenarioEntityIdentity(
@@ -221,6 +256,14 @@ final class MinecraftClientFacadeTest {
         private Duration respawnTimeout;
         private ScenarioEntityInteraction entityInteraction;
         private ScenarioEntityInteractionResult entityInteractionResult;
+        private ScenarioBreakResult directBreakResult;
+        private ScenarioBreakResult visibleBreakResult;
+        private ScenarioBreakResult collectedResult;
+        private int inventoryCount;
+        private int collectInitialInventoryCount = -1;
+        private int directBreakCalls;
+        private int visibleBreakCalls;
+        private int collectCalls;
 
         private RespawnScenarioClient(boolean respawned) {
             this.respawned = respawned;
@@ -278,6 +321,11 @@ final class MinecraftClientFacadeTest {
             throw new UnsupportedOperationException("not used");
         }
 
+
+        @Override
+        public int inventoryCount(String itemId) {
+            return inventoryCount;
+        }
         @Override
         public ScenarioBreakResult breakBlock(
             ScenarioBlockTarget target,
@@ -285,7 +333,41 @@ final class MinecraftClientFacadeTest {
             int expectedSelectedCount,
             Duration timeout
         ) {
-            throw new UnsupportedOperationException("not used");
+            directBreakCalls++;
+            return directBreakResult;
+        }
+
+        @Override
+        public ScenarioBreakResult breakBlockUntilDropVisible(
+            ScenarioBlockTarget target,
+            String expectedDropItemId,
+            Duration timeout
+        ) {
+            visibleBreakCalls++;
+            return visibleBreakResult;
+        }
+
+        @Override
+        public ScenarioBreakResult collectVisibleItemDrop(
+            ScenarioBlockTarget target,
+            String expectedDropItemId,
+            int expectedSelectedCount,
+            Duration timeout
+        ) {
+            collectCalls++;
+            return collectedResult;
+        }
+
+        @Override
+        public ScenarioBreakResult collectVisibleItemDropFromInitialCount(
+            ScenarioBlockTarget target,
+            String expectedDropItemId,
+            int initialInventoryCount,
+            int expectedSelectedCount,
+            Duration timeout
+        ) throws Exception {
+            collectInitialInventoryCount = initialInventoryCount;
+            return collectVisibleItemDrop(target, expectedDropItemId, expectedSelectedCount, timeout);
         }
 
         @Override

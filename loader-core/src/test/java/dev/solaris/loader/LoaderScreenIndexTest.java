@@ -36,7 +36,7 @@ final class LoaderScreenIndexTest {
                  {"type":"action_button","action_id":"locked","label":"Locked",
                   "enabled":false,"deny_reason":"Garrison is not yours"},
                  {"type":"world_marker","id":"anchor","label":"Anchor","action_id":"place",
-                  "preview_id":"example:camp","formation":"wedge","radius":8}]
+                  "formation":"wedge","radius":8}]
                 """);
 
         assertEquals("Showcase", screen.title());
@@ -71,7 +71,7 @@ final class LoaderScreenIndexTest {
                                 "anchor",
                                 "Anchor",
                                 "place",
-                                Optional.of("example:camp"),
+                                Optional.empty(),
                                 Optional.of(LoaderFormation.WEDGE),
                                 Optional.of(8.0))),
                 screen.widgets());
@@ -79,6 +79,16 @@ final class LoaderScreenIndexTest {
                 new LoaderWidget.Tabs("pages", List.of(new LoaderWidget.Entry("one", "One"))),
                 screen.widget("pages").orElseThrow());
         assertEquals(Optional.empty(), screen.widget("missing"));
+    }
+
+    @Test
+    void worldMarkerRefusesAnUndeclaredPreview() {
+        assertScreenRejected(
+                "settlement",
+                """
+                [{"type":"world_marker","id":"anchor","label":"Anchor",
+                  "action_id":"place","preview_id":"example:absent"}]
+                """);
     }
 
     @Test

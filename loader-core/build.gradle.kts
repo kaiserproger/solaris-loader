@@ -15,4 +15,8 @@ val solarisRepoRoot = providers.environmentVariable("SOLARIS_REPO_ROOT")
 
 tasks.test {
     systemProperty("solaris.repoRoot", solarisRepoRoot.get())
+    inputs.files(
+        file("${solarisRepoRoot.get()}/examples/loader-live-gate/plugins/ruby-live/client/rich-content.zip"),
+        file("${solarisRepoRoot.get()}/examples/loader-live-gate/plugins/sapphire-live/client/rich-content.zip"),
+    )
 }

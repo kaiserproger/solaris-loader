@@ -1,11 +1,10 @@
 package dev.solaris.loader.minecraft;
 
-import dev.solaris.loader.LoaderFormation;
 import dev.solaris.loader.LoaderScreenDefinition;
 import dev.solaris.loader.LoaderViewActionRequest;
-import dev.solaris.loader.LoaderViewMessage;
 import dev.solaris.loader.LoaderViewModel;
 import dev.solaris.loader.LoaderWidget;
+import dev.solaris.loader.LoaderWorldPreviewDefinition;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -28,24 +27,33 @@ import net.minecraft.world.item.ItemStack;
 /**
  * One declarative Loader view instance: the presented model, its declared
  * widgets and the closed wire-3 action sink. Actions carry the exact instance
- * id, revision and action id with a per-instance increasing sequence; a
- * `present_view` replaces the model and resets the sequence, and a disabled
+ * id, revision and action id with a sequence increasing within that revision.
+ * A `present_view` replaces the model and restarts its sequence; a disabled
  * action sends nothing.
+ *
+ * <p>The same renderer serves the modal kind on the client's screen stack and,
+ * with {@code hud}, the non-modal kind that extracts only its declared widgets
+ * into the native HUD layer.
  */
 final class LoaderViewScreen extends Screen {
     static final int MARGIN = 8;
     private static final int SPACING = 4;
-    private static final int TOP_MARGIN = 24;
+    static final int TOP_MARGIN = 24;
     private static final int NAV_HEIGHT = 28;
     private static final int NAV_BUTTON_WIDTH = 110;
     private static final int EDIT_WIDTH = 160;
     private static final int ACTION_WIDTH = 200;
+    private static final int MAX_PREVIEW_CELLS = 4096;
+    private static final String PREVIEW_SYMBOLS =
+            "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static final int MAX_WRAPPED_ROWS = 8;
 
     private final String viewInstanceId;
     private final LoaderScreenDefinition definition;
     private final List<ItemStack> displayItems;
+    private final Map<String, LoaderWorldPreviewDefinition> worldPreviews;
     private final Consumer<byte[]> send;
+    private final boolean hud;
     private final Map<String, String> fieldText = new LinkedHashMap<>();
     private final Map<String, Integer> selections = new LinkedHashMap<>();
     private long revision;
@@ -54,23 +62,46 @@ final class LoaderViewScreen extends Screen {
     private int contentPage;
     private String selectedTab;
 
+    /**
+     * One declared view: {@code hud} selects the non-modal presentation, which
+     * extracts exactly the declared widgets and nothing else, so a HUD with no
+     * declared widgets renders nothing; the modal presentation keeps the page,
+     * reason and undeclared-model chrome the client has always shown.
+     */
     LoaderViewScreen(
-            LoaderViewMessage.Open open,
+            String viewInstanceId,
+            long revision,
+            Component title,
             LoaderScreenDefinition definition,
+            LoaderViewModel model,
             List<ItemStack> displayItems,
-            Consumer<byte[]> send) {
-        super(Component.literal(open.title()));
-        viewInstanceId = open.viewInstanceId();
-        revision = open.revision();
-        model = open.model();
+            Map<String, LoaderWorldPreviewDefinition> worldPreviews,
+            Consumer<byte[]> send,
+            boolean hud) {
+        super(title);
+        this.viewInstanceId = viewInstanceId;
+        this.revision = revision;
         this.definition = definition;
+        this.model = model;
+        this.worldPreviews = worldPreviews;
         this.displayItems = List.copyOf(displayItems);
         this.send = send;
+        this.hud = hud;
         seedEditors();
     }
 
     String viewInstanceId() {
         return viewInstanceId;
+    }
+
+    /**
+     * Re-lay out the declared widgets at a new GUI size; the non-modal HUD
+     * container follows the live window instead of the screen stack.
+     */
+    void relayout(int width, int height) {
+        this.width = Math.max(1, width);
+        this.height = Math.max(1, height);
+        rebuildWidgets();
     }
 
     /** Replace the presented model; prior actions and their sequence are dropped. */
@@ -103,7 +134,7 @@ final class LoaderViewScreen extends Screen {
             addRenderableWidget(widget);
             y += widget.getHeight() + SPACING;
         }
-        if (pages.size() > 1) {
+        if (pages.size() > 1 && !hud) {
             addPageControls(pages.size());
         }
     }
@@ -164,6 +195,10 @@ final class LoaderViewScreen extends Screen {
 
     private List<AbstractWidget[]> sections() {
         List<AbstractWidget[]> sections = new ArrayList<>();
+        if (hud) {
+            declared(sections, new LinkedHashSet<>(), new LinkedHashSet<>());
+            return sections;
+        }
         model.reason().ifPresent(reason ->
                 sections.add(new AbstractWidget[] {line("reason: " + reason)}));
         sections.add(new AbstractWidget[] {
@@ -182,11 +217,59 @@ final class LoaderViewScreen extends Screen {
         }
         Set<String> declaredActions = new LinkedHashSet<>();
         Set<String> declaredFields = new LinkedHashSet<>();
+        declared(sections, declaredActions, declaredFields);
+        for (LoaderViewModel.Action action : model.actions()) {
+            if (!declaredActions.contains(action.actionId())) {
+                sections.add(action(action.actionId(), action.label().orElse(action.actionId()),
+                        action.enabled(), action.denyReason()));
+            }
+        }
+        for (LoaderViewModel.Field field : model.fields()) {
+            if (!declaredFields.contains(field.id())) {
+                sections.add(new AbstractWidget[] {line(presented(field))});
+            }
+        }
+        for (LoaderViewModel.Marker marker : model.markers()) {
+            if (!canSelect(marker)) {
+                continue;
+            }
+            if (marker.selectionToken().isPresent()) {
+                String token = marker.selectionToken().orElseThrow();
+                sections.add(new AbstractWidget[] {
+                        Button.builder(
+                                        Component.literal("Select: "
+                                                + marker.actionId().orElse(marker.markerId())),
+                                        ignored -> act(
+                                                marker.actionId().orElse(marker.markerId()),
+                                                Optional.of(token)))
+                                .width(ACTION_WIDTH)
+                                .build()
+                });
+                sections.add(new AbstractWidget[] {
+                        Button.builder(
+                                        Component.literal("Cancel selection"),
+                                        ignored -> cancel(token))
+                                .width(ACTION_WIDTH)
+                                .build()
+                });
+            }
+        }
+        return sections;
+    }
+
+    /** The presented form of every widget the screen declares. */
+    private void declared(
+            List<AbstractWidget[]> sections,
+            Set<String> declaredActions,
+            Set<String> declaredFields) {
         for (LoaderWidget widget : definition.widgets()) {
             switch (widget) {
                 case LoaderWidget.PagedTable table -> table(table, sections);
                 case LoaderWidget.Tabs ignoredTabs -> {
-                    // Rendered from the presented tabs above.
+                    // Rendered from the presented tabs above; a HUD renders them here.
+                    if (hud && !model.tabs().isEmpty()) {
+                        sections.add(tabRow());
+                    }
                 }
                 case LoaderWidget.InputNumber number -> {
                     declaredFields.add(number.id());
@@ -211,44 +294,17 @@ final class LoaderViewScreen extends Screen {
                     declaredActions.add(button.actionId());
                     sections.add(action(button));
                 }
-                case LoaderWidget.WorldMarker marker -> sections.add(marker(marker));
+                case LoaderWidget.WorldMarker marker -> {
+                    declaredActions.add(marker.actionId());
+                    for (LoaderViewModel.Marker active : model.markers()) {
+                        if (active.markerId().equals(marker.id())) {
+                            preview(active).ifPresent(value -> appendPreview(value, sections));
+                            break;
+                        }
+                    }
+                }
             }
         }
-        for (LoaderViewModel.Action action : model.actions()) {
-            if (!declaredActions.contains(action.actionId())) {
-                sections.add(action(action.actionId(), action.label().orElse(action.actionId()),
-                        action.enabled(), action.denyReason()));
-            }
-        }
-        for (LoaderViewModel.Field field : model.fields()) {
-            if (!declaredFields.contains(field.id())) {
-                sections.add(new AbstractWidget[] {line(presented(field))});
-            }
-        }
-        for (LoaderViewModel.Marker marker : model.markers()) {
-            sections.add(new AbstractWidget[] {line(markerLine(marker))});
-            if (marker.selectionToken().isPresent()) {
-                String token = marker.selectionToken().orElseThrow();
-                sections.add(new AbstractWidget[] {
-                        Button.builder(
-                                        Component.literal("Select: "
-                                                + marker.actionId().orElse(marker.markerId())),
-                                        ignored -> act(
-                                                marker.actionId().orElse(marker.markerId()),
-                                                Optional.of(token)))
-                                .width(ACTION_WIDTH)
-                                .build()
-                });
-                sections.add(new AbstractWidget[] {
-                        Button.builder(
-                                        Component.literal("Cancel selection"),
-                                        ignored -> cancel(token))
-                                .width(ACTION_WIDTH)
-                                .build()
-                });
-            }
-        }
-        return sections;
     }
 
     private void table(LoaderWidget.PagedTable table, List<AbstractWidget[]> sections) {
@@ -366,21 +422,87 @@ final class LoaderViewScreen extends Screen {
         return field.id() + ": " + field.selected().orElseThrow();
     }
 
-    private AbstractWidget[] marker(LoaderWidget.WorldMarker declared) {
-        String preview = declared.previewId().orElse("none");
-        String formation = declared.formation().map(LoaderFormation::wireName).orElse("none");
-        String radius = declared.radius().map(LoaderViewLayout::number).orElse("none");
-        return new AbstractWidget[] {line(declared.label()
-                + " (action " + declared.actionId() + ", preview " + preview
-                + ", formation " + formation + ", radius " + radius + ")")};
+    private boolean canSelect(LoaderViewModel.Marker marker) {
+        for (LoaderWidget widget : definition.widgets()) {
+            if (widget instanceof LoaderWidget.WorldMarker declared
+                    && declared.id().equals(marker.markerId())
+                    && declared.actionId().equals(marker.actionId().orElse(""))) {
+                return declared.previewId().isEmpty() || preview(marker).isPresent();
+            }
+        }
+        return false;
     }
 
-    private String markerLine(LoaderViewModel.Marker marker) {
-        String formation = marker.formation().map(LoaderFormation::wireName).orElse("none");
-        String radius = marker.radius().map(LoaderViewLayout::number).orElse("none");
-        return "marker " + marker.markerId()
-                + (marker.selectionToken().isPresent() ? " [selection armed]" : "")
-                + " formation " + formation + " radius " + radius;
+    private Optional<LoaderWorldPreviewDefinition> preview(LoaderViewModel.Marker marker) {
+        for (LoaderWidget widget : definition.widgets()) {
+            if (!(widget instanceof LoaderWidget.WorldMarker declared)
+                    || !declared.id().equals(marker.markerId())
+                    || !declared.actionId().equals(marker.actionId().orElse(""))) {
+                continue;
+            }
+            LoaderWorldPreviewDefinition value = declared.previewId().map(worldPreviews::get).orElse(null);
+            if (value == null || value.blocks().isEmpty()
+                    || (long) value.sizeX() * value.sizeY() * value.sizeZ() > MAX_PREVIEW_CELLS
+                    || value.blocks().size() > MAX_PREVIEW_CELLS) {
+                return Optional.empty();
+            }
+            Set<String> materials = new LinkedHashSet<>();
+            for (LoaderWorldPreviewDefinition.Block block : value.blocks()) {
+                materials.add(block.blockId());
+                if (materials.size() > PREVIEW_SYMBOLS.length()) {
+                    return Optional.empty();
+                }
+            }
+            return Optional.of(value);
+        }
+        return Optional.empty();
+    }
+
+    private void appendPreview(
+            LoaderWorldPreviewDefinition preview,
+            List<AbstractWidget[]> sections) {
+        int turn = preview.rotation();
+        int width = (turn & 1) == 0 ? preview.sizeX() : preview.sizeZ();
+        int depth = (turn & 1) == 0 ? preview.sizeZ() : preview.sizeX();
+        char[][][] layers = new char[preview.sizeY()][depth][width];
+        Map<String, Character> symbols = new LinkedHashMap<>();
+        for (LoaderWorldPreviewDefinition.Block block : preview.blocks()) {
+            char symbol = symbols.computeIfAbsent(
+                    block.blockId(), ignored -> PREVIEW_SYMBOLS.charAt(symbols.size()));
+            int x = switch (turn) {
+                case 0 -> block.x();
+                case 1 -> preview.sizeZ() - 1 - block.z();
+                case 2 -> preview.sizeX() - 1 - block.x();
+                case 3 -> block.z();
+                default -> throw new IllegalStateException("validated preview turn");
+            };
+            int z = switch (turn) {
+                case 0 -> block.z();
+                case 1 -> block.x();
+                case 2 -> preview.sizeZ() - 1 - block.z();
+                case 3 -> preview.sizeX() - 1 - block.x();
+                default -> throw new IllegalStateException("validated preview turn");
+            };
+            layers[block.y()][z][x] = symbol;
+        }
+        sections.add(new AbstractWidget[] {line(
+                "Blueprint " + preview.blueprintId() + " @ " + (turn * 90)
+                        + " degrees, " + width + "x" + preview.sizeY() + "x" + depth
+                        + " (" + preview.contentHash().substring(0, 12) + ")")});
+        for (int y = preview.sizeY() - 1; y >= 0; y--) {
+            sections.add(new AbstractWidget[] {line("Layer Y+" + y)});
+            for (int z = 0; z < depth; z++) {
+                StringBuilder row = new StringBuilder(width);
+                for (int x = 0; x < width; x++) {
+                    char cell = layers[y][z][x];
+                    row.append(cell == 0 ? '.' : cell);
+                }
+                sections.add(new AbstractWidget[] {line(row.toString())});
+            }
+        }
+        for (Map.Entry<String, Character> entry : symbols.entrySet()) {
+            sections.add(new AbstractWidget[] {line(entry.getValue() + " " + entry.getKey())});
+        }
     }
 
     private String resource(String id) {

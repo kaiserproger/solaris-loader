@@ -23,6 +23,7 @@ final class LoaderViewTest {
             "Showcase",
             Optional.empty(),
             Optional.empty(),
+            List.of(),
             List.of());
     private static final LoaderActivatedContent CONTENT = new LoaderActivatedContent(
             List.of("example:content/1/hash"),
