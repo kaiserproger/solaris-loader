@@ -13,10 +13,10 @@ import org.junit.jupiter.api.io.TempDir;
 
 final class LoaderLiveGateFixtureTest {
     private static final String CONTENT =
-            "[\"blocks\",\"items\",\"views\",\"view_actions\",\"assets\"]";
+            "[\"blocks\",\"items\",\"views\",\"view_actions\",\"assets\",\"sounds\"]";
     private static final String PERMISSIONS =
             "[\"register_blocks\",\"register_items\",\"present_views\","
-                    + "\"send_view_actions\",\"load_assets\"]";
+                    + "\"send_view_actions\",\"load_assets\",\"play_sounds\"]";
 
     @TempDir
     Path cacheDirectory;
@@ -56,6 +56,10 @@ final class LoaderLiveGateFixtureTest {
         LoaderScreenDefinition rubyInput = active.screens().get("ruby-live:input");
         assertEquals(LoaderScreenKind.HUD, rubyInput.kind());
         assertEquals(List.of(), rubyInput.widgets());
+        assertEquals(5, rubyInput.inputBindings().size());
+        assertEquals(1, active.screens().get("sapphire-live:input").inputBindings().size());
+        assertTrue(active.sounds().containsKey("ruby-live:tone"));
+        assertTrue(active.sounds().containsKey("sapphire-live:tone"));
 
         LoaderScreenDefinition sapphireScreen = active.screens().get("sapphire-live:showcase");
         assertEquals("sapphire-live:sapphire", sapphireScreen.itemId().orElseThrow());
@@ -119,7 +123,8 @@ final class LoaderLiveGateFixtureTest {
                         LoaderPermission.REGISTER_ITEMS,
                         LoaderPermission.PRESENT_VIEWS,
                         LoaderPermission.SEND_VIEW_ACTIONS,
-                        LoaderPermission.LOAD_ASSETS);
+                        LoaderPermission.LOAD_ASSETS,
+                        LoaderPermission.PLAY_SOUNDS);
             }
 
             @Override

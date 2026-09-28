@@ -1,6 +1,12 @@
 package dev.solaris.agent.javaagent;
 
 import dev.solaris.agent.client.ClientTaskExecutor;
+import dev.solaris.agent.javaagent.ScenarioEntityWaits.EntityAttackConfirmation;
+import dev.solaris.agent.javaagent.ScenarioEntityWaits.EntityAttackStateSnapshot;
+import dev.solaris.agent.javaagent.ScenarioEntityWaits.EntityAttackWaitSource;
+import dev.solaris.agent.javaagent.ScenarioEntityWaits.EntityMotionSample;
+import dev.solaris.agent.javaagent.ScenarioEntityWaits.EntityStateSnapshot;
+import dev.solaris.agent.javaagent.ScenarioEntityWaits.EntityWaitSource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -27,6 +33,7 @@ import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.DyeColor;
 import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.item.crafting.display.ShapedCraftingRecipeDisplay;
 import net.minecraft.world.item.crafting.display.SlotDisplayContext;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.material.FluidState;
@@ -53,38 +60,34 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static dev.solaris.agent.javaagent.ScenarioClientState.awaitClientStateChange;
+import static dev.solaris.agent.javaagent.ScenarioClientState.awaitClientTick;
+import static dev.solaris.agent.javaagent.ScenarioClientState.requireInPlay;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.HORIZONTAL_DIRECTIONS;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.PLACE_DIRECTIONS;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.blockIdAt;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.blockPropertyMatches;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.breakableBlockTarget;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.clearFoliageObstacleTowardOnClientThread;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.closestAccessibleFace;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.direction;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.findBreakableBlockOnClientThread;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.findHorizontalAttachmentPairOnClientThread;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.findOccupiedPairOnClientThread;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.findPlaceablePairOnClientThread;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.findTillableSoilOnClientThread;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.hitResult;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.isPlayerPassable;
+import static dev.solaris.agent.javaagent.ScenarioBlockTargets.pos;
+
 public final class MinecraftScenarioClient implements ScenarioClient {
-    private static final double SURVIVAL_REACH_SQUARED = 20.25;
-    private static final double FAR_REACH_SQUARED = 25.0;
     private static final double PICKUP_APPROACH_DISTANCE_SQUARED = 4.0;
     private static final double POSITION_APPROACH_DISTANCE_SQUARED = 2.25;
-    private static final int FAR_SCAN_RADIUS = 12;
-    private static final int NATURAL_BREAKABLE_SCAN_RADIUS = 64;
-    private static final int NATURAL_BREAKABLE_SCAN_DOWN = 32;
-    private static final int NATURAL_BREAKABLE_SCAN_UP = 16;
-    private static final int APPROACHABLE_SCAN_DOWN = 4;
-    private static final int APPROACHABLE_SCAN_UP = 5;
-    private static final int[] NATURAL_BREAKABLE_SCAN_VERTICAL_OFFSETS = naturalBreakableScanVerticalOffsets();
-    private static final Direction[] HORIZONTAL_DIRECTIONS = {
+    private static final Direction[] HUNGER_DRAIN_DIRECTIONS = {
         Direction.EAST,
         Direction.WEST,
         Direction.SOUTH,
         Direction.NORTH
-    };
-    private static final Direction[] PLACE_DIRECTIONS = {
-        Direction.UP,
-        Direction.EAST,
-        Direction.WEST,
-        Direction.SOUTH,
-        Direction.NORTH
-    };
-    private static final Direction[] BREAK_DIRECTIONS = {
-        Direction.EAST,
-        Direction.WEST,
-        Direction.SOUTH,
-        Direction.NORTH,
-        Direction.UP,
-        Direction.DOWN
     };
     private static final AtomicReference<BlockBreakAutomation> ACTIVE_BLOCK_BREAK =
         new AtomicReference<>();
@@ -425,11 +428,18 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         });
     }
 
+    /**
+     * The recipe book entry that crafts {@code itemId}. Several entries can share a
+     * result (a bed from wool and planks, or the shapeless re-dye of any bed), so a
+     * shaped recipe wins over a shapeless one and the lowest display id breaks ties.
+     */
     @Override
     public int recipeDisplayIdForResult(String itemId) throws Exception {
         return executor.callOnClientThread(() -> {
             Minecraft minecraft = requireInPlay();
             var context = SlotDisplayContext.fromLevel(minecraft.level);
+            int best = -1;
+            boolean bestShaped = false;
             for (var collection : minecraft.player.getRecipeBook().getCollections()) {
                 for (var entry : collection.getRecipes()) {
                     boolean matches = entry.resultItems(context).stream().anyMatch(stack ->
@@ -439,12 +449,18 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                                 itemId
                             )
                     );
-                    if (matches) {
-                        return entry.id().index();
+                    if (!matches) {
+                        continue;
+                    }
+                    int index = entry.id().index();
+                    boolean shaped = entry.display() instanceof ShapedCraftingRecipeDisplay;
+                    if (best < 0 || (shaped && !bestShaped) || (shaped == bestShaped && index < best)) {
+                        best = index;
+                        bestShaped = shaped;
                     }
                 }
             }
-            return -1;
+            return best;
         });
     }
 
@@ -549,59 +565,18 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         return finalSample;
     }
 
-    @Override
     public boolean waitForScreenClassName(String className, Duration duration) throws Exception {
-        long deadlineNanos = System.nanoTime() + duration.toNanos();
-        boolean finalSample = false;
-        do {
-            long observedVersion = ClientStateEvents.version();
-            finalSample = executor.callOnClientThread(() -> {
-                Minecraft minecraft = requireInPlay();
-                return minecraft.screen != null
-                    && Objects.equals(minecraft.screen.getClass().getName(), className);
-            });
-            if (finalSample || !awaitClientStateChange(observedVersion, deadlineNanos)) {
-                break;
-            }
-        } while (true);
-        return finalSample;
+        return ScenarioContainerActions.waitForScreenClassName(executor, className, duration);
     }
 
     @Override
     public boolean closeCurrentScreen(Duration duration) throws Exception {
-        long deadlineNanos = System.nanoTime() + duration.toNanos();
-        boolean finalSample = false;
-        do {
-            long observedVersion = ClientStateEvents.version();
-            finalSample = executor.callOnClientThread(() -> {
-                Minecraft minecraft = requireInPlay();
-                return closeCurrentScreenOnClientThread(minecraft);
-            });
-            if (finalSample) {
-                return true;
-            }
-            if (!awaitClientStateChange(observedVersion, deadlineNanos)) {
-                break;
-            }
-        } while (true);
-        return finalSample;
-    }
-
-    static boolean closeCurrentScreenOnClientThread(Minecraft minecraft) {
-        minecraft.options.pauseOnLostFocus = false;
-        if (minecraft.screen != null) {
-            minecraft.player.closeContainer();
-            minecraft.setScreen(null);
-        }
-        return minecraft.screen == null;
+        return ScenarioContainerActions.closeCurrentScreen(executor, duration);
     }
 
     @Override
     public int activeContainerId() throws Exception {
-        return executor.callOnClientThread(() -> {
-            Minecraft minecraft = requireInPlay();
-            return minecraft.player.containerMenu.containerId;
-        });
+        return executor.callOnClientThread(ScenarioContainerActions::activeContainerIdOnClientThread);
     }
 
     @Override
@@ -611,50 +586,13 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         int count,
         Duration duration
     ) throws Exception {
-        long deadlineNanos = System.nanoTime() + duration.toNanos();
-        do {
-            long observedVersion = ClientStateEvents.version();
-            ContainerClickAttempt attempt = executor.callOnClientThread(() -> {
-                Minecraft minecraft = requireInPlay();
-                AbstractContainerMenu menu = minecraft.player.containerMenu;
-                if (containerSlotMatchesOnClientThread(containerSlot, itemId, count)) {
-                    return new ContainerClickAttempt(true, null);
-                }
-                int sourceSlot = findMenuSlotWithItem(menu, itemId, count, containerSlot);
-                if (sourceSlot < 0) {
-                    return new ContainerClickAttempt(false, null);
-                }
-                ContainerUpdateCheckpoint checkpoint = new ContainerUpdateCheckpoint(
-                    menu.containerId,
-                    menu.getStateId()
-                );
-                minecraft.gameMode.handleContainerInput(
-                    menu.containerId,
-                    sourceSlot,
-                    0,
-                    ContainerInput.QUICK_MOVE,
-                    minecraft.player
-                );
-                return new ContainerClickAttempt(false, checkpoint);
-            });
-            if (attempt.alreadyMatched()) {
-                return true;
-            }
-            if (attempt.checkpoint() != null) {
-                return waitForAuthoritativeContainerUpdate(
-                    attempt.checkpoint(),
-                    containerSlot,
-                    itemId,
-                    count,
-                    false,
-                    deadlineNanos
-                );
-            }
-            if (!awaitClientStateChange(observedVersion, deadlineNanos)) {
-                break;
-            }
-        } while (true);
-        return false;
+        return ScenarioContainerActions.moveSelectedItemToContainerSlot(
+            executor,
+            containerSlot,
+            itemId,
+            count,
+            duration
+        );
     }
 
     @Override
@@ -664,21 +602,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         int count,
         Duration duration
     ) throws Exception {
-        long deadlineNanos = System.nanoTime() + duration.toNanos();
-        boolean finalSample = false;
-        do {
-            long observedVersion = ClientStateEvents.version();
-            finalSample = executor.callOnClientThread(
-                () -> containerSlotMatchesOnClientThread(containerSlot, itemId, count)
-            );
-            if (finalSample) {
-                return true;
-            }
-            if (!awaitClientStateChange(observedVersion, deadlineNanos)) {
-                break;
-            }
-        } while (true);
-        return finalSample;
+        return ScenarioContainerActions.waitForContainerSlot(executor, containerSlot, itemId, count, duration);
     }
 
     @Override
@@ -688,259 +612,42 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         int count,
         Duration duration
     ) throws Exception {
-        ContainerClickAttempt attempt = executor.callOnClientThread(() -> {
-            Minecraft minecraft = requireInPlay();
-            AbstractContainerMenu menu = minecraft.player.containerMenu;
-            if (containerSlotEmptyOnClientThread(containerSlot)) {
-                return new ContainerClickAttempt(true, null);
-            }
-            if (
-                containerSlot < 0
-                    || containerSlot >= menu.slots.size()
-                    || !itemStackMatches(menu.getSlot(containerSlot).getItem(), itemId, count)
-            ) {
-                return new ContainerClickAttempt(false, null);
-            }
-            ContainerUpdateCheckpoint checkpoint = new ContainerUpdateCheckpoint(
-                menu.containerId,
-                menu.getStateId()
-            );
-            minecraft.gameMode.handleContainerInput(
-                menu.containerId,
-                containerSlot,
-                0,
-                ContainerInput.QUICK_MOVE,
-                minecraft.player
-            );
-            return new ContainerClickAttempt(false, checkpoint);
-        });
-        if (attempt.alreadyMatched()) {
-            return true;
-        }
-        if (attempt.checkpoint() == null) {
-            return false;
-        }
-        return waitForAuthoritativeContainerUpdate(
-            attempt.checkpoint(),
+        return ScenarioContainerActions.moveContainerSlotToInventory(
+            executor,
             containerSlot,
             itemId,
             count,
-            true,
-            System.nanoTime() + duration.toNanos()
+            duration
         );
-    }
-
-    private boolean waitForAuthoritativeContainerUpdate(
-        ContainerUpdateCheckpoint checkpoint,
-        int containerSlot,
-        String itemId,
-        int count,
-        boolean expectEmpty,
-        long deadlineNanos
-    ) throws Exception {
-        boolean finalSample = false;
-        do {
-            long observedVersion = ClientStateEvents.version();
-            finalSample = executor.callOnClientThread(() -> {
-                Minecraft minecraft = requireInPlay();
-                AbstractContainerMenu menu = minecraft.player.containerMenu;
-                boolean slotMatches = expectEmpty
-                    ? containerSlotEmptyOnClientThread(containerSlot)
-                    : containerSlotMatchesOnClientThread(containerSlot, itemId, count);
-                return ScenarioClient.authoritativeContainerUpdateMatches(
-                    checkpoint.containerId(),
-                    checkpoint.stateId(),
-                    menu.containerId,
-                    menu.getStateId(),
-                    slotMatches
-                );
-            });
-            if (finalSample || !awaitClientStateChange(observedVersion, deadlineNanos)) {
-                break;
-            }
-        } while (true);
-        return finalSample;
     }
 
     @Override
     public boolean waitForContainerSlotEmpty(int containerSlot, Duration duration) throws Exception {
-        long deadlineNanos = System.nanoTime() + duration.toNanos();
-        boolean finalSample = false;
-        do {
-            long observedVersion = ClientStateEvents.version();
-            finalSample = executor.callOnClientThread(
-                () -> containerSlotEmptyOnClientThread(containerSlot)
-            );
-            if (finalSample) {
-                return true;
-            }
-            if (!awaitClientStateChange(observedVersion, deadlineNanos)) {
-                break;
-            }
-        } while (true);
-        return finalSample;
+        return ScenarioContainerActions.waitForContainerSlotEmpty(executor, containerSlot, duration);
     }
 
     @Override
     public boolean quickMoveContainerSlot(int containerSlot, Duration duration) throws Exception {
-        if (containerSlot < 0 || containerSlot > Short.MAX_VALUE) {
-            throw new IllegalArgumentException("container slot must be between 0 and " + Short.MAX_VALUE);
-        }
-        ContainerUpdateCheckpoint checkpoint = executor.callOnClientThread(() -> {
-            Minecraft minecraft = requireInPlay();
-            AbstractContainerMenu menu = minecraft.player.containerMenu;
-            if (containerSlot >= menu.slots.size()) {
-                throw new IllegalArgumentException(
-                    "container slot " + containerSlot + " is outside menu size " + menu.slots.size()
-                );
-            }
-            ContainerUpdateCheckpoint before = new ContainerUpdateCheckpoint(
-                menu.containerId,
-                menu.getStateId()
-            );
-            minecraft.gameMode.handleContainerInput(
-                menu.containerId,
-                containerSlot,
-                0,
-                ContainerInput.QUICK_MOVE,
-                minecraft.player
-            );
-            return before;
-        });
-        return waitForContainerStateAdvance(checkpoint, System.nanoTime() + duration.toNanos());
+        return ScenarioContainerActions.quickMoveContainerSlot(executor, containerSlot, duration);
     }
 
     public boolean clickContainerSlot(int containerSlot, String button, Duration duration) throws Exception {
-        if (containerSlot < 0 || containerSlot > Short.MAX_VALUE) {
-            throw new IllegalArgumentException("container slot must be between 0 and " + Short.MAX_VALUE);
-        }
-        int mouseButton = switch (button) {
-            case "primary" -> 0;
-            case "secondary" -> 1;
-            default -> throw new IllegalArgumentException("button must be primary or secondary");
-        };
-        ContainerClickCheckpoint checkpoint = executor.callOnClientThread(() -> {
-            Minecraft minecraft = requireInPlay();
-            AbstractContainerMenu menu = minecraft.player.containerMenu;
-            if (!(minecraft.screen instanceof AbstractContainerScreen<?> screen)
-                || screen.getMenu() != menu) {
-                throw new IllegalStateException("no visible container menu is open");
-            }
-            if (containerSlot >= menu.slots.size()) {
-                throw new IllegalArgumentException(
-                    "container slot " + containerSlot + " is outside menu size " + menu.slots.size()
-                );
-            }
-            ContainerClickCheckpoint before = new ContainerClickCheckpoint(
-                menu.containerId,
-                menu.getStateId(),
-                ClientStateEvents.containerPacketVersion()
-            );
-            minecraft.gameMode.handleContainerInput(
-                menu.containerId,
-                containerSlot,
-                mouseButton,
-                ContainerInput.PICKUP,
-                minecraft.player
-            );
-            return before;
-        });
-        return waitForContainerUpdate(checkpoint, System.nanoTime() + duration.toNanos());
+        return ScenarioContainerActions.clickContainerSlot(executor, containerSlot, button, duration);
     }
 
     @Override
     public int findContainerSlot(String itemId, int count) throws Exception {
-        return executor.callOnClientThread(() -> {
-            Minecraft minecraft = requireInPlay();
-            AbstractContainerMenu menu = minecraft.player.containerMenu;
-            int chestSlotLimit = Math.min(27, menu.slots.size());
-            for (int slot = 0; slot < chestSlotLimit; slot++) {
-                if (itemStackMatches(menu.getSlot(slot).getItem(), itemId, count)) {
-                    return slot;
-                }
-            }
-            return -1;
-        });
+        return ScenarioContainerActions.findContainerSlot(executor, itemId, count);
     }
 
     @Override
     public boolean clickContainerButton(int buttonId, Duration duration) throws Exception {
-        if (buttonId < 0) {
-            throw new IllegalArgumentException("container button id must be non-negative");
-        }
-        ContainerUpdateCheckpoint checkpoint = executor.callOnClientThread(() -> {
-            Minecraft minecraft = requireInPlay();
-            AbstractContainerMenu menu = minecraft.player.containerMenu;
-            ContainerUpdateCheckpoint before = new ContainerUpdateCheckpoint(
-                menu.containerId,
-                menu.getStateId()
-            );
-            minecraft.gameMode.handleInventoryButtonClick(menu.containerId, buttonId);
-            return before;
-        });
-        return waitForContainerStateAdvance(checkpoint, System.nanoTime() + duration.toNanos());
+        return ScenarioContainerActions.clickContainerButton(executor, buttonId, duration);
     }
 
     @Override
     public boolean containerSlotHasEnchantment(int slot, String enchantmentId, int level) throws Exception {
-        return executor.callOnClientThread(() -> {
-            Minecraft minecraft = requireInPlay();
-            AbstractContainerMenu menu = minecraft.player.containerMenu;
-            if (slot < 0 || slot >= menu.slots.size()) {
-                return false;
-            }
-            ItemStack stack = menu.getSlot(slot).getItem();
-            return stack.getEnchantments().entrySet().stream().anyMatch(entry ->
-                entry.getIntValue() == level
-                    && Objects.equals(entry.getKey().getRegisteredName(), enchantmentId)
-            );
-        });
-    }
-
-    private boolean waitForContainerStateAdvance(
-        ContainerUpdateCheckpoint checkpoint,
-        long deadlineNanos
-    ) throws Exception {
-        do {
-            long observedVersion = ClientStateEvents.version();
-            boolean advanced = executor.callOnClientThread(() -> {
-                Minecraft minecraft = requireInPlay();
-                AbstractContainerMenu menu = minecraft.player.containerMenu;
-                return menu.containerId == checkpoint.containerId()
-                    && menu.getStateId() != checkpoint.stateId();
-            });
-            if (advanced) {
-                return true;
-            }
-            if (!awaitClientStateChange(observedVersion, deadlineNanos)) {
-                return false;
-            }
-        } while (true);
-    }
-
-    private boolean waitForContainerUpdate(
-        ContainerClickCheckpoint checkpoint,
-        long deadlineNanos
-    ) throws Exception {
-        do {
-            long currentPacketVersion = ClientStateEvents.containerPacketVersion();
-            boolean updated = executor.callOnClientThread(() -> {
-                Minecraft minecraft = requireInPlay();
-                AbstractContainerMenu menu = minecraft.player.containerMenu;
-                return menu.containerId != checkpoint.containerId()
-                    || menu.getStateId() != checkpoint.stateId();
-            });
-            if (currentPacketVersion != checkpoint.containerPacketVersion() && updated) {
-                return true;
-            }
-            long remainingNanos = deadlineNanos - System.nanoTime();
-            if (remainingNanos <= 0L || !ClientStateEvents.awaitContainerPacket(
-                currentPacketVersion,
-                Duration.ofNanos(remainingNanos)
-            )) {
-                return false;
-            }
-        } while (true);
+        return ScenarioContainerActions.containerSlotHasEnchantment(executor, slot, enchantmentId, level);
     }
 
     @Override
@@ -1139,7 +846,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             throw new IllegalArgumentException("minimum vertical rise must not be negative");
         }
         EntityWaitSource source = entityWaitSource(entity.identity());
-        return waitForEntityMotion(
+        return ScenarioEntityWaits.waitForEntityMotion(
             source,
             entity.entityId(),
             entity.x(),
@@ -1168,7 +875,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         }
 
         ScenarioEntityIdentity identity = new ScenarioEntityIdentity(entityId, entityUuid, entityTypeId);
-        return waitForEntityMotion(
+        return ScenarioEntityWaits.waitForEntityMotion(
             entityWaitSource(identity),
             entityId,
             Double.NaN,
@@ -1181,76 +888,6 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         );
     }
 
-    static ScenarioEntityMotionObservation waitForEntityMotion(
-        EntityWaitSource source,
-        int entityId,
-        double initialX,
-        double initialY,
-        double initialZ,
-        boolean requireKinematics,
-        double minimumHorizontalDistance,
-        double minimumVerticalRise,
-        Duration timeout
-    ) throws Exception {
-        Object expectedLevel = source.captureLevel();
-        long deadlineNanos = System.nanoTime() + timeout.toNanos();
-        double startX = initialX;
-        double startZ = initialZ;
-        double lowestY = initialY;
-        double horizontalDistance = 0.0;
-        double verticalRise = 0.0;
-        double maxHorizontalSpeed = 0.0;
-        double minimumYawDelta = 180.0;
-        ScenarioEntityMotionObservation latest = null;
-
-        while (true) {
-            long observedVersion = source.stateVersion();
-            EntityStateSnapshot snapshot = source.snapshot();
-            requireSameClientLevel(expectedLevel, snapshot.level());
-            EntityMotionSample sample = snapshot.motion();
-            if (sample == null) {
-                return null;
-            }
-            if (!Double.isFinite(startX)) {
-                startX = sample.x();
-                startZ = sample.z();
-                lowestY = sample.y();
-            }
-
-            horizontalDistance = Math.max(
-                horizontalDistance,
-                Math.hypot(sample.x() - startX, sample.z() - startZ)
-            );
-            lowestY = Math.min(lowestY, sample.y());
-            verticalRise = Math.max(verticalRise, sample.y() - lowestY);
-            maxHorizontalSpeed = Math.max(maxHorizontalSpeed, sample.horizontalSpeed());
-            if (Double.isFinite(sample.yawDelta())) {
-                minimumYawDelta = Math.min(minimumYawDelta, sample.yawDelta());
-            }
-            latest = new ScenarioEntityMotionObservation(
-                sample.entityTypeId(),
-                entityId,
-                sample.x(),
-                sample.y(),
-                sample.z(),
-                horizontalDistance,
-                verticalRise,
-                maxHorizontalSpeed,
-                minimumYawDelta
-            );
-            if (
-                horizontalDistance >= minimumHorizontalDistance
-                    && verticalRise >= minimumVerticalRise
-                    && (!requireKinematics
-                        || (maxHorizontalSpeed > 0.0 && minimumYawDelta < 180.0))
-            ) {
-                return latest;
-            }
-            if (!source.awaitStateChange(observedVersion, deadlineNanos)) {
-                return latest;
-            }
-        }
-    }
 
     public boolean waitForEntityRemoved(
         int entityId,
@@ -1259,16 +896,16 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         Duration timeout
     ) throws Exception {
         ScenarioEntityIdentity identity = new ScenarioEntityIdentity(entityId, entityUuid, entityTypeId);
-        return waitForEntityRemoved(entityWaitSource(identity), timeout);
+        return ScenarioEntityWaits.waitForEntityRemoved(entityWaitSource(identity), timeout);
     }
 
-    public EntityAttackConfirmation waitForEntityAttackConfirmation(
+    public ScenarioEntityWaits.EntityAttackConfirmation waitForEntityAttackConfirmation(
         ScenarioEntityIdentity identity,
         Object expectedLevel,
         float healthBefore,
         Duration timeout
     ) throws Exception {
-        return waitForEntityAttackConfirmation(
+        return ScenarioEntityWaits.waitForEntityAttackConfirmation(
             entityAttackWaitSource(identity),
             expectedLevel,
             healthBefore,
@@ -1276,48 +913,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         );
     }
 
-    static EntityAttackConfirmation waitForEntityAttackConfirmation(
-        EntityAttackWaitSource source,
-        Object expectedLevel,
-        float healthBefore,
-        Duration timeout
-    ) throws Exception {
-        long deadlineNanos = System.nanoTime() + timeout.toNanos();
-        while (true) {
-            long observedVersion = source.stateVersion();
-            EntityAttackStateSnapshot snapshot = source.snapshot();
-            requireSameClientLevel(expectedLevel, snapshot.level());
-            if (!snapshot.present()) {
-                return new EntityAttackConfirmation(true, true, snapshot.health());
-            }
-            if (
-                Float.isFinite(healthBefore)
-                    && Float.isFinite(snapshot.health())
-                    && snapshot.health() < healthBefore
-            ) {
-                return new EntityAttackConfirmation(true, false, snapshot.health());
-            }
-            if (!source.awaitStateChange(observedVersion, deadlineNanos)) {
-                return new EntityAttackConfirmation(false, false, snapshot.health());
-            }
-        }
-    }
 
-    static boolean waitForEntityRemoved(EntityWaitSource source, Duration timeout) throws Exception {
-        Object expectedLevel = source.captureLevel();
-        long deadlineNanos = System.nanoTime() + timeout.toNanos();
-        while (true) {
-            long observedVersion = source.stateVersion();
-            EntityStateSnapshot snapshot = source.snapshot();
-            requireSameClientLevel(expectedLevel, snapshot.level());
-            if (!snapshot.present()) {
-                return true;
-            }
-            if (!source.awaitStateChange(observedVersion, deadlineNanos)) {
-                return false;
-            }
-        }
-    }
 
     private EntityWaitSource entityWaitSource(ScenarioEntityIdentity identity) {
         return new EntityWaitSource() {
@@ -1389,11 +985,6 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         };
     }
 
-    private static void requireSameClientLevel(Object expected, Object observed) {
-        if (observed != expected) {
-            throw new IllegalStateException("client level changed while waiting for entity state");
-        }
-    }
 
     @Override
     public ScenarioPlayerObservation waitForVisiblePlayer(String playerName, Duration timeout) throws Exception {
@@ -1494,8 +1085,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     minecraft.options.keyJump.setDown(stepUp);
                     minecraft.options.keyLeft.setDown(nextDetourDirection < 0);
                     minecraft.options.keyRight.setDown(nextDetourDirection > 0);
-                    boolean inReach = minecraft.player.position().distanceToSqr(current.position())
-                        <= SURVIVAL_REACH_SQUARED;
+                    boolean inReach = ScenarioReach.WITHIN_SURVIVAL_REACH.includes(
+                        minecraft.player.position().distanceToSqr(current.position())
+                    );
                     return new EntityApproachSample(true, inReach, nextDetourDirection);
                 });
                 if (detourDirection == 0 && sample.detourDirection() != 0) {
@@ -1513,7 +1105,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 Minecraft minecraft = requireInPlay();
                 Entity current = entityByIdOnClientThread(entity.entityId());
                 return current != null
-                    && minecraft.player.position().distanceToSqr(current.position()) <= SURVIVAL_REACH_SQUARED;
+                    && ScenarioReach.WITHIN_SURVIVAL_REACH.includes(
+                        minecraft.player.position().distanceToSqr(current.position())
+                    );
             });
         } finally {
             executor.callOnClientThread(() -> {
@@ -1822,7 +1416,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             Minecraft minecraft = requireInPlay();
             ItemStack selected = minecraft.player.getInventory().getSelectedItem();
             float health = minecraft.player.getHealth();
-            if (!itemStackMatches(selected, itemId, 1)) {
+            if (!ScenarioContainerActions.itemStackMatches(selected, itemId, 1)) {
                 return new ShieldBlockSample(false, health, selected.getDamageValue());
             }
             minecraft.options.keyUse.setDown(true);
@@ -1850,7 +1444,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     minecraft.options.keyUse.setDown(true);
                     ItemStack selected = minecraft.player.getInventory().getSelectedItem();
                     return new ShieldBlockSample(
-                        itemStackMatches(selected, itemId, 1) && minecraft.player.isUsingItem(),
+                        ScenarioContainerActions.itemStackMatches(selected, itemId, 1) && minecraft.player.isUsingItem(),
                         minecraft.player.getHealth(),
                         selected.getDamageValue()
                     );
@@ -1897,7 +1491,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         do {
             long observedVersion = ClientStateEvents.version();
             finalSample = executor.callOnClientThread(
-                () -> containerSlotMatchesOnClientThread(armorMenuSlot, itemId, 1)
+                () -> ScenarioContainerActions.containerSlotMatchesOnClientThread(armorMenuSlot, itemId, 1)
             );
             if (finalSample) {
                 return true;
@@ -1911,14 +1505,14 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 AbstractContainerMenu menu = minecraft.player.containerMenu;
                 if (
                     armorMenuSlot < menu.slots.size()
-                        && itemStackMatches(menu.getSlot(armorMenuSlot).getItem(), itemId, 1)
+                        && ScenarioContainerActions.itemStackMatches(menu.getSlot(armorMenuSlot).getItem(), itemId, 1)
                 ) {
                     return null;
                 }
                 if (!selectedItemOnClientThread().matches(itemId, 1)) {
                     return null;
                 }
-                int sourceSlot = findMenuSlotWithItem(menu, itemId, 1, armorMenuSlot);
+                int sourceSlot = ScenarioContainerActions.findMenuSlotWithItem(menu, itemId, 1, armorMenuSlot);
                 if (sourceSlot < 0) {
                     return null;
                 }
@@ -1936,7 +1530,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             }
         } while (true);
         return executor.callOnClientThread(
-            () -> containerSlotMatchesOnClientThread(armorMenuSlot, itemId, 1)
+            () -> ScenarioContainerActions.containerSlotMatchesOnClientThread(armorMenuSlot, itemId, 1)
         );
     }
 
@@ -3024,7 +2618,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 ScenarioHeldItem selectedItem = selectedItemOnClientThread();
                 boolean slotMatches = minecraft.player.getInventory().getSelectedSlot()
                         == attempt.targetHotbarSlot()
-                    && itemStackMatches(
+                    && ScenarioContainerActions.itemStackMatches(
                         minecraft.player.getInventory().getItem(attempt.targetHotbarSlot()),
                         itemId,
                         count
@@ -3144,13 +2738,13 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         Minecraft minecraft = requireInPlay();
         for (int slot = 0; slot <= 8; slot++) {
             ItemStack stack = minecraft.player.getInventory().getItem(slot);
-            if (itemStackMatches(stack, itemId, count)) {
+            if (ScenarioContainerActions.itemStackMatches(stack, itemId, count)) {
                 selectHotbarSlotOnClientThread(slot);
                 return new HotbarSelectionAttempt(selectedItemOnClientThread(), null, slot);
             }
         }
         AbstractContainerMenu menu = minecraft.player.containerMenu;
-        int sourceSlot = findMenuSlotWithItem(menu, itemId, count, -1);
+        int sourceSlot = ScenarioContainerActions.findMenuSlotWithItem(menu, itemId, count, -1);
         if (sourceSlot >= 0) {
             int targetHotbarSlot = preferredHotbarSwapSlotOnClientThread();
             ContainerUpdateCheckpoint checkpoint = new ContainerUpdateCheckpoint(
@@ -3208,542 +2802,25 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         return new ScenarioUseResult(result.toString());
     }
 
-    private static ScenarioBlockPair findOccupiedPairOnClientThread(ScenarioReach reach) {
-        Minecraft minecraft = requireInPlay();
-        BlockPos origin = minecraft.player.blockPosition();
-        Vec3 eye = minecraft.player.getEyePosition();
-        for (int radius = 1; radius <= NATURAL_BREAKABLE_SCAN_RADIUS; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dz = -radius; dz <= radius; dz++) {
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
-                        continue;
-                    }
-                    for (int dy = -3; dy <= 1; dy++) {
-                        BlockPos clicked = origin.offset(dx, dy, dz);
-                        ScenarioBlockPair pair = firstSolidNeighbourPair(clicked, eye, reach);
-                        if (pair != null) {
-                            return pair;
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
 
-    private static ScenarioBlockPair findPlaceablePairOnClientThread(ScenarioReach reach, boolean requireDryTarget) {
-        return findPlaceablePairOnClientThread(reach, requireDryTarget, false);
-    }
 
-    private static ScenarioBlockPair findPlaceablePairOnClientThread(
-        ScenarioReach reach,
-        boolean requireDryTarget,
-        boolean requirePlayerClearance
-    ) {
-        return findPlaceablePairOnClientThread(
-            reach,
-            requireDryTarget,
-            requirePlayerClearance,
-            true,
-            PLACE_DIRECTIONS
-        );
-    }
 
-    private static ScenarioBlockPair findPlaceablePairOnClientThread(
-        ScenarioReach reach,
-        boolean requireDryTarget,
-        boolean requirePlayerClearance,
-        Direction[] directions
-    ) {
-        return findPlaceablePairOnClientThread(reach, requireDryTarget, requirePlayerClearance, true, directions);
-    }
 
-    private static ScenarioBlockPair findPlaceablePairOnClientThread(
-        ScenarioReach reach,
-        boolean requireDryTarget,
-        boolean requirePlayerClearance,
-        boolean requireDirtSupport,
-        Direction[] directions
-    ) {
-        Minecraft minecraft = requireInPlay();
-        BlockPos origin = minecraft.player.blockPosition();
-        Vec3 eye = minecraft.player.getEyePosition();
-        for (int radius = 1; radius <= NATURAL_BREAKABLE_SCAN_RADIUS; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dz = -radius; dz <= radius; dz++) {
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
-                        continue;
-                    }
-                    for (int dy = -3; dy <= 1; dy++) {
-                        BlockPos clicked = origin.offset(dx, dy, dz);
-                        ScenarioBlockPair pair = firstPlaceableNeighbourPair(
-                            clicked,
-                            eye,
-                            reach,
-                            requireDryTarget,
-                            requirePlayerClearance,
-                            requireDirtSupport,
-                            directions
-                        );
-                        if (pair != null) {
-                            return pair;
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
 
-    private static ScenarioBlockPair findHorizontalAttachmentPairOnClientThread(
-        ScenarioBlockTarget support,
-        ScenarioReach reach
-    ) {
-        Minecraft minecraft = requireInPlay();
-        BlockPos supportPos = pos(support);
-        if (!minecraft.level.isLoaded(supportPos) || minecraft.level.getBlockState(supportPos).isAir()) {
-            return null;
-        }
-        Vec3 eye = minecraft.player.getEyePosition();
-        for (Direction direction : HORIZONTAL_DIRECTIONS) {
-            BlockPos target = supportPos.relative(direction);
-            if (!isEmptyLoaded(target) || isPlayerSpace(target) || !isFluidNeighbourhoodEmpty(target)) {
-                continue;
-            }
-            double distance = eye.distanceToSqr(Vec3.atLowerCornerWithOffset(
-                supportPos,
-                cursorX(direction),
-                0.5,
-                cursorZ(direction)
-            ));
-            if (reach == ScenarioReach.WITHIN_SURVIVAL_REACH && distance > SURVIVAL_REACH_SQUARED) {
-                continue;
-            }
-            if (reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH && distance <= FAR_REACH_SQUARED) {
-                continue;
-            }
-            return new ScenarioBlockPair(
-                new ScenarioBlockTarget(
-                    support.x(),
-                    support.y(),
-                    support.z(),
-                    direction.getName(),
-                    "horizontal-attachment-support",
-                    blockIdAt(support)
-                ),
-                new ScenarioBlockTarget(
-                    target.getX(),
-                    target.getY(),
-                    target.getZ(),
-                    direction.getOpposite().getName(),
-                    "horizontal-attachment-target",
-                    blockIdAt(target)
-                )
-            );
-        }
-        return null;
-    }
 
-    private static ScenarioBlockPair findTillableSoilOnClientThread(ScenarioReach reach) {
-        Minecraft minecraft = requireInPlay();
-        BlockPos origin = minecraft.player.blockPosition();
-        Vec3 eye = minecraft.player.getEyePosition();
-        for (int radius = 1; radius <= NATURAL_BREAKABLE_SCAN_RADIUS; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dz = -radius; dz <= radius; dz++) {
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
-                        continue;
-                    }
-                    for (int dy = -3; dy <= 1; dy++) {
-                        BlockPos clicked = origin.offset(dx, dy, dz);
-                        if (!isSolidLoaded(clicked)) {
-                            continue;
-                        }
-                        String blockId = blockIdAt(clicked);
-                        if (!isTillableSoilBlockId(blockId)) {
-                            continue;
-                        }
-                        BlockPos target = clicked.above();
-                        if (!isEmptyLoaded(target)
-                            || isPlayerSpace(target)
-                            || !isFluidNeighbourhoodEmpty(target)) {
-                            continue;
-                        }
-                        double distance = eye.distanceToSqr(Vec3.atLowerCornerWithOffset(
-                            clicked,
-                            0.5,
-                            1.0,
-                            0.5
-                        ));
-                        if (reach == ScenarioReach.WITHIN_SURVIVAL_REACH
-                            && distance > SURVIVAL_REACH_SQUARED) {
-                            continue;
-                        }
-                        if (reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH
-                            && distance <= FAR_REACH_SQUARED) {
-                            continue;
-                        }
-                        return new ScenarioBlockPair(
-                            new ScenarioBlockTarget(
-                                clicked.getX(),
-                                clicked.getY(),
-                                clicked.getZ(),
-                                "up",
-                                reach.label() + "-tillable-soil",
-                                blockId
-                            ),
-                            new ScenarioBlockTarget(
-                                target.getX(),
-                                target.getY(),
-                                target.getZ(),
-                                "down",
-                                reach.label() + "-crop-target",
-                                blockIdAt(target)
-                            )
-                        );
-                    }
-                }
-            }
-        }
-        return null;
-    }
 
-    private static ScenarioBlockTarget findBreakableBlockOnClientThread(List<String> blockIds, ScenarioReach reach) {
-        Minecraft minecraft = requireInPlay();
-        BlockPos origin = minecraft.player.blockPosition();
-        Vec3 eye = minecraft.player.getEyePosition();
-        for (int radius = 1; radius <= NATURAL_BREAKABLE_SCAN_RADIUS; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dz = -radius; dz <= radius; dz++) {
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
-                        continue;
-                    }
-                    for (int dy : NATURAL_BREAKABLE_SCAN_VERTICAL_OFFSETS) {
-                        if (reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH && !isApproachableVerticalOffset(dy)) {
-                            continue;
-                        }
-                        BlockPos target = origin.offset(dx, dy, dz);
-                        ScenarioBlockTarget block = breakableBlockTarget(target, eye, reach, blockIds);
-                        if (block != null) {
-                            return block;
-                        }
-                    }
-                }
-            }
-        }
-        return null;
-    }
 
-    private static int[] naturalBreakableScanVerticalOffsets() {
-        int[] offsets = new int[NATURAL_BREAKABLE_SCAN_DOWN + NATURAL_BREAKABLE_SCAN_UP + 1];
-        int index = 0;
-        offsets[index++] = 0;
-        int max = Math.max(NATURAL_BREAKABLE_SCAN_DOWN, NATURAL_BREAKABLE_SCAN_UP);
-        for (int step = 1; step <= max; step++) {
-            if (step <= NATURAL_BREAKABLE_SCAN_UP) {
-                offsets[index++] = step;
-            }
-            if (step <= NATURAL_BREAKABLE_SCAN_DOWN) {
-                offsets[index++] = -step;
-            }
-        }
-        return offsets;
-    }
 
-    private static boolean isApproachableVerticalOffset(int dy) {
-        return dy >= -APPROACHABLE_SCAN_DOWN && dy <= APPROACHABLE_SCAN_UP;
-    }
 
-    private static boolean clearFoliageObstacleTowardOnClientThread(ScenarioBlockTarget target) {
-        Minecraft minecraft = requireInPlay();
-        Vec3 eye = minecraft.player.getEyePosition();
-        Vec3 center = Vec3.atLowerCornerWithOffset(pos(target), 0.5, 0.5, 0.5);
-        Vec3 delta = center.subtract(eye);
-        int steps = Math.max(1, (int) Math.ceil(delta.length() * 4.0));
-        BlockPos targetPos = pos(target);
-        for (int step = 1; step < steps; step++) {
-            double scale = (double) step / (double) steps;
-            Vec3 sample = eye.add(delta.scale(scale));
-            BlockPos obstacle = BlockPos.containing(sample);
-            if (clearFoliageBlockOnClientThread(minecraft, obstacle, targetPos)) {
-                return true;
-            }
-        }
-        return clearNearbyFoliageTowardOnClientThread(minecraft, targetPos, center);
-    }
 
-    private static boolean clearNearbyFoliageTowardOnClientThread(
-        Minecraft minecraft,
-        BlockPos targetPos,
-        Vec3 targetCenter
-    ) {
-        BlockPos origin = minecraft.player.blockPosition();
-        double currentDistance = minecraft.player.position().distanceToSqr(targetCenter);
-        for (int radius = 1; radius <= 2; radius++) {
-            for (int dx = -radius; dx <= radius; dx++) {
-                for (int dz = -radius; dz <= radius; dz++) {
-                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
-                        continue;
-                    }
-                    for (int dy = 0; dy <= 2; dy++) {
-                        BlockPos obstacle = origin.offset(dx, dy, dz);
-                        Vec3 obstacleCenter = Vec3.atLowerCornerWithOffset(obstacle, 0.5, 0.5, 0.5);
-                        if (obstacleCenter.distanceToSqr(targetCenter) >= currentDistance) {
-                            continue;
-                        }
-                        if (clearFoliageBlockOnClientThread(minecraft, obstacle, targetPos)) {
-                            return true;
-                        }
-                    }
-                }
-            }
-        }
-        return false;
-    }
 
-    private static boolean clearFoliageBlockOnClientThread(
-        Minecraft minecraft,
-        BlockPos obstacle,
-        BlockPos targetPos
-    ) {
-        if (obstacle.equals(targetPos) || !minecraft.level.isLoaded(obstacle)) {
-            return false;
-        }
-        BlockState state = minecraft.level.getBlockState(obstacle);
-        if (state.isAir()) {
-            return false;
-        }
-        String blockId = BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
-        if (!blockId.endsWith("_leaves")) {
-            return false;
-        }
-        minecraft.gameMode.startDestroyBlock(obstacle, Direction.UP);
-        minecraft.gameMode.continueDestroyBlock(obstacle, Direction.UP);
-        minecraft.player.swing(InteractionHand.MAIN_HAND);
-        return true;
-    }
 
-    private static ScenarioBlockTarget breakableBlockTarget(
-        BlockPos target,
-        Vec3 eye,
-        ScenarioReach reach,
-        List<String> blockIds
-    ) {
-        if (!isNonAirLoaded(target)) {
-            return null;
-        }
-        String blockId = blockIdAt(target);
-        if (!blockIds.contains(blockId)) {
-            return null;
-        }
-        Direction closestDirection = null;
-        double closestDistance = Double.POSITIVE_INFINITY;
-        for (Direction direction : BREAK_DIRECTIONS) {
-            if (!isBreakFaceAccessible(target, direction)) {
-                continue;
-            }
-            double distance = eye.distanceToSqr(Vec3.atLowerCornerWithOffset(
-                target,
-                cursorX(direction),
-                cursorY(direction),
-                cursorZ(direction)
-            ));
-            if (reach == ScenarioReach.WITHIN_SURVIVAL_REACH && distance > SURVIVAL_REACH_SQUARED) {
-                continue;
-            }
-            if (reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH && distance <= FAR_REACH_SQUARED) {
-                continue;
-            }
-            if (distance < closestDistance) {
-                closestDirection = direction;
-                closestDistance = distance;
-            }
-        }
-        if (closestDirection == null) {
-            return null;
-        }
-        return new ScenarioBlockTarget(
-            target.getX(),
-            target.getY(),
-            target.getZ(),
-            closestDirection.getName(),
-            reach.label() + "-breakable",
-            blockId
-        );
-    }
 
-    private static Direction closestAccessibleFace(BlockPos target, Vec3 eye) {
-        Direction closestDirection = null;
-        double closestDistance = Double.POSITIVE_INFINITY;
-        for (Direction direction : BREAK_DIRECTIONS) {
-            if (!isBreakFaceAccessible(target, direction)) {
-                continue;
-            }
-            double distance = eye.distanceToSqr(Vec3.atLowerCornerWithOffset(
-                target,
-                cursorX(direction),
-                cursorY(direction),
-                cursorZ(direction)
-            ));
-            if (distance < closestDistance) {
-                closestDirection = direction;
-                closestDistance = distance;
-            }
-        }
-        return closestDirection;
-    }
 
-    private static boolean isBreakFaceAccessible(BlockPos target, Direction direction) {
-        Minecraft minecraft = requireInPlay();
-        BlockPos neighbour = target.relative(direction);
-        if (!minecraft.level.isLoaded(neighbour)) {
-            return false;
-        }
-        BlockState state = minecraft.level.getBlockState(neighbour);
-        return state.isAir() || !state.blocksMotion();
-    }
 
-    private static ScenarioBlockPair firstSolidNeighbourPair(
-        BlockPos clicked,
-        Vec3 eye,
-        ScenarioReach reach
-    ) {
-        if (!isSolidLoaded(clicked)) {
-            return null;
-        }
-        for (Direction direction : HORIZONTAL_DIRECTIONS) {
-            BlockPos target = clicked.relative(direction);
-            if (!isSolidLoaded(target)) {
-                continue;
-            }
-            double distance = eye.distanceToSqr(Vec3.atLowerCornerWithOffset(
-                clicked,
-                cursorX(direction),
-                0.5,
-                cursorZ(direction)
-            ));
-            if (reach == ScenarioReach.WITHIN_SURVIVAL_REACH && distance > SURVIVAL_REACH_SQUARED) {
-                continue;
-            }
-            if (reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH && distance <= FAR_REACH_SQUARED) {
-                continue;
-            }
-            String face = direction.getName();
-            return new ScenarioBlockPair(
-                new ScenarioBlockTarget(
-                    clicked.getX(),
-                    clicked.getY(),
-                    clicked.getZ(),
-                    face,
-                    reach.label() + "-clicked",
-                    blockIdAt(clicked)
-                ),
-                new ScenarioBlockTarget(
-                    target.getX(),
-                    target.getY(),
-                    target.getZ(),
-                    direction.getOpposite().getName(),
-                    reach.label() + "-target",
-                    blockIdAt(target)
-                )
-            );
-        }
-        return null;
-    }
 
-    private static ScenarioBlockPair firstPlaceableNeighbourPair(
-        BlockPos clicked,
-        Vec3 eye,
-        ScenarioReach reach,
-        boolean requireDryTarget,
-        boolean requirePlayerClearance,
-        boolean requireDirtSupport,
-        Direction[] directions
-    ) {
-        if (!isSolidLoaded(clicked)) {
-            return null;
-        }
-        String clickedBlockId = blockIdAt(clicked);
-        if (requireDirtSupport && !dropsAsDirt(clickedBlockId)) {
-            return null;
-        }
-        if (!requireDirtSupport) {
-            Minecraft minecraft = requireInPlay();
-            BlockState state = minecraft.level.getBlockState(clicked);
-            if (!state.isCollisionShapeFullBlock(minecraft.level, clicked)
-                || state.getMenuProvider(minecraft.level, clicked) != null) {
-                return null;
-            }
-        }
-        for (Direction direction : directions) {
-            BlockPos target = clicked.relative(direction);
-            if (!isEmptyLoaded(target) || isPlayerSpace(target)) {
-                continue;
-            }
-            if (requireDryTarget && !isFluidNeighbourhoodEmpty(target)) {
-                continue;
-            }
-            if (
-                requirePlayerClearance
-                    && !hasFullBlockPlacementClearance(target)
-            ) {
-                continue;
-            }
-            double distance = eye.distanceToSqr(Vec3.atLowerCornerWithOffset(
-                clicked,
-                cursorX(direction),
-                cursorY(direction),
-                cursorZ(direction)
-            ));
-            if (reach == ScenarioReach.WITHIN_SURVIVAL_REACH && distance > SURVIVAL_REACH_SQUARED) {
-                continue;
-            }
-            if (reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH && distance <= FAR_REACH_SQUARED) {
-                continue;
-            }
-            return new ScenarioBlockPair(
-                new ScenarioBlockTarget(
-                    clicked.getX(),
-                    clicked.getY(),
-                    clicked.getZ(),
-                    direction.getName(),
-                    reach.label() + "-place-clicked",
-                    clickedBlockId
-                ),
-                new ScenarioBlockTarget(
-                    target.getX(),
-                    target.getY(),
-                    target.getZ(),
-                    direction.getOpposite().getName(),
-                    reach.label() + "-place-target",
-                    blockIdAt(target)
-                )
-            );
-        }
-        return null;
-    }
 
-    private static boolean hasFullBlockPlacementClearance(BlockPos target) {
-        Minecraft minecraft = requireInPlay();
-        BlockState state = Blocks.CRAFTING_TABLE.defaultBlockState();
-        return BlockPlacementClearance.allowsFullBlockPlacement(
-            state.canSurvive(minecraft.level, target),
-            minecraft.level.isUnobstructed(
-                state,
-                target,
-                CollisionContext.placementContext(minecraft.player)
-            )
-        );
-    }
 
-    private static boolean isPlayerPassable(BlockPos pos) {
-        Minecraft minecraft = requireInPlay();
-        if (!minecraft.level.isLoaded(pos)) {
-            return false;
-        }
-        BlockState state = minecraft.level.getBlockState(pos);
-        return (state.isAir() || !state.blocksMotion()) && minecraft.level.getFluidState(pos).isEmpty();
-    }
 
     private static List<int[]> safeHungerDrainWaypointsOnClientThread() {
         Minecraft minecraft = requireInPlay();
@@ -3752,7 +2829,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         if (!safeHungerDrainColumn(minecraft, origin)) {
             return waypoints;
         }
-        for (Direction direction : HORIZONTAL_DIRECTIONS) {
+        for (Direction direction : HUNGER_DRAIN_DIRECTIONS) {
             BlockPos endpoint = safeHungerDrainEndpoint(minecraft, origin, direction);
             if (endpoint != null) {
                 waypoints.add(new int[] {endpoint.getX(), endpoint.getZ()});
@@ -3826,72 +2903,12 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             || state.is(Blocks.WITHER_ROSE);
     }
 
-    private static boolean dropsAsDirt(String blockId) {
-        return switch (blockId) {
-            case "minecraft:dirt", "minecraft:coarse_dirt", "minecraft:grass_block", "minecraft:podzol" -> true;
-            default -> false;
-        };
-    }
 
-    private static boolean isTillableSoilBlockId(String blockId) {
-        return switch (blockId) {
-            case "minecraft:dirt", "minecraft:grass_block", "minecraft:dirt_path" -> true;
-            default -> false;
-        };
-    }
 
-    private static boolean isSolidLoaded(BlockPos pos) {
-        Minecraft minecraft = requireInPlay();
-        if (!minecraft.level.isLoaded(pos)) {
-            return false;
-        }
-        BlockState state = minecraft.level.getBlockState(pos);
-        return !state.isAir() && state.blocksMotion();
-    }
 
-    private static boolean isNonAirLoaded(BlockPos pos) {
-        Minecraft minecraft = requireInPlay();
-        return minecraft.level.isLoaded(pos) && !minecraft.level.getBlockState(pos).isAir();
-    }
 
-    private static boolean isEmptyLoaded(BlockPos pos) {
-        Minecraft minecraft = requireInPlay();
-        if (!minecraft.level.isLoaded(pos)) {
-            return false;
-        }
-        return minecraft.level.getBlockState(pos).isAir()
-            && minecraft.level.getFluidState(pos).isEmpty();
-    }
 
-    private static boolean isFluidNeighbourhoodEmpty(BlockPos pos) {
-        Minecraft minecraft = requireInPlay();
-        for (Direction direction : Direction.values()) {
-            BlockPos neighbour = pos.relative(direction);
-            if (!minecraft.level.isLoaded(neighbour)) {
-                return false;
-            }
-            if (!minecraft.level.getFluidState(neighbour).isEmpty()) {
-                return false;
-            }
-        }
-        return true;
-    }
 
-    private static boolean isPlayerSpace(BlockPos pos) {
-        Minecraft minecraft = requireInPlay();
-        var playerBox = minecraft.player.getBoundingBox();
-        return BlockPlacementClearance.intersects(
-            playerBox.minX,
-            playerBox.minY,
-            playerBox.minZ,
-            playerBox.maxX,
-            playerBox.maxY,
-            playerBox.maxZ,
-            pos.getX(),
-            pos.getY(),
-            pos.getZ()
-        );
-    }
 
     private static boolean itemDropVisibleOnClientThread(String itemId, BlockPos near) {
         return itemDropPositionOnClientThread(itemId, near) != null;
@@ -3904,7 +2921,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             if (
                 entity instanceof ItemEntity itemEntity
                     && !entity.isRemoved()
-                    && itemStackMatches(itemEntity.getItem(), itemId, 1)
+                    && ScenarioContainerActions.itemStackMatches(itemEntity.getItem(), itemId, 1)
             ) {
                 identities.add(new ScenarioItemDropIdentity(entity.getId(), entity.getUUID()));
             }
@@ -3958,7 +2975,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         ) {
             return null;
         }
-        return itemStackMatches(itemEntity.getItem(), itemId, 1)
+        return ScenarioContainerActions.itemStackMatches(itemEntity.getItem(), itemId, 1)
             ? entity.position()
             : null;
     }
@@ -4384,45 +3401,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         return total;
     }
 
-    private static int findMenuSlotWithItem(
-        AbstractContainerMenu menu,
-        String itemId,
-        int count,
-        int excludedSlot
-    ) {
-        for (int slot = menu.slots.size() - 1; slot >= 0; slot--) {
-            if (slot == excludedSlot) {
-                continue;
-            }
-            ItemStack stack = menu.getSlot(slot).getItem();
-            if (itemStackMatches(stack, itemId, count)) {
-                return slot;
-            }
-        }
-        return -1;
-    }
 
-    private static boolean containerSlotMatchesOnClientThread(
-        int containerSlot,
-        String itemId,
-        int count
-    ) {
-        Minecraft minecraft = requireInPlay();
-        AbstractContainerMenu menu = minecraft.player.containerMenu;
-        if (containerSlot < 0 || containerSlot >= menu.slots.size()) {
-            return false;
-        }
-        return itemStackMatches(menu.getSlot(containerSlot).getItem(), itemId, count);
-    }
 
-    private static boolean containerSlotEmptyOnClientThread(int containerSlot) {
-        Minecraft minecraft = requireInPlay();
-        AbstractContainerMenu menu = minecraft.player.containerMenu;
-        if (containerSlot < 0 || containerSlot >= menu.slots.size()) {
-            return false;
-        }
-        return menu.getSlot(containerSlot).getItem().isEmpty();
-    }
 
     private static int armorMenuSlot(String armorSlot) {
         return switch (armorSlot) {
@@ -4434,122 +3414,26 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         };
     }
 
-    private static boolean itemStackMatches(ItemStack stack, String itemId, int count) {
-        return !stack.isEmpty()
-            && stack.getCount() >= count
-            && Objects.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), itemId);
-    }
 
-    private static String blockIdAt(ScenarioBlockTarget target) {
-        return blockIdAt(pos(target));
-    }
 
-    private static String blockIdAt(BlockPos pos) {
-        Minecraft minecraft = requireInPlay();
-        BlockState state = minecraft.level.getBlockState(pos);
-        return BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
-    }
 
-    private static boolean blockPropertyMatches(ScenarioBlockTarget target, String property, String value) {
-        Minecraft minecraft = requireInPlay();
-        BlockState state = minecraft.level.getBlockState(pos(target));
-        return state.getValues().anyMatch(propertyValue ->
-            Objects.equals(propertyValue.property().getName(), property)
-                && Objects.equals(propertyValue.valueName(), value)
-        );
-    }
 
-    private static BlockHitResult hitResult(ScenarioBlockTarget target) {
-        Direction direction = direction(target.face());
-        return new BlockHitResult(
-            Vec3.atLowerCornerWithOffset(pos(target), cursorX(direction), cursorY(direction), cursorZ(direction)),
-            direction,
-            pos(target),
-            false
-        );
-    }
 
-    private static BlockHitResult hitResult(ScenarioBlockTarget target, double cursorHeight) {
-        Direction direction = direction(target.face());
-        return new BlockHitResult(
-            Vec3.atLowerCornerWithOffset(pos(target), cursorX(direction), cursorHeight, cursorZ(direction)),
-            direction,
-            pos(target),
-            false
-        );
-    }
 
-    private static Direction direction(String face) {
-        Direction direction = Direction.byName(face.toLowerCase(Locale.ROOT));
-        if (direction == null) {
-            throw new IllegalArgumentException("unknown face: " + face);
-        }
-        return direction;
-    }
 
-    private static double cursorX(Direction direction) {
-        return switch (direction) {
-            case EAST -> 1.0;
-            case WEST -> 0.0;
-            default -> 0.5;
-        };
-    }
 
-    private static double cursorY(Direction direction) {
-        return switch (direction) {
-            case UP -> 1.0;
-            case DOWN -> 0.0;
-            default -> 0.5;
-        };
-    }
 
-    private static double cursorZ(Direction direction) {
-        return switch (direction) {
-            case SOUTH -> 1.0;
-            case NORTH -> 0.0;
-            default -> 0.5;
-        };
-    }
 
-    private static BlockPos pos(ScenarioBlockTarget target) {
-        return new BlockPos(target.x(), target.y(), target.z());
-    }
 
     private static long clientTick(Minecraft minecraft) {
         return Integer.toUnsignedLong(minecraft.player.tickCount);
     }
 
-    private static boolean awaitClientStateChange(long observedVersion, long deadlineNanos)
-        throws InterruptedException {
-        long remainingNanos = deadlineNanos - System.nanoTime();
-        return remainingNanos > 0L
-            && ClientStateEvents.awaitChange(observedVersion, Duration.ofNanos(remainingNanos));
-    }
 
-    private static boolean awaitClientTick(long observedVersion, long deadlineNanos)
-        throws InterruptedException {
-        long remainingNanos = deadlineNanos - System.nanoTime();
-        return remainingNanos > 0L
-            && ClientStateEvents.awaitTickChange(
-                observedVersion,
-                Duration.ofNanos(remainingNanos)
-            );
-    }
+
+
 
     private record ContainerUpdateCheckpoint(int containerId, int stateId) {
-    }
-
-    private record ContainerClickCheckpoint(
-        int containerId,
-        int stateId,
-        long containerPacketVersion
-    ) {
-    }
-
-    private record ContainerClickAttempt(
-        boolean alreadyMatched,
-        ContainerUpdateCheckpoint checkpoint
-    ) {
     }
 
     private record HotbarSelectionAttempt(
@@ -4674,25 +3558,6 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             throws InterruptedException;
     }
 
-    interface EntityWaitSource {
-        Object captureLevel() throws Exception;
-
-        EntityStateSnapshot snapshot() throws Exception;
-
-        long stateVersion();
-
-        boolean awaitStateChange(long observedVersion, long deadlineNanos)
-            throws InterruptedException;
-    }
-
-    interface EntityAttackWaitSource {
-        EntityAttackStateSnapshot snapshot() throws Exception;
-
-        long stateVersion();
-
-        boolean awaitStateChange(long observedVersion, long deadlineNanos)
-            throws InterruptedException;
-    }
 
     interface RespawnWaitSource {
         long healthVersion();
@@ -4713,24 +3578,6 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         ) throws InterruptedException;
     }
 
-    record EntityStateSnapshot(Object level, EntityMotionSample motion, boolean present) {
-    }
-
-    record EntityAttackStateSnapshot(Object level, boolean present, float health) {
-    }
-
-    record EntityAttackConfirmation(boolean confirmed, boolean removed, float healthAfter) {
-    }
-
-    record EntityMotionSample(
-        String entityTypeId,
-        double x,
-        double y,
-        double z,
-        double horizontalSpeed,
-        double yawDelta
-    ) {
-    }
 
     private record EntityAttackSample(
         boolean attackSent,
@@ -4754,14 +3601,4 @@ public final class MinecraftScenarioClient implements ScenarioClient {
     private record ShieldBlockSample(boolean useStarted, float health, int shieldDamage) {
     }
 
-    private static Minecraft requireInPlay() {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null || minecraft.level == null || minecraft.gameMode == null) {
-            throw new IllegalStateException("client is not in play");
-        }
-        if (minecraft.getConnection() == null) {
-            throw new IllegalStateException("client connection is not available");
-        }
-        return minecraft;
-    }
 }

@@ -650,7 +650,7 @@ public final class MinecraftClientFacade implements ClientFacade {
             );
         });
 
-        MinecraftScenarioClient.EntityAttackConfirmation confirmation =
+        ScenarioEntityWaits.EntityAttackConfirmation confirmation =
             new MinecraftScenarioClient(executor).waitForEntityAttackConfirmation(
                 new ScenarioEntityIdentity(entityId, entityUuid, entityType),
                 dispatched.level(),
@@ -1062,7 +1062,7 @@ public final class MinecraftClientFacade implements ClientFacade {
     @Override
     public void closeCurrentScreen() {
         Minecraft minecraft = requireInPlay();
-        MinecraftScenarioClient.closeCurrentScreenOnClientThread(minecraft);
+        ScenarioContainerActions.closeCurrentScreenOnClientThread(minecraft);
     }
 
     @Override

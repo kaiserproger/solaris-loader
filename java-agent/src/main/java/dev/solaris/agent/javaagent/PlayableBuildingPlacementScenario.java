@@ -21,8 +21,75 @@ final class PlayableBuildingPlacementScenario {
     private final EarnedBuildingPreparation preparation;
 
     PlayableBuildingPlacementScenario() {
-        PlayableRealClientLoopScenario earned = new PlayableRealClientLoopScenario();
-        this.preparation = earned::prepareEarnedBuildingMaterials;
+        this.preparation = PlayableBuildingPlacementScenario::prepareEarnedBuildingMaterials;
+    }
+
+    static EarnedBuildingMaterials prepareEarnedBuildingMaterials(
+        String id,
+        List<String> observations,
+        ScenarioClient client
+    ) throws Exception {
+        PlayableHeatStage.TorchPlacementResult torch = PlayableHeatStage.prepareTorchCraftPlace(id, observations, client);
+        if (!"passed".equals(torch.report().result())) {
+            return new EarnedBuildingMaterials(torch.report(), null, null);
+        }
+
+        PlayableResourceStage.LogToPlanksResult planks = PlayableResourceStage.runLogToPlanks(id, observations, client, 3, true, false);
+        if (!"passed".equals(planks.report().result())) {
+            return new EarnedBuildingMaterials(planks.report(), null, null);
+        }
+
+        int torchCount = client.inventoryCount("minecraft:torch");
+        int planksCount = client.inventoryCount(planks.planks().planksItemId());
+        if (torchCount < 3 || planksCount < 9) {
+            observations.add(
+                "earned building materials: failed torch_count=" + torchCount
+                    + " planks_item=" + planks.planks().planksItemId()
+                    + " planks_count=" + planksCount
+            );
+            return new EarnedBuildingMaterials(
+                new dev.solaris.agent.client.ClientScenarioReport("failed", id, observations),
+                planks.planks().planksItemId(),
+                null
+            );
+        }
+
+        ScenarioBlockTarget table = client.findBreakableBlock(
+            List.of("minecraft:crafting_table"),
+            ScenarioReach.WITHIN_SURVIVAL_REACH
+        );
+        if (table == null) {
+            ScenarioBlockTarget farTable = client.findBreakableBlock(
+                List.of("minecraft:crafting_table"),
+                ScenarioReach.OUTSIDE_SURVIVAL_REACH
+            );
+            if (farTable != null && client.approachBlock(farTable, PlayableRealClientLoopScenario.APPROACH_TIMEOUT)) {
+                table = client.findBreakableBlock(
+                    List.of("minecraft:crafting_table"),
+                    ScenarioReach.WITHIN_SURVIVAL_REACH
+                );
+            }
+        }
+        if (table == null) {
+            observations.add("blocked: earned crafting table is not reachable for building recipes");
+            return new EarnedBuildingMaterials(
+                new dev.solaris.agent.client.ClientScenarioReport("blocked", id, observations),
+                planks.planks().planksItemId(),
+                null
+            );
+        }
+
+        observations.add(
+            "earned building materials: passed torch_count=" + torchCount
+                + " planks_item=" + planks.planks().planksItemId()
+                + " planks_count=" + planksCount
+                + " table=" + PlayableCoordinates.coordinates(table)
+        );
+        return new EarnedBuildingMaterials(
+            new dev.solaris.agent.client.ClientScenarioReport("passed", id, observations),
+            planks.planks().planksItemId(),
+            table
+        );
     }
 
     PlayableBuildingPlacementScenario(EarnedBuildingPreparation preparation) {

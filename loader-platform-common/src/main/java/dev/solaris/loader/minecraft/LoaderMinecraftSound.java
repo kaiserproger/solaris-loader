@@ -110,8 +110,11 @@ public final class LoaderMinecraftSound {
     }
 
     public static void clear() {
-        var manager = Minecraft.getInstance().getSoundManager();
-        for (Identifier id : PLAYED) { manager.stop(id, SoundSource.MASTER); }
+        Minecraft client = Minecraft.getInstance();
+        if (client != null) {
+            var manager = client.getSoundManager();
+            for (Identifier id : PLAYED) { manager.stop(id, SoundSource.MASTER); }
+        }
         PLAYED.clear();
         STARTED_THIS_TICK.clear();
         startedTick = Long.MIN_VALUE;

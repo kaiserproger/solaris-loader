@@ -110,6 +110,15 @@ interface ScenarioClient {
         throw new UnsupportedOperationException("scenario client does not support recipe result lookup");
     }
 
+    /** The recipe book entry for {@code itemId}; a missing entry fails the scenario step. */
+    default int requireRecipeDisplayId(String itemId) throws Exception {
+        int recipeDisplayId = recipeDisplayIdForResult(itemId);
+        if (recipeDisplayId < 0) {
+            throw new IllegalStateException("no recipe book entry crafts " + itemId);
+        }
+        return recipeDisplayId;
+    }
+
     default int inventoryCount(String itemId) throws Exception {
         throw new UnsupportedOperationException("scenario client does not support inventory count reads");
     }
