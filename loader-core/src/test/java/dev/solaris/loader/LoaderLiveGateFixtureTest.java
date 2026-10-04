@@ -47,14 +47,10 @@ final class LoaderLiveGateFixtureTest {
         LoaderActivatedContent active = outgoing.activatedContent();
 
         LoaderScreenDefinition rubyScreen = active.screens().get("ruby-live:showcase");
-        assertEquals(LoaderScreenKind.SETTLEMENT, rubyScreen.kind());
         assertEquals("ruby-live:ruby", rubyScreen.itemId().orElseThrow());
         assertEquals("ruby-live:ruby_block", rubyScreen.blockId().orElseThrow());
 
-        LoaderScreenDefinition rubyHud = active.screens().get("ruby-live:hud");
-        assertEquals(LoaderScreenKind.HUD, rubyHud.kind());
         LoaderScreenDefinition rubyInput = active.screens().get("ruby-live:input");
-        assertEquals(LoaderScreenKind.HUD, rubyInput.kind());
         assertEquals(List.of(), rubyInput.widgets());
         assertEquals(5, rubyInput.inputBindings().size());
         assertEquals(1, active.screens().get("sapphire-live:input").inputBindings().size());

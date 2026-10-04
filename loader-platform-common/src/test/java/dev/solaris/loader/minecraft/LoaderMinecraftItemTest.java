@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderItemDefinition;
 import dev.solaris.loader.LoaderScreenDefinition;
-import dev.solaris.loader.LoaderScreenKind;
+import dev.solaris.loader.LoaderViewKey;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -16,8 +16,8 @@ final class LoaderMinecraftItemTest {
     @Test
     void referencedItemResolvesFromActivatedContent() {
         LoaderScreenDefinition screen = new LoaderScreenDefinition(
-                "example:catalog",
-                LoaderScreenKind.ECONOMY,
+                new LoaderViewKey("example:catalog"),
+                false,
                 "Catalog",
                 Optional.of("example:ruby"),
                 Optional.empty(),
@@ -25,7 +25,7 @@ final class LoaderMinecraftItemTest {
                 List.of());
         LoaderActivatedContent content = new LoaderActivatedContent(
                 List.of(),
-                Map.of(screen.id(), screen),
+                Map.of(screen.id().value(), screen),
                 Map.of(),
                 Map.of(),
                 Map.of(
@@ -47,8 +47,8 @@ final class LoaderMinecraftItemTest {
     @Test
     void undeclaredItemDoesNotResolve() {
         LoaderScreenDefinition screen = new LoaderScreenDefinition(
-                "example:catalog",
-                LoaderScreenKind.ECONOMY,
+                new LoaderViewKey("example:catalog"),
+                false,
                 "Catalog",
                 Optional.of("example:ruby"),
                 Optional.empty(),

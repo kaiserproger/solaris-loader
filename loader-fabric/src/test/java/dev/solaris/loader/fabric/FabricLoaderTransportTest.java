@@ -10,7 +10,6 @@ import dev.solaris.loader.LoaderEnvironment;
 import dev.solaris.loader.LoaderOutgoing;
 import dev.solaris.loader.LoaderPermission;
 import dev.solaris.loader.LoaderPlatform;
-import dev.solaris.loader.LoaderScreenKind;
 import dev.solaris.loader.LoaderViewActionRequest;
 import dev.solaris.loader.LoaderViewMessage;
 import dev.solaris.loader.LoaderWidget;
@@ -70,7 +69,6 @@ final class FabricLoaderTransportTest {
         var screens = SolarisFabricLoader.activeContent().screens();
         assertTrue(screens.containsKey("example:welcome"));
         var welcome = screens.get("example:welcome");
-        assertEquals(LoaderScreenKind.SETTLEMENT, welcome.kind());
         assertInstanceOf(
                 LoaderWidget.ActionButton.class,
                 welcome.widget("example:confirm").orElseThrow());
@@ -162,7 +160,7 @@ final class FabricLoaderTransportTest {
                 zip.putNextEntry(new ZipEntry("solaris-client.json"));
                 zip.write("""
                         {"schema":2,"screens":[{
-                          "id":"example:welcome","kind":"settlement","title":"Welcome",
+                          "id":"example:welcome","title":"Welcome",
                           "widgets":[{
                             "type":"action_button","action_id":"example:confirm",
                             "label":"Confirm"

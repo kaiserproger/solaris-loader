@@ -22,6 +22,18 @@ public final class ClientMcpTools {
             objectSchema(properties(), List.of())
         ),
         readOnly(
+            "minecraft_read_item_components",
+            "Read one actual received stack's native components on demand. Selected forbids slot; player/container require slot; container requires a visible menu.",
+            "read_item_components",
+            objectSchema(
+                properties(
+                    "source", enumString(List.of("selected", "player", "container")),
+                    "slot", integer(0, Short.MAX_VALUE)
+                ),
+                List.of("source")
+            )
+        ),
+        readOnly(
             "minecraft_read_block",
             "Read one loaded client-visible block with state, fluid, sky-light, and block-light values.",
             "read_block",
@@ -259,6 +271,12 @@ public final class ClientMcpTools {
             "close_screen",
             objectSchema(properties(), List.of())
         ),
+        nonIdempotentControl(
+            "minecraft_request_loader_view",
+            "Request an exact declared plugin-owned Loader view on the acknowledged live connection.",
+            "request_loader_view",
+            objectSchema(properties("view_key", string(128)), List.of("view_key"))
+        ),
         mutating(
             "minecraft_click_confirmation_button",
             "Press one exact enabled button on the current confirmation screen after matching its exact title.",
@@ -283,6 +301,12 @@ public final class ClientMcpTools {
                 ),
                 List.of("expected_screen_class", "expected_title", "button_label")
             )
+        ),
+        nonIdempotentControl(
+            "minecraft_set_screen_input",
+            "Set one exact visible editable native EditBox after matching the screen class, title and input label; refuses native truncation.",
+            "set_screen_input",
+            screenInputSchema()
         ),
         control(
             "minecraft_open_inventory",
@@ -419,6 +443,20 @@ public final class ClientMcpTools {
         JsonObject schema
     ) {
         return new McpToolDefinition(name, description, command, schema, false, true, false, true);
+    }
+
+    private static JsonObject screenInputSchema() {
+        JsonObject value = string(256);
+        value.addProperty("minLength", 0);
+        return objectSchema(
+            properties(
+                "expected_screen_class", string(256),
+                "expected_title", string(256),
+                "input_label", string(128),
+                "value", value
+            ),
+            List.of("expected_screen_class", "expected_title", "input_label", "value")
+        );
     }
 
     private static JsonObject blockPositionSchema() {

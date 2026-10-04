@@ -1,6 +1,7 @@
 package dev.solaris.loader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,8 +19,8 @@ import org.junit.jupiter.api.Test;
 /** The wire-3 view message decoder and view action encoder. */
 final class LoaderViewTest {
     private static final LoaderScreenDefinition SHOWCASE = new LoaderScreenDefinition(
-            "example:showcase",
-            LoaderScreenKind.SETTLEMENT,
+            new LoaderViewKey("example:showcase"),
+            false,
             "Showcase",
             Optional.empty(),
             Optional.empty(),
@@ -39,7 +40,7 @@ final class LoaderViewTest {
         LoaderViewMessage.Open open = (LoaderViewMessage.Open) decode(open(modelJson())).orElseThrow();
         assertEquals("solaris:view-1", open.viewInstanceId());
         assertEquals(2, open.revision());
-        assertEquals("example:showcase", open.viewId());
+        assertEquals(new LoaderViewKey("example:showcase"), open.viewId());
         assertEquals("Showcase", open.title());
         LoaderViewModel model = open.model();
         assertEquals(0, model.page());
@@ -146,6 +147,41 @@ final class LoaderViewTest {
                 .isEmpty());
         assertFalse(LoaderViewMessage.decode(bytes(open(modelJson())), CONTENT, true).isEmpty());
         assertTrue(LoaderViewMessage.decode(bytes(open(modelJson())), CONTENT, false).isEmpty());
+    }
+
+    @Test
+    void requestsRequireExactDeclaredKeyAndLiveRegistry() {
+        for (LoaderViewKey key : List.of(
+                new LoaderViewKey("example:missing"),
+                new LoaderViewKey("other:showcase"))) {
+            assertTrue(LoaderViewActionRequest.request(key, CONTENT, true).isEmpty());
+        }
+        assertTrue(LoaderViewActionRequest.request(SHOWCASE.id(), CONTENT, false).isEmpty());
+        assertTrue(LoaderViewActionRequest.request(
+                SHOWCASE.id(), LoaderActivatedContent.empty(), true).isEmpty());
+        assertTrue(LoaderViewActionRequest.request(SHOWCASE.id(), null, true).isEmpty());
+        for (String invalid : List.of("showcase", "Example:showcase", "example:", ":showcase",
+                "example:show case", "example:a:b", "example:é", "a:" + "x".repeat(127))) {
+            assertThrows(
+                    IllegalArgumentException.class, () -> new LoaderViewKey(invalid));
+            assertTrue(decode(open(modelJson()).replace("example:showcase", invalid)).isEmpty());
+        }
+        LoaderViewKey arbitrary = new LoaderViewKey("example:warehouse/catalog.v2-1");
+        LoaderScreenDefinition declaration = new LoaderScreenDefinition(
+                arbitrary, false, "Catalog", Optional.empty(), Optional.empty(), List.of(), List.of());
+        LoaderActivatedContent registry = new LoaderActivatedContent(
+                List.of(), Map.of(arbitrary.value(), declaration),
+                Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
+        JsonObject request = json(LoaderViewActionRequest.request(arbitrary, registry, true).orElseThrow());
+        assertEquals(arbitrary.value(), request.get("request_kind").getAsString());
+        LoaderViewMessage.Open opened = (LoaderViewMessage.Open) LoaderViewMessage.decode(
+                bytes(open(modelJson()).replace("example:showcase", arbitrary.value())),
+                registry, true).orElseThrow();
+        assertEquals(arbitrary, opened.viewId());
+        LoaderViewKey maximum = new LoaderViewKey("a:" + "x".repeat(126));
+        assertEquals(128, maximum.value().length());
+        assertThrows(IllegalArgumentException.class, () -> new LoaderViewKey(null));
+        assertThrows(IllegalArgumentException.class, () -> new LoaderViewKey(""));
     }
 
     @Test
@@ -299,12 +335,11 @@ final class LoaderViewTest {
         assertEquals("cancel_selection", cancel.get("message").getAsString());
         assertEquals("example:ctx-1", cancel.get("selection_context_id").getAsString());
 
-        for (LoaderViewActionRequest.RequestKind kind : LoaderViewActionRequest.RequestKind.values()) {
-            JsonObject request = json(LoaderViewActionRequest.request(kind).orElseThrow());
-            assertEquals(3, request.get("protocol").getAsInt());
-            assertEquals("view_request", request.get("message").getAsString());
-            assertEquals(kind.wireName(), request.get("request_kind").getAsString());
-        }
+        JsonObject request = json(LoaderViewActionRequest.request(
+                SHOWCASE.id(), CONTENT, true).orElseThrow());
+        assertEquals(3, request.get("protocol").getAsInt());
+        assertEquals("view_request", request.get("message").getAsString());
+        assertEquals("example:showcase", request.get("request_kind").getAsString());
     }
 
     @Test
@@ -355,7 +390,7 @@ final class LoaderViewTest {
         assertTrue(LoaderViewActionRequest.cancelSelection(
                         "x".repeat(LoaderJson.MAX_IDENTIFIER_BYTES + 1))
                 .isEmpty());
-        assertTrue(LoaderViewActionRequest.request(null).isEmpty());
+        assertTrue(LoaderViewActionRequest.request(null, CONTENT, true).isEmpty());
     }
 
     /** The declared model members of a valid `open_view` payload. */

@@ -8,5 +8,8 @@ public enum LoaderPlatform {
     @SerializedName("neoforge")
     NEOFORGE,
     @SerializedName("forge")
-    FORGE
+    FORGE,
+    /** Supported bundle metadata only; never a Java adapter's handshake identity. */
+    @SerializedName("native")
+    NATIVE
 }

@@ -34,13 +34,12 @@ final class LoaderScreenIndexTest {
                   "entries":[{"id":"ruby","label":"Ruby"}]},
                  {"type":"action_button","action_id":"confirm","label":"Confirm"},
                  {"type":"action_button","action_id":"locked","label":"Locked",
-                  "enabled":false,"deny_reason":"Garrison is not yours"},
+                  "enabled":false,"deny_reason":"Access denied"},
                  {"type":"world_marker","id":"anchor","label":"Anchor","action_id":"place",
                   "formation":"wedge","radius":8}]
                 """);
 
         assertEquals("Showcase", screen.title());
-        assertEquals(LoaderScreenKind.SETTLEMENT, screen.kind());
         assertEquals(
                 List.of(
                         new LoaderWidget.PagedTable(
@@ -66,7 +65,7 @@ final class LoaderScreenIndexTest {
                         new LoaderWidget.ActionButton(
                                 "confirm", "Confirm", true, Optional.empty()),
                         new LoaderWidget.ActionButton(
-                                "locked", "Locked", false, Optional.of("Garrison is not yours")),
+                                "locked", "Locked", false, Optional.of("Access denied")),
                         new LoaderWidget.WorldMarker(
                                 "anchor",
                                 "Anchor",
@@ -84,7 +83,7 @@ final class LoaderScreenIndexTest {
     @Test
     void worldMarkerRefusesAnUndeclaredPreview() {
         assertScreenRejected(
-                "settlement",
+                "example:showcase",
                 """
                 [{"type":"world_marker","id":"anchor","label":"Anchor",
                   "action_id":"place","preview_id":"example:absent"}]
@@ -92,20 +91,33 @@ final class LoaderScreenIndexTest {
     }
 
     @Test
-    void everyDeclaredScreenKindActivates() throws Exception {
-        for (LoaderScreenKind kind : LoaderScreenKind.values()) {
-            String widgets = """
-                    [{"type":"paged_table","id":"roster","columns":[
-                       {"id":"name","label":"Name","align":"center","width_bucket":2}]}]
-                    """;
-            byte[] archive = LoaderTestArchive.archive(index(kind.wireName(), widgets), Map.of());
+    void arbitraryOwnedViewKeysActivateWithoutAClosedKindTable() throws Exception {
+        for (String key : List.of("example:custom/panel.v2", "example:warehouse-7",
+                "example:" + "x".repeat(120))) {
+            byte[] archive = LoaderTestArchive.archive(index(key, "[]"), Map.of());
             LoaderActivatedContent active = LoaderTestBundles.activate(
-                    cacheDirectory,
-                    archive,
-                    CONTENT,
-                    PERMISSIONS,
-                    LoaderPermission.PRESENT_VIEWS);
-            assertEquals(kind, active.screens().get("example:showcase").kind());
+                    cacheDirectory, archive, CONTENT, PERMISSIONS, LoaderPermission.PRESENT_VIEWS);
+            assertEquals(new LoaderViewKey(key), active.screens().get(key).id());
+        }
+        for (String key : List.of("example", "Example:panel", "example:", "other:panel",
+                "example:a:b", "example:" + "x".repeat(121))) {
+            assertScreenRejected(key, "[]");
+        }
+        String declaration = """
+                {"id":"example:panel","title":"Panel","widgets":[]}
+                """;
+        byte[] conflicting = LoaderTestArchive.archive("""
+                {"schema":2,"screens":[%s,%s]}
+                """.formatted(declaration, declaration), Map.of());
+        assertThrows(IllegalArgumentException.class, () -> LoaderTestBundles.activate(
+                cacheDirectory, conflicting, CONTENT, PERMISSIONS, LoaderPermission.PRESENT_VIEWS));
+        for (String field : List.of("\"kind\":\"example:panel\"", "\"overlay\":\"true\"",
+                "\"overlay\":1", "\"overlay\":null")) {
+            byte[] invalid = LoaderTestArchive.archive("""
+                    {"schema":2,"screens":[{"id":"example:panel","title":"Panel","widgets":[],%s}]}
+                    """.formatted(field), Map.of());
+            assertThrows(IllegalArgumentException.class, () -> LoaderTestBundles.activate(
+                    cacheDirectory, invalid, CONTENT, PERMISSIONS, LoaderPermission.PRESENT_VIEWS));
         }
     }
 
@@ -138,77 +150,77 @@ final class LoaderScreenIndexTest {
     }
 
     @Test
-    void unknownWidgetTypeAndUnknownScreenKindFailClosed() {
+    void unknownWidgetTypeAndInvalidViewKeyFailClosed() {
         assertScreenRejected(
-                "settlement",
+                "example:showcase",
                 """
                 [{"type":"client_script","id":"roster"}]
                 """);
-        assertScreenRejected("village", """
+        assertScreenRejected("unqualified", """
                 [{"type":"tabs","id":"pages","entries":[{"id":"one","label":"One"}]}]
                 """);
     }
 
     @Test
     void outOfBoundWidgetGeometryAndValuesFailClosed() {
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"paged_table","id":"roster","columns":[
                   {"id":"name","label":"Name","align":"middle","width_bucket":2}]}]
                 """);
-        assertScreenRejected("settlement", columns(17));
+        assertScreenRejected("example:showcase", columns(17));
         for (int widthBucket : new int[] {0, 5}) {
-            assertScreenRejected("settlement", """
+            assertScreenRejected("example:showcase", """
                     [{"type":"paged_table","id":"roster","columns":[
                       {"id":"name","label":"Name","align":"left","width_bucket":%d}]}]
                     """.formatted(widthBucket));
         }
-        assertScreenRejected("settlement", entries(17));
-        assertScreenRejected("settlement", widgets(33));
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", entries(17));
+        assertScreenRejected("example:showcase", widgets(33));
+        assertScreenRejected("example:showcase", """
                 [{"type":"input_text","id":"note","label":"%s","max_bytes":8}]
                 """.formatted("x".repeat(LoaderWidget.MAX_LABEL_BYTES + 1)));
         for (int maxBytes : new int[] {0, 257}) {
-            assertScreenRejected("settlement", """
+            assertScreenRejected("example:showcase", """
                     [{"type":"input_text","id":"note","label":"Note","max_bytes":%d}]
                     """.formatted(maxBytes));
         }
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"input_number","id":"amount","label":"Amount","min":9,"max":1}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"input_number","id":"amount","label":"Amount","step":0}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"select_enum","id":"mode","label":"Mode","options":[]}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"tabs","id":"pages","entries":[]}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"resource_panel","id":"cost","label":"Cost","entries":[]}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"world_marker","id":"anchor","label":"Anchor","action_id":"place",
                   "formation":"spiral"}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"world_marker","id":"anchor","label":"Anchor","action_id":"place",
                   "radius":129}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"action_button","action_id":"confirm","label":"Confirm","future":true}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"tabs","id":"pages","entries":[{"id":"one","label":"One"}]},
                  {"type":"tabs","id":"pages","entries":[{"id":"two","label":"Two"}]}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"tabs","id":"%s","entries":[{"id":"one","label":"One"}]}]
                 """.formatted("x".repeat(LoaderJson.MAX_IDENTIFIER_BYTES + 1)));
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"id":"roster"}]
                 """);
-        assertScreenRejected("settlement", """
+        assertScreenRejected("example:showcase", """
                 [{"type":"action_button","action_id":"confirm"}]
                 """);
     }
@@ -264,12 +276,12 @@ final class LoaderScreenIndexTest {
         }
     }
 
-    private static String index(String kind, String widgets) {
+    private static String index(String key, String widgets) {
         return """
                 {"schema":2,"screens":[{
-                  "id":"example:showcase","kind":"%s","title":"Showcase","widgets":%s
+                  "id":"%s","title":"Showcase","widgets":%s
                 }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
-                """.formatted(kind, widgets);
+                """.formatted(key, widgets);
     }
 
     private static String columns(int count) {
@@ -304,7 +316,7 @@ final class LoaderScreenIndexTest {
     }
 
     private LoaderScreenDefinition activate(String widgets) throws Exception {
-        byte[] archive = LoaderTestArchive.archive(index("settlement", widgets), Map.of());
+        byte[] archive = LoaderTestArchive.archive(index("example:showcase", widgets), Map.of());
         return LoaderTestBundles.activate(
                         cacheDirectory,
                         archive,
@@ -315,8 +327,8 @@ final class LoaderScreenIndexTest {
                 .get("example:showcase");
     }
 
-    private void assertScreenRejected(String kind, String widgets) {
-        byte[] archive = LoaderTestArchive.archive(index(kind, widgets), Map.of());
+    private void assertScreenRejected(String key, String widgets) {
+        byte[] archive = LoaderTestArchive.archive(index(key, widgets), Map.of());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> {

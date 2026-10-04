@@ -10,7 +10,7 @@ import dev.solaris.loader.LoaderEnvironment;
 import dev.solaris.loader.LoaderOutgoing;
 import dev.solaris.loader.LoaderPermission;
 import dev.solaris.loader.LoaderPlatform;
-import dev.solaris.loader.LoaderScreenKind;
+import dev.solaris.loader.LoaderViewKey;
 import dev.solaris.loader.LoaderViewActionRequest;
 import dev.solaris.loader.LoaderViewMessage;
 import dev.solaris.loader.LoaderWidget;
@@ -79,7 +79,6 @@ final class NeoForgeLoaderTransportTest {
         var screen = SolarisNeoForgeLoader.activeContent()
                 .screens()
                 .get("example:welcome");
-        assertEquals(LoaderScreenKind.SETTLEMENT, screen.kind());
         var confirm = assertInstanceOf(
                 LoaderWidget.ActionButton.class,
                 screen.widget("example:confirm").orElseThrow());
@@ -107,7 +106,7 @@ final class NeoForgeLoaderTransportTest {
                 LoaderViewMessage.Open.class,
                 SolarisNeoForgeLoader.decodeView(decodedView, true).orElseThrow());
         assertEquals("solaris:view-1", open.viewInstanceId());
-        assertEquals("example:welcome", open.viewId());
+        assertEquals(new LoaderViewKey("example:welcome"), open.viewId());
         assertEquals("solaris:loader/view", LoaderViewPayload.TYPE.id().toString());
         assertTrue(SolarisNeoForgeLoader.decodeView(decodedView, false).isEmpty());
         SolarisNeoForgeLoader.clearActiveContent();
@@ -172,7 +171,7 @@ final class NeoForgeLoaderTransportTest {
                 zip.putNextEntry(new ZipEntry("solaris-client.json"));
                 zip.write("""
                         {"schema":2,"screens":[{
-                          "id":"example:welcome","kind":"settlement","title":"Welcome",
+                          "id":"example:welcome","title":"Welcome",
                           "widgets":[{"type":"action_button","action_id":"example:confirm",
                                       "label":"Confirm"}]
                         }],"blocks":[],"items":[],"assets":[]}

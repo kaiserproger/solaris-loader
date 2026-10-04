@@ -9,7 +9,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import dev.solaris.loader.LoaderInputBinding;
 import dev.solaris.loader.LoaderScreenDefinition;
-import dev.solaris.loader.LoaderScreenKind;
+import dev.solaris.loader.LoaderViewKey;
 import dev.solaris.loader.LoaderViewModel;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -247,8 +247,8 @@ final class LoaderHudTest {
 
     private static LoaderScreenDefinition definition(List<LoaderInputBinding> inputBindings) {
         return new LoaderScreenDefinition(
-                "ruby-live:input",
-                LoaderScreenKind.HUD,
+                new LoaderViewKey("ruby-live:input"),
+                true,
                 "Ruby input",
                 Optional.empty(),
                 Optional.empty(),

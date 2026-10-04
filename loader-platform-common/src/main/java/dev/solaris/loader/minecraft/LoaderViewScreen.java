@@ -31,9 +31,9 @@ import net.minecraft.world.item.ItemStack;
  * A `present_view` replaces the model and restarts its sequence; a disabled
  * action sends nothing.
  *
- * <p>The same renderer serves the modal kind on the client's screen stack and,
- * with {@code hud}, the non-modal kind that extracts only its declared widgets
- * into the native HUD layer.
+ * <p>The same renderer serves modal declarations on the client's screen stack
+ * and overlays in the native HUD layer. Neither mode invents widgets from
+ * undeclared model actions, fields or tabs.
  */
 final class LoaderViewScreen extends Screen {
     static final int MARGIN = 8;
@@ -47,6 +47,7 @@ final class LoaderViewScreen extends Screen {
     private static final String PREVIEW_SYMBOLS =
             "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
     private static final int MAX_WRAPPED_ROWS = 8;
+    private static final AbstractWidget[] NO_WIDGETS = new AbstractWidget[0];
 
     private final String viewInstanceId;
     private final LoaderScreenDefinition definition;
@@ -65,8 +66,8 @@ final class LoaderViewScreen extends Screen {
     /**
      * One declared view: {@code hud} selects the non-modal presentation, which
      * extracts exactly the declared widgets and nothing else, so a HUD with no
-     * declared widgets renders nothing; the modal presentation keeps the page,
-     * reason and undeclared-model chrome the client has always shown.
+     * declared widgets renders nothing. Modal page/reason chrome is generic;
+     * all interactive content requires an artifact widget declaration.
      */
     LoaderViewScreen(
             String viewInstanceId,
@@ -196,7 +197,7 @@ final class LoaderViewScreen extends Screen {
     private List<AbstractWidget[]> sections() {
         List<AbstractWidget[]> sections = new ArrayList<>();
         if (hud) {
-            declared(sections, new LinkedHashSet<>(), new LinkedHashSet<>());
+            declared(sections);
             return sections;
         }
         model.reason().ifPresent(reason ->
@@ -212,39 +213,30 @@ final class LoaderViewScreen extends Screen {
             }
             sections.add(items.toArray(new AbstractWidget[0]));
         }
-        if (!model.tabs().isEmpty()) {
-            sections.add(tabRow());
-        }
-        Set<String> declaredActions = new LinkedHashSet<>();
-        Set<String> declaredFields = new LinkedHashSet<>();
-        declared(sections, declaredActions, declaredFields);
-        for (LoaderViewModel.Action action : model.actions()) {
-            if (!declaredActions.contains(action.actionId())) {
-                sections.add(action(action.actionId(), action.label().orElse(action.actionId()),
-                        action.enabled(), action.denyReason()));
-            }
-        }
-        for (LoaderViewModel.Field field : model.fields()) {
-            if (!declaredFields.contains(field.id())) {
-                sections.add(new AbstractWidget[] {line(presented(field))});
-            }
-        }
+        declared(sections);
         for (LoaderViewModel.Marker marker : model.markers()) {
             if (!canSelect(marker)) {
                 continue;
             }
             if (marker.selectionToken().isPresent()) {
                 String token = marker.selectionToken().orElseThrow();
-                sections.add(new AbstractWidget[] {
-                        Button.builder(
-                                        Component.literal("Select: "
-                                                + marker.actionId().orElse(marker.markerId())),
-                                        ignored -> act(
-                                                marker.actionId().orElse(marker.markerId()),
-                                                Optional.of(token)))
-                                .width(ACTION_WIDTH)
-                                .build()
-                });
+                String actionId = marker.actionId().orElseThrow();
+                LoaderViewModel.Action presentedAction = null;
+                for (LoaderViewModel.Action candidate : model.actions()) {
+                    if (candidate.actionId().equals(actionId)) {
+                        presentedAction = candidate;
+                        break;
+                    }
+                }
+                if (presentedAction != null) {
+                    Button select = Button.builder(
+                                    Component.literal("Select: " + actionId),
+                                    ignored -> act(actionId, Optional.of(token)))
+                            .width(ACTION_WIDTH)
+                            .build();
+                    select.active = presentedAction.enabled();
+                    sections.add(new AbstractWidget[] {select});
+                }
                 sections.add(new AbstractWidget[] {
                         Button.builder(
                                         Component.literal("Cancel selection"),
@@ -258,30 +250,35 @@ final class LoaderViewScreen extends Screen {
     }
 
     /** The presented form of every widget the screen declares. */
-    private void declared(
-            List<AbstractWidget[]> sections,
-            Set<String> declaredActions,
-            Set<String> declaredFields) {
+    private void declared(List<AbstractWidget[]> sections) {
         for (LoaderWidget widget : definition.widgets()) {
             switch (widget) {
                 case LoaderWidget.PagedTable table -> table(table, sections);
-                case LoaderWidget.Tabs ignoredTabs -> {
-                    // Rendered from the presented tabs above; a HUD renders them here.
-                    if (hud && !model.tabs().isEmpty()) {
-                        sections.add(tabRow());
+                case LoaderWidget.Tabs tabs -> {
+                    if (!model.tabs().isEmpty()) {
+                        AbstractWidget[] tabsRow = tabRow(tabs);
+                        if (tabsRow.length != 0) {
+                            sections.add(tabsRow);
+                        }
                     }
                 }
                 case LoaderWidget.InputNumber number -> {
-                    declaredFields.add(number.id());
-                    sections.add(field(number.id(), number.label()));
+                    AbstractWidget[] input = field(number.id(), number.label());
+                    if (input.length != 0) {
+                        sections.add(input);
+                    }
                 }
                 case LoaderWidget.InputText text -> {
-                    declaredFields.add(text.id());
-                    sections.add(field(text.id(), text.label()));
+                    AbstractWidget[] input = field(text.id(), text.label());
+                    if (input.length != 0) {
+                        sections.add(input);
+                    }
                 }
                 case LoaderWidget.SelectEnum select -> {
-                    declaredFields.add(select.id());
-                    sections.add(field(select.id(), select.label()));
+                    AbstractWidget[] input = field(select.id(), select.label());
+                    if (input.length != 0) {
+                        sections.add(input);
+                    }
                 }
                 case LoaderWidget.ResourcePanel panel -> {
                     for (LoaderWidget.Entry entry : panel.entries()) {
@@ -291,11 +288,12 @@ final class LoaderViewScreen extends Screen {
                     }
                 }
                 case LoaderWidget.ActionButton button -> {
-                    declaredActions.add(button.actionId());
-                    sections.add(action(button));
+                    AbstractWidget[] action = action(button);
+                    if (action.length != 0) {
+                        sections.add(action);
+                    }
                 }
                 case LoaderWidget.WorldMarker marker -> {
-                    declaredActions.add(marker.actionId());
                     for (LoaderViewModel.Marker active : model.markers()) {
                         if (active.markerId().equals(marker.id())) {
                             preview(active).ifPresent(value -> appendPreview(value, sections));
@@ -321,9 +319,19 @@ final class LoaderViewScreen extends Screen {
         }
     }
 
-    private AbstractWidget[] tabRow() {
+    private AbstractWidget[] tabRow(LoaderWidget.Tabs declared) {
         List<AbstractWidget> buttons = new ArrayList<>();
         for (LoaderViewModel.Tab tab : model.tabs()) {
+            boolean admitted = false;
+            for (LoaderWidget.Entry entry : declared.entries()) {
+                if (entry.id().equals(tab.id())) {
+                    admitted = true;
+                    break;
+                }
+            }
+            if (!admitted) {
+                continue;
+            }
             boolean selected = tab.id().equals(selectedTab);
             Button button = Button.builder(
                             Component.literal(selected ? "[" + tab.label() + "]" : tab.label()),
@@ -331,7 +339,7 @@ final class LoaderViewScreen extends Screen {
                                 selectedTab = tab.id();
                                 rebuildWidgets();
                             })
-                    .width(buttonWidth(model.tabs().size()))
+                    .width(buttonWidth(declared.entries().size()))
                     .build();
             buttons.add(button);
         }
@@ -347,7 +355,7 @@ final class LoaderViewScreen extends Screen {
                 .filter(field -> field.id().equals(id))
                 .findFirst();
         if (presented.isEmpty()) {
-            return new AbstractWidget[] {line(label + ": (not presented)")};
+            return NO_WIDGETS;
         }
         LoaderViewModel.Field field = presented.orElseThrow();
         if (field.number().isPresent()) {
@@ -385,10 +393,13 @@ final class LoaderViewScreen extends Screen {
         Optional<LoaderViewModel.Action> presented = model.actions().stream()
                 .filter(action -> action.actionId().equals(declared.actionId()))
                 .findFirst();
+        if (presented.isEmpty()) {
+            return NO_WIDGETS;
+        }
         return action(
                 declared.actionId(),
                 presented.flatMap(LoaderViewModel.Action::label).orElse(declared.label()),
-                presented.map(LoaderViewModel.Action::enabled).orElse(declared.enabled()),
+                presented.orElseThrow().enabled(),
                 presented.flatMap(LoaderViewModel.Action::denyReason)
                         .or(() -> declared.denyReason()));
     }
@@ -409,17 +420,6 @@ final class LoaderViewScreen extends Screen {
             return new AbstractWidget[] {button, line("denied: " + denyReason.orElseThrow())};
         }
         return new AbstractWidget[] {button};
-    }
-
-    /** Declared field with no input widget: echoed, never editable. */
-    private static String presented(LoaderViewModel.Field field) {
-        if (field.number().isPresent()) {
-            return field.id() + ": " + LoaderViewLayout.number(field.number().orElseThrow());
-        }
-        if (field.text().isPresent()) {
-            return field.id() + ": " + field.text().orElseThrow();
-        }
-        return field.id() + ": " + field.selected().orElseThrow();
     }
 
     private boolean canSelect(LoaderViewModel.Marker marker) {

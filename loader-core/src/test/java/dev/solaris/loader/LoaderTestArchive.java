@@ -12,12 +12,12 @@ final class LoaderTestArchive {
     private LoaderTestArchive() {
     }
 
-    /** One settlement screen with a paged table and no other content. */
+    /** One plugin-declared screen with a paged table and no other content. */
     static byte[] screenOnly() {
         return archive(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:welcome","kind":"settlement","title":"Welcome",
+                  "id":"example:welcome","title":"Welcome",
                   "widgets":[{
                     "type":"paged_table","id":"roster","columns":[
                       {"id":"name","label":"Name","align":"left","width_bucket":2}
@@ -33,7 +33,7 @@ final class LoaderTestArchive {
         return archive(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:welcome","kind":"settlement","title":"Welcome",
+                  "id":"example:welcome","title":"Welcome",
                   "widgets":[{
                     "type":"tabs","id":"pages","entries":[
                       {"id":"one","label":"One"}
@@ -55,7 +55,7 @@ final class LoaderTestArchive {
         return archive(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:catalog","kind":"economy","title":"Catalog",
+                  "id":"example:catalog","title":"Catalog",
                   "item_id":"example:ruby",
                   "widgets":[{
                     "type":"resource_panel","id":"cost","label":"Cost","entries":[
@@ -84,7 +84,7 @@ final class LoaderTestArchive {
         return archive(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:catalog","kind":"construction","title":"Catalog",
+                  "id":"example:catalog","title":"Catalog",
                   "block_id":"example:ruby_block",
                   "widgets":[{
                     "type":"action_button","action_id":"confirm","label":"Confirm"
@@ -106,7 +106,7 @@ final class LoaderTestArchive {
         return archive(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:showcase","kind":"hud","title":"Showcase",
+                  "id":"example:showcase","overlay":true,"title":"Showcase",
                   "widgets":[{
                     "type":"paged_table","id":"roster","columns":[
                       {"id":"name","label":"Name","align":"left","width_bucket":1},
@@ -133,7 +133,7 @@ final class LoaderTestArchive {
                     "type":"action_button","action_id":"confirm","label":"Confirm"
                   },{
                     "type":"action_button","action_id":"locked","label":"Locked",
-                    "enabled":false,"deny_reason":"Garrison is not yours"
+                    "enabled":false,"deny_reason":"Access denied"
                   },{
                     "type":"world_marker","id":"anchor","label":"Anchor",
                     "action_id":"place","preview_id":"example:camp",

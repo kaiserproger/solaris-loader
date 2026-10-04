@@ -19,7 +19,7 @@ import net.minecraft.world.item.ItemStack;
 import org.joml.Matrix3x2fStack;
 
 /**
- * One live non-modal Loader HUD instance: the declared {@code kind=hud} screen,
+ * One live non-modal Loader HUD instance: the declared {@code overlay=true} screen,
  * its presented model and the native key edges it owns. Nothing here touches
  * the client's screen stack, so several owners' HUDs stay visible at once and a
  * HUD with no declared widgets renders nothing while still hosting its declared

@@ -22,22 +22,6 @@ public final class LoaderViewActionRequest {
     private LoaderViewActionRequest() {
     }
 
-    /** The two declared kinds of key-driven view request. */
-    public enum RequestKind {
-        SETTLEMENT("settlement"),
-        ARMY("army");
-
-        private final String wireName;
-
-        RequestKind(String wireName) {
-            this.wireName = wireName;
-        }
-
-        public String wireName() {
-            return wireName;
-        }
-    }
-
     public static Optional<byte[]> action(
             String viewInstanceId,
             long viewRevision,
@@ -87,12 +71,16 @@ public final class LoaderViewActionRequest {
         return payload(message);
     }
 
-    public static Optional<byte[]> request(RequestKind kind) {
-        if (kind == null) {
+    public static Optional<byte[]> request(
+            LoaderViewKey key,
+            LoaderActivatedContent content,
+            boolean connectionActive) {
+        if (!connectionActive || key == null || content == null
+                || !content.screens().containsKey(key.value())) {
             return Optional.empty();
         }
         JsonObject message = envelope("view_request");
-        message.addProperty("request_kind", kind.wireName());
+        message.addProperty("request_kind", key.value());
         return payload(message);
     }
 

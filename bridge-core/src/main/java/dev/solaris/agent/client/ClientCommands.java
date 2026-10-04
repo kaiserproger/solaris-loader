@@ -63,6 +63,23 @@ public final class ClientCommands {
             observation.addProperty("state_version", client.stateVersion());
             return observation;
         }));
+        registry.registerConcurrent("read_item_components", request -> {
+            JsonObject payload = request.payload();
+            String source = boundedString(payload, "source", 9);
+            int slot;
+            switch (source) {
+                case "selected" -> {
+                    if (payload.has("slot")) {
+                        throw new IllegalArgumentException("selected source does not accept a slot");
+                    }
+                    slot = -1;
+                }
+                case "player", "container" -> slot = boundedInt(payload, "slot", 0, Short.MAX_VALUE);
+                default -> throw new IllegalArgumentException(
+                        "source must be selected, player, or container");
+            }
+            return executor.callOnClientThread(() -> client.readItemComponents(source, slot));
+        });
         registry.registerConcurrent("read_block", request -> {
             JsonObject payload = request.payload();
             int x = boundedInt(payload, "x", Integer.MIN_VALUE, Integer.MAX_VALUE);
@@ -316,6 +333,13 @@ public final class ClientCommands {
             client.closeCurrentScreen();
             return ok();
         }));
+        registry.register("request_loader_view", request -> {
+            String viewKey = boundedString(request.payload(), "view_key", 128);
+            return executor.callOnClientThread(() -> {
+                client.requestLoaderView(viewKey);
+                return ok();
+            });
+        });
         registry.register("click_confirmation_button", request -> {
             JsonObject payload = request.payload();
             String expectedTitle = boundedString(payload, "expected_title", 256);
@@ -333,6 +357,24 @@ public final class ClientCommands {
             String buttonLabel = boundedString(payload, "button_label", 64);
             return executor.callOnClientThread(() -> {
                 client.clickScreenButton(expectedScreenClass, expectedTitle, buttonLabel);
+                return ok();
+            });
+        });
+        registry.register("set_screen_input", request -> {
+            JsonObject payload = request.payload();
+            String expectedScreenClass = boundedString(payload, "expected_screen_class", 256);
+            String expectedTitle = boundedString(payload, "expected_title", 256);
+            String inputLabel = boundedString(payload, "input_label", 128);
+            if (!payload.has("value") || !payload.get("value").isJsonPrimitive()
+                    || !payload.get("value").getAsJsonPrimitive().isString()) {
+                throw new IllegalArgumentException("value must be a string");
+            }
+            String value = payload.get("value").getAsString();
+            if (value.length() > 256) {
+                throw new IllegalArgumentException("value must contain at most 256 characters");
+            }
+            return executor.callOnClientThread(() -> {
+                client.setScreenInput(expectedScreenClass, expectedTitle, inputLabel, value);
                 return ok();
             });
         });

@@ -12,7 +12,7 @@ import dev.solaris.loader.LoaderEnvironment;
 import dev.solaris.loader.LoaderOutgoing;
 import dev.solaris.loader.LoaderPermission;
 import dev.solaris.loader.LoaderPlatform;
-import dev.solaris.loader.LoaderScreenKind;
+import dev.solaris.loader.LoaderViewKey;
 import dev.solaris.loader.LoaderViewActionRequest;
 import dev.solaris.loader.LoaderViewMessage;
 import dev.solaris.loader.LoaderWidget;
@@ -91,7 +91,6 @@ final class ForgeLoaderTransportTest {
         assertInstanceOf(LoaderAckPayload.class, SolarisForgeLoader.payload(outgoing));
         var screen = SolarisForgeLoader.activeContent().screens().get("example:welcome");
         assertNotNull(screen);
-        assertEquals(LoaderScreenKind.SETTLEMENT, screen.kind());
         assertEquals(
                 new LoaderWidget.ActionButton(
                         "example:confirm", "Confirm", true, Optional.empty()),
@@ -125,7 +124,7 @@ final class ForgeLoaderTransportTest {
                         .orElseThrow());
         assertEquals("solaris:view-1", open.viewInstanceId());
         assertEquals(2, open.revision());
-        assertEquals("example:welcome", open.viewId());
+        assertEquals(new LoaderViewKey("example:welcome"), open.viewId());
         assertEquals("Welcome", open.title());
         assertTrue(SolarisForgeLoader.decodeView(openView, false).isEmpty());
         assertEquals("solaris:loader/manifest", LoaderManifestPayload.TYPE.id().toString());
@@ -220,7 +219,7 @@ final class ForgeLoaderTransportTest {
                 zip.putNextEntry(new ZipEntry("solaris-client.json"));
                 zip.write("""
                         {"schema":2,"screens":[{
-                          "id":"example:welcome","kind":"settlement","title":"Welcome",
+                          "id":"example:welcome","title":"Welcome",
                           "widgets":[{
                             "type":"action_button","action_id":"example:confirm","label":"Confirm"
                           }]

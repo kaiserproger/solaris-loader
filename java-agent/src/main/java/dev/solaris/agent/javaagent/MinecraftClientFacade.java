@@ -11,6 +11,7 @@ import net.minecraft.client.KeyboardHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.ConnectScreen;
 import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
@@ -31,6 +32,7 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.phys.Vec3;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -45,6 +47,8 @@ import java.util.concurrent.TimeoutException;
 
 public final class MinecraftClientFacade implements ClientFacade {
     private static final long MAX_TICK_WAIT_NANOS = 30_000_000_000L;
+    private static Field editBoxMaxLength;
+    private static Field editBoxEditable;
     private static final InputWithModifiers BUTTON_INPUT = new InputWithModifiers() {
         @Override
         public int input() {
@@ -94,6 +98,11 @@ public final class MinecraftClientFacade implements ClientFacade {
     }
 
     @Override
+    public JsonObject readItemComponents(String source, int slot) {
+        return MinecraftClientObservation.readItemComponents(requireInPlay(), source, slot);
+    }
+
+    @Override
     public JsonObject readBlock(int x, int y, int z) {
         return MinecraftClientObservation.readBlock(requireInPlay(), new BlockPos(x, y, z));
     }
@@ -112,7 +121,7 @@ public final class MinecraftClientFacade implements ClientFacade {
             long observedVersion = ClientStateEvents.version();
             JsonObject block = executor.callOnClientThread(() -> {
                 Minecraft minecraft = requireInPlay();
-                if (!minecraft.level.hasChunk(position.getX() >> 4, position.getZ() >> 4)) {
+                if (!minecraft.level.isLoaded(position)) {
                     return null;
                 }
                 return MinecraftClientObservation.readBlock(minecraft, position);
@@ -1066,6 +1075,12 @@ public final class MinecraftClientFacade implements ClientFacade {
     }
 
     @Override
+    public void requestLoaderView(String viewKey) {
+        requireInPlay();
+        SolarisClientAgent.requestLoaderView(viewKey);
+    }
+
+    @Override
     public void clickConfirmationButton(String expectedTitle, String buttonLabel) {
         Minecraft minecraft = Minecraft.getInstance();
         if (!(minecraft.screen instanceof ConfirmScreen screen)) {
@@ -1087,21 +1102,83 @@ public final class MinecraftClientFacade implements ClientFacade {
         String buttonLabel
     ) {
         Minecraft minecraft = requireInPlay();
+        pressExactButton(requireExactScreen(minecraft, expectedScreenClass, expectedTitle), buttonLabel, "screen");
+    }
+
+    @Override
+    public void setScreenInput(
+        String expectedScreenClass,
+        String expectedTitle,
+        String inputLabel,
+        String value
+    ) {
+        Minecraft minecraft = requireInPlay();
+        Screen screen = requireExactScreen(minecraft, expectedScreenClass, expectedTitle);
+        EditBox matched = null;
+        for (var child : screen.children()) {
+            if (child instanceof EditBox input && input.getMessage().getString().equals(inputLabel)) {
+                if (matched != null) {
+                    throw new IllegalStateException("screen input label is ambiguous");
+                }
+                matched = input;
+            }
+        }
+        if (matched == null) {
+            throw new IllegalStateException("screen input label was not found");
+        }
+        if (!matched.active || !matched.visible) {
+            throw new IllegalStateException("screen input is not enabled and visible");
+        }
+        if (value.length() > editableInputLimit(matched)) {
+            throw new IllegalArgumentException("value exceeds the native input maximum length");
+        }
+        screen.setFocused(matched);
+        matched.setValue(value);
+        if (minecraft.screen != screen || !screen.children().contains(matched)) {
+            throw new IllegalStateException("screen input became stale during the edit");
+        }
+        if (!matched.getValue().equals(value)) {
+            throw new IllegalStateException("native input rejected or truncated the requested value");
+        }
+    }
+
+    private static int editableInputLimit(EditBox input) {
+        try {
+            if (editBoxMaxLength == null) {
+                Field maximum = EditBox.class.getDeclaredField("maxLength");
+                Field editable = EditBox.class.getDeclaredField("isEditable");
+                maximum.setAccessible(true);
+                editable.setAccessible(true);
+                editBoxMaxLength = maximum;
+                editBoxEditable = editable;
+            }
+            if (!editBoxEditable.getBoolean(input)) {
+                throw new IllegalStateException("screen input is not editable");
+            }
+            return editBoxMaxLength.getInt(input);
+        } catch (ReflectiveOperationException error) {
+            throw new IllegalStateException("native EditBox input bounds are unavailable", error);
+        }
+    }
+
+    private static Screen requireExactScreen(
+        Minecraft minecraft,
+        String expectedScreenClass,
+        String expectedTitle
+    ) {
         Screen screen = minecraft.screen;
         if (screen == null) {
             throw new IllegalStateException("no client screen is open");
         }
         String actualScreenClass = screen.getClass().getName();
         if (!actualScreenClass.equals(expectedScreenClass)) {
-            throw new IllegalStateException(
-                "screen class mismatch: " + actualScreenClass
-            );
+            throw new IllegalStateException("screen class mismatch: " + actualScreenClass);
         }
         String actualTitle = screen.getTitle().getString();
         if (!actualTitle.equals(expectedTitle)) {
             throw new IllegalStateException("screen title mismatch: " + actualTitle);
         }
-        pressExactButton(screen, buttonLabel, "screen");
+        return screen;
     }
 
     private static void pressExactButton(

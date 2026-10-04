@@ -24,7 +24,7 @@ public sealed interface LoaderViewMessage {
     record Open(
             String viewInstanceId,
             long revision,
-            String viewId,
+            LoaderViewKey viewId,
             String title,
             LoaderViewModel model) implements LoaderViewMessage {
     }
@@ -84,8 +84,9 @@ public sealed interface LoaderViewMessage {
                 document, "view_instance_id", "loader view instance id");
         long revision = LoaderJson.integer(
                 document, "revision", 0, Long.MAX_VALUE, "loader view revision");
-        String viewId = LoaderJson.identifier(document, "view_id", "loader view id");
-        if (!content.screens().containsKey(viewId)) {
+        LoaderViewKey viewId = new LoaderViewKey(
+                LoaderJson.identifier(document, "view_id", "loader view id"));
+        if (!content.screens().containsKey(viewId.value())) {
             return Optional.empty();
         }
         String title = LoaderJson.nonEmpty(document, "title", MAX_TITLE_BYTES, "loader view title");

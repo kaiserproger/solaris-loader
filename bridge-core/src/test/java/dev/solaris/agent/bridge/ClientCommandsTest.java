@@ -1290,6 +1290,11 @@ final class ClientCommandsTest {
             return observation;
         }
 
+        @Override
+        public JsonObject readItemComponents(String source, int slot) {
+            throw new UnsupportedOperationException("this fixture has no native ItemStack components");
+        }
+
         public JsonObject readBlock(int x, int y, int z) {
             readBlockPosition = List.of(x, y, z);
             JsonObject block = new JsonObject();
@@ -1648,6 +1653,11 @@ final class ClientCommandsTest {
         }
 
         @Override
+        public void requestLoaderView(String viewKey) {
+            throw new UnsupportedOperationException("this fixture has no Loader connection");
+        }
+
+        @Override
         public void clickConfirmationButton(String expectedTitle, String buttonLabel) {
             confirmationTitle = expectedTitle;
             confirmationButtonLabel = buttonLabel;
@@ -1662,6 +1672,16 @@ final class ClientCommandsTest {
             this.expectedScreenClass = expectedScreenClass;
             expectedScreenTitle = expectedTitle;
             screenButtonLabel = buttonLabel;
+        }
+
+        @Override
+        public void setScreenInput(
+            String expectedScreenClass,
+            String expectedTitle,
+            String inputLabel,
+            String value
+        ) {
+            throw new UnsupportedOperationException("this fixture has no native EditBox");
         }
 
         @Override

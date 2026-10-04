@@ -43,7 +43,7 @@ final class LoaderContentArchive {
     private static final Set<String> INDEX_FIELDS = Set.of(
             "schema", "screens", "world_previews", "blocks", "items", "assets", "sounds");
     private static final Set<String> SCREEN_FIELDS =
-            Set.of("id", "kind", "title", "item_id", "block_id", "widgets", "input_bindings");
+            Set.of("id", "overlay", "title", "item_id", "block_id", "widgets", "input_bindings");
     private static final Set<String> INPUT_BINDING_FIELDS =
             Set.of("key", "press_action", "release_action");
     private static final Set<String> PREVIEW_FIELDS = Set.of(
@@ -188,7 +188,7 @@ final class LoaderContentArchive {
             }
 
             for (LoaderScreenDefinition screen : index.screens()) {
-                if (activatedScreens.putIfAbsent(screen.id(), screen) != null) {
+                if (activatedScreens.putIfAbsent(screen.id().value(), screen) != null) {
                     throw new IllegalArgumentException(
                             "duplicate activated Loader screen " + screen.id());
                 }
@@ -257,34 +257,35 @@ final class LoaderContentArchive {
         for (JsonElement entry : entries) {
             JsonObject screen = LoaderJson.object(entry, "Loader screen");
             LoaderJson.rejectUnknown(screen, SCREEN_FIELDS, "Loader screen");
-            String id = LoaderJson.identifier(screen, "id", "Loader screen id");
-            LoaderScreenKind kind = LoaderScreenKind.fromWireName(LoaderJson.nonEmpty(
-                    screen, "kind", LoaderJson.MAX_IDENTIFIER_BYTES, "Loader screen kind"));
+            LoaderViewKey id = new LoaderViewKey(
+                    LoaderJson.identifier(screen, "id", "Loader screen id"));
+            boolean overlay = LoaderJson.optionalFlag(
+                    screen, "overlay", "Loader screen overlay").orElse(false);
             String title = LoaderJson.nonEmpty(
                     screen, "title", LoaderScreenDefinition.MAX_TITLE_BYTES, "Loader screen title");
             Optional<String> itemId = LoaderJson.optionalIdentifier(
                     screen, "item_id", "Loader screen item id");
             Optional<String> blockId = LoaderJson.optionalIdentifier(
                     screen, "block_id", "Loader screen block id");
-            if (!screenIds.add(id)) {
+            if (!screenIds.add(id.value())) {
                 throw new IllegalArgumentException(
                         "Loader archive contains duplicate screen id " + id);
             }
             screens.add(new LoaderScreenDefinition(
-                    id, kind, title, itemId, blockId, widgets(screen), inputBindings(screen, kind)));
+                    id, overlay, title, itemId, blockId, widgets(screen), inputBindings(screen, overlay)));
         }
         return List.copyOf(screens);
     }
 
     /**
      * The optional {@code input_bindings} of one screen: a bounded, key-unique
-     * and action-distinct declaration of native keyboard edges. Only a HUD
-     * screen may declare bindings; every name is validated here and resolved
-     * against the client's native input table before a view is installed.
+     * and action-distinct declaration of native keyboard edges. Only an overlay
+     * may declare bindings; every name is validated here and resolved against
+     * the client's native input table before a view is installed.
      */
     private static List<LoaderInputBinding> inputBindings(
             JsonObject screen,
-            LoaderScreenKind kind) {
+            boolean overlay) {
         List<JsonElement> entries = LoaderJson.optionalArray(
                 screen,
                 "input_bindings",
@@ -293,9 +294,9 @@ final class LoaderContentArchive {
         if (entries.isEmpty()) {
             return List.of();
         }
-        if (kind != LoaderScreenKind.HUD) {
+        if (!overlay) {
             throw new IllegalArgumentException(
-                    "Loader input bindings require the hud screen kind");
+                    "Loader input bindings require overlay presentation");
         }
         List<LoaderInputBinding> bindings = new ArrayList<>(entries.size());
         Set<String> keys = new HashSet<>();
@@ -740,8 +741,8 @@ final class LoaderContentArchive {
         Set<String> blockIds = new HashSet<>();
         Set<String> itemIds = new HashSet<>();
         for (LoaderScreenDefinition screen : index.screens()) {
-            requireOwnedIdentifier(screen.id(), bundle.owner(), "screen id");
-            if (!ids.add(screen.id())) {
+            requireOwnedIdentifier(screen.id().value(), bundle.owner(), "screen id");
+            if (!ids.add(screen.id().value())) {
                 throw new IllegalArgumentException(
                         "Loader archive contains duplicate content id " + screen.id());
             }

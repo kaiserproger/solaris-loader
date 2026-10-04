@@ -21,7 +21,7 @@ final class LoaderInputBindingTest {
     @Test
     void declaredHudInputContextActivatesWithTypedBindings() throws Exception {
         LoaderScreenDefinition screen = activate(
-                "hud",
+                true,
                 INPUT_ONLY
                         + """
                         ,"input_bindings":[{
@@ -35,7 +35,6 @@ final class LoaderInputBindingTest {
                          }]
                         """);
 
-        assertEquals(LoaderScreenKind.HUD, screen.kind());
         assertEquals(List.of(), screen.widgets());
         assertEquals(
                 List.of(
@@ -51,14 +50,14 @@ final class LoaderInputBindingTest {
 
     @Test
     void absentOrEmptyBindingsDeclareNothingAtAll() throws Exception {
-        assertEquals(List.of(), activate("hud", INPUT_ONLY).inputBindings());
+        assertEquals(List.of(), activate(true, INPUT_ONLY).inputBindings());
         assertEquals(
                 List.of(),
-                activate("hud", INPUT_ONLY + ",\"input_bindings\":[]").inputBindings());
+                activate(true, INPUT_ONLY + ",\"input_bindings\":[]").inputBindings());
         assertEquals(
                 List.of(),
                 activate(
-                                "settlement",
+                                false,
                                 INPUT_ONLY,
                                 "[\"views\"]",
                                 "[\"present_views\"]",
@@ -67,7 +66,7 @@ final class LoaderInputBindingTest {
         assertEquals(
                 List.of(),
                 activate(
-                                "settlement",
+                                false,
                                 INPUT_ONLY + ",\"input_bindings\":[]",
                                 "[\"views\"]",
                                 "[\"present_views\"]",
@@ -79,20 +78,15 @@ final class LoaderInputBindingTest {
     void bindingCountBoundIsInclusiveAtItsLimit() throws Exception {
         assertEquals(
                 LoaderInputBinding.MAX_BINDINGS_PER_SCREEN,
-                activate("hud", INPUT_ONLY + ",\"input_bindings\":" + bindings(8))
+                activate(true, INPUT_ONLY + ",\"input_bindings\":" + bindings(8))
                         .inputBindings()
                         .size());
-        assertRejected("hud", INPUT_ONLY + ",\"input_bindings\":" + bindings(9));
+        assertRejected(true, INPUT_ONLY + ",\"input_bindings\":" + bindings(9));
     }
 
     @Test
-    void onlyHudScreensMayDeclareBindings() {
-        for (LoaderScreenKind kind : LoaderScreenKind.values()) {
-            if (kind == LoaderScreenKind.HUD) {
-                continue;
-            }
-            assertRejected(kind.wireName(), INPUT_ONLY + ",\"input_bindings\":" + bindings(1));
-        }
+    void onlyOverlayDeclarationsMayBindGameplayInput() {
+        assertRejected(false, INPUT_ONLY + ",\"input_bindings\":" + bindings(1));
     }
 
     @Test
@@ -168,7 +162,7 @@ final class LoaderInputBindingTest {
                 // Not an array of binding objects.
                 "\"key.keyboard.g\"",
                 "[\"key.keyboard.g\"]")) {
-            assertRejected("hud", INPUT_ONLY + ",\"input_bindings\":" + bindings);
+            assertRejected(true, INPUT_ONLY + ",\"input_bindings\":" + bindings);
         }
     }
 
@@ -177,33 +171,33 @@ final class LoaderInputBindingTest {
         String declared = INPUT_ONLY + ",\"input_bindings\":" + bindings(1);
 
         assertRejected(
-                "hud",
+                true,
                 declared,
                 "[\"views\"]",
                 PERMISSIONS,
                 LoaderPermission.PRESENT_VIEWS,
                 LoaderPermission.SEND_VIEW_ACTIONS);
         assertRejected(
-                "hud",
+                true,
                 declared,
                 CONTENT,
                 "[\"present_views\"]",
                 LoaderPermission.PRESENT_VIEWS);
         assertRejected(
-                "hud",
+                true,
                 declared,
                 "[\"views\"]",
                 "[\"present_views\"]",
                 LoaderPermission.PRESENT_VIEWS);
-        assertEquals(1, activate("hud", declared).inputBindings().size());
+        assertEquals(1, activate(true, declared).inputBindings().size());
     }
 
-    private static String index(String kind, String fields) {
+    private static String index(boolean overlay, String fields) {
         return """
                 {"schema":2,"screens":[{
-                  "id":"example:input","kind":"%s","title":"Input",%s
+                  "id":"example:input","overlay":%s,"title":"Input",%s
                 }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
-                """.formatted(kind, fields);
+                """.formatted(overlay, fields);
     }
 
     private static String bindings(int count) {
@@ -218,9 +212,9 @@ final class LoaderInputBindingTest {
         return "[%s]".formatted(bindings);
     }
 
-    private LoaderScreenDefinition activate(String kind, String fields) throws Exception {
+    private LoaderScreenDefinition activate(boolean overlay, String fields) throws Exception {
         return activate(
-                kind,
+                overlay,
                 fields,
                 CONTENT,
                 PERMISSIONS,
@@ -229,21 +223,21 @@ final class LoaderInputBindingTest {
     }
 
     private LoaderScreenDefinition activate(
-            String kind,
+            boolean overlay,
             String fields,
             String content,
             String permissions,
             LoaderPermission... granted) throws Exception {
-        byte[] archive = LoaderTestArchive.archive(index(kind, fields), Map.of());
+        byte[] archive = LoaderTestArchive.archive(index(overlay, fields), Map.of());
         return LoaderTestBundles.activate(
                         cacheDirectory, archive, content, permissions, granted)
                 .screens()
                 .get("example:input");
     }
 
-    private void assertRejected(String kind, String fields) {
+    private void assertRejected(boolean overlay, String fields) {
         assertRejected(
-                kind,
+                overlay,
                 fields,
                 CONTENT,
                 PERMISSIONS,
@@ -252,12 +246,12 @@ final class LoaderInputBindingTest {
     }
 
     private void assertRejected(
-            String kind,
+            boolean overlay,
             String fields,
             String content,
             String permissions,
             LoaderPermission... granted) {
-        byte[] archive = LoaderTestArchive.archive(index(kind, fields), Map.of());
+        byte[] archive = LoaderTestArchive.archive(index(overlay, fields), Map.of());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> {

@@ -3,7 +3,6 @@ package dev.solaris.loader.minecraft;
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderInputBinding;
 import dev.solaris.loader.LoaderScreenDefinition;
-import dev.solaris.loader.LoaderScreenKind;
 import dev.solaris.loader.LoaderViewMessage;
 import java.util.Map;
 import java.util.Optional;
@@ -15,10 +14,10 @@ import net.minecraft.network.chat.Component;
 
 /**
  * Client-thread presentation of the server-authoritative Loader views shared by
- * all adapters. A modal kind presents one {@link LoaderViewScreen} on the client's
- * screen stack; a {@link LoaderScreenKind#HUD} kind is a non-modal instance that
- * stays visible beside every other owner's HUD and hosts the screen's declared
- * input bindings. Every validation stays in the core codec.
+ * all adapters. A modal declaration presents one {@link LoaderViewScreen} on the
+ * client's screen stack; an overlay is non-modal and stays visible beside every
+ * other owner's overlay, hosting its declared input bindings. The opaque key
+ * never determines presentation. Every validation stays in the core codec.
  */
 public final class LoaderMinecraftView {
     /** The native HUD layer every adapter registers this presentation under. */
@@ -42,11 +41,11 @@ public final class LoaderMinecraftView {
         Minecraft client = Minecraft.getInstance();
         switch (message) {
             case LoaderViewMessage.Open open -> {
-                LoaderScreenDefinition definition = content.screens().get(open.viewId());
+                LoaderScreenDefinition definition = content.screens().get(open.viewId().value());
                 if (definition == null) {
                     return;
                 }
-                if (definition.kind() == LoaderScreenKind.HUD) {
+                if (definition.overlay()) {
                     openHud(open, definition, content, send);
                     return;
                 }

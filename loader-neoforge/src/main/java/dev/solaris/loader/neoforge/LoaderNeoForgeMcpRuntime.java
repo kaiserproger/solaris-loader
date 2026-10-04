@@ -2,6 +2,7 @@ package dev.solaris.loader.neoforge;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.function.Consumer;
 
 final class LoaderNeoForgeMcpRuntime {
     private static final String TOKEN_ENV = "SOLARIS_CLIENT_MCP_TOKEN";
@@ -45,6 +46,8 @@ final class LoaderNeoForgeMcpRuntime {
                     "dev.solaris.agent.javaagent.ClientStateEvents",
                     true,
                     loader);
+            Consumer<String> requester = SolarisNeoForgeLoader::requestView;
+            agent.getMethod("registerLoaderViewRequester", Consumer.class).invoke(null, requester);
             return new LoaderNeoForgeMcpRuntime(
                     agent.getMethod("startFromRuntime"),
                     scenarioClient.getMethod("runPreTickActions"),

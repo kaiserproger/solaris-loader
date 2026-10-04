@@ -2,18 +2,23 @@ package dev.solaris.agent.javaagent;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.mojang.serialization.JsonOps;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.ChatComponent;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.DisconnectedScreen;
 import net.minecraft.client.multiplayer.chat.GuiMessage;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.component.TypedDataComponent;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.material.FluidState;
@@ -32,6 +37,75 @@ final class MinecraftClientObservation {
     private static final int RECENT_CHAT_LIMIT = 20;
 
     private MinecraftClientObservation() {
+    }
+
+    /** Read one actual native stack; never run component serialization in the tick observer. */
+    static JsonObject readItemComponents(Minecraft minecraft, String source, int requestedSlot) {
+        int slot = requestedSlot;
+        ItemStack stack;
+        AbstractContainerMenu menu = null;
+        switch (source) {
+            case "selected" -> {
+                if (requestedSlot != -1) {
+                    throw new IllegalArgumentException("selected source does not accept a slot");
+                }
+                slot = minecraft.player.getInventory().getSelectedSlot();
+                stack = minecraft.player.getInventory().getItem(slot);
+            }
+            case "player" -> {
+                int size = minecraft.player.getInventory().getContainerSize();
+                if (slot < 0 || slot >= size) {
+                    throw new IllegalArgumentException("player slot is outside inventory size " + size);
+                }
+                stack = minecraft.player.getInventory().getItem(slot);
+            }
+            case "container" -> {
+                menu = minecraft.player.containerMenu;
+                if (!(minecraft.screen instanceof AbstractContainerScreen<?> screen)
+                        || screen.getMenu() != menu) {
+                    throw new IllegalStateException("no visible container menu is open");
+                }
+                if (slot < 0 || slot >= menu.slots.size()) {
+                    throw new IllegalArgumentException("container slot is outside menu size " + menu.slots.size());
+                }
+                stack = menu.getSlot(slot).getItem();
+            }
+            default -> throw new IllegalArgumentException("source must be selected, player, or container");
+        }
+        JsonObject result = new JsonObject();
+        result.addProperty("source", source);
+        result.addProperty("slot", slot);
+        if (menu != null) {
+            result.addProperty("container_id", menu.containerId);
+            result.addProperty("container_state_id", menu.getStateId());
+        }
+        JsonObject components = new JsonObject();
+        result.add("components", components);
+        result.addProperty("item_id", stack.isEmpty()
+                ? "minecraft:air" : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
+        result.addProperty("count", stack.isEmpty() ? 0 : stack.getCount());
+        if (stack.isEmpty()) {
+            return result;
+        }
+        var ops = minecraft.level.registryAccess().createSerializationContext(JsonOps.INSTANCE);
+        for (TypedDataComponent<?> component : stack.getComponents()) {
+            var identifier = BuiltInRegistries.DATA_COMPONENT_TYPE.getKey(component.type());
+            if (identifier == null) {
+                throw new IllegalStateException("received stack contains an unregistered component");
+            }
+            if (component.type() == DataComponents.CUSTOM_DATA) {
+                // SNBT retains NBT numeric/array types; it is not core's canonical binary carrier.
+                JsonObject nbt = new JsonObject();
+                nbt.addProperty("snbt", ((CustomData) component.value()).toString());
+                components.add(identifier.toString(), nbt);
+            } else {
+                if (component.type().codec() == null) {
+                    throw new IllegalStateException("component has no readable JSON codec: " + identifier);
+                }
+                components.add(identifier.toString(), component.encodeValue(ops).getOrThrow());
+            }
+        }
+        return result;
     }
 
     static JsonObject observe(Minecraft minecraft) {

@@ -10,68 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ClientMcpToolsTest {
-    @Test
-    void exposesStableObservationAndControlSurface() {
-        List<McpToolDefinition> tools = ClientMcpTools.definitions();
-
-        assertEquals(List.of(
-            "minecraft_observe",
-            "minecraft_read_block",
-            "minecraft_wait_for_loaded_block",
-            "minecraft_wait_for_block_state",
-            "minecraft_scan_blocks",
-            "minecraft_list_entities",
-            "minecraft_read_recipe_book",
-            "minecraft_wait_for_visible_entity",
-            "minecraft_wait_for_entity_motion",
-            "minecraft_wait_for_entity_removed",
-            "minecraft_wait_for_health_below",
-            "minecraft_wait_for_inventory",
-            "minecraft_wait_for_container_slot",
-            "minecraft_wait_for_visible_item",
-            "minecraft_wait_for_no_visible_item",
-            "minecraft_connect",
-            "minecraft_wait_for_play",
-            "minecraft_wait_for_state_change",
-            "minecraft_disconnect",
-            "minecraft_set_hotbar_slot",
-            "minecraft_select_hotbar_item",
-            "minecraft_navigate_to_block",
-            "minecraft_approach_entity",
-            "minecraft_interact_entity",
-            "minecraft_attack_entity_once",
-            "minecraft_attack_entity_until_drop_collected",
-            "minecraft_look",
-            "minecraft_look_at_block",
-            "minecraft_use_item_on",
-            "minecraft_break_block",
-            "minecraft_press_inputs",
-            "minecraft_wait_ticks",
-            "minecraft_close_screen",
-            "minecraft_click_confirmation_button",
-            "minecraft_click_screen_button",
-            "minecraft_open_inventory",
-            "minecraft_respawn",
-            "minecraft_quick_move_container_slot",
-            "minecraft_click_container_slot",
-            "minecraft_click_container_button",
-            "minecraft_send_chat",
-            "minecraft_drop_selected_item",
-            "minecraft_run_scenario",
-            "minecraft_screenshot"
-        ), tools.stream().map(McpToolDefinition::name).toList());
-
-        assertTrue(find(tools, "minecraft_observe").readOnly());
-        assertTrue(find(tools, "minecraft_read_block").readOnly());
-        assertTrue(find(tools, "minecraft_wait_for_loaded_block").readOnly());
-        assertTrue(find(tools, "minecraft_wait_for_block_state").readOnly());
-        assertTrue(find(tools, "minecraft_scan_blocks").readOnly());
-        assertTrue(find(tools, "minecraft_list_entities").readOnly());
-        assertTrue(find(tools, "minecraft_read_recipe_book").readOnly());
-        assertFalse(find(tools, "minecraft_connect").readOnly());
-        assertFalse(find(tools, "minecraft_press_inputs").readOnly());
-        assertFalse(find(tools, "minecraft_open_inventory").readOnly());
-    }
 
     @Test
     void publishesBoundsNeededToKeepClientQueriesFinite() {

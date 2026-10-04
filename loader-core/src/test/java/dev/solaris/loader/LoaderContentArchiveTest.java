@@ -37,7 +37,6 @@ final class LoaderContentArchiveTest {
         LoaderActivatedContent active = outgoing.activatedContent();
         LoaderScreenDefinition screen = active.screens().get("example:welcome");
         assertEquals("Welcome", screen.title());
-        assertEquals(LoaderScreenKind.SETTLEMENT, screen.kind());
         assertEquals(
                 List.of(new LoaderWidget.Tabs(
                         "pages", List.of(new LoaderWidget.Entry("one", "One")))),
@@ -75,7 +74,7 @@ final class LoaderContentArchiveTest {
         byte[] missingDefinition = LoaderTestArchive.archive(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:catalog","kind":"economy","title":"Catalog",
+                  "id":"example:catalog","title":"Catalog",
                   "item_id":"example:ruby","widgets":[]}],
                 "world_previews":[],"blocks":[],"items":[{
                   "id":"example:ruby","base_item":"minecraft:paper","name":"Ruby"
@@ -145,7 +144,7 @@ final class LoaderContentArchiveTest {
         byte[] undeclaredBlock = LoaderTestArchive.archive(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:catalog","kind":"construction","title":"Catalog",
+                  "id":"example:catalog","title":"Catalog",
                   "block_id":"example:missing","widgets":[]}],
                 "world_previews":[],"blocks":[{
                   "id":"example:ruby_block","model":"example:block/ruby_block",
@@ -247,7 +246,7 @@ final class LoaderContentArchiveTest {
         byte[] undeclaredScreens = LoaderTestArchive.archive(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:welcome","kind":"settlement","title":"Welcome","widgets":[]
+                  "id":"example:welcome","title":"Welcome","widgets":[]
                 }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
                 """,
                 Map.of());
@@ -303,7 +302,7 @@ final class LoaderContentArchiveTest {
                 """,
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:welcome","kind":"settlement","title":"Welcome","widgets":[]
+                  "id":"example:welcome","title":"Welcome","widgets":[]
                 }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[],
                 "interactions":[]}
                 """)) {
@@ -323,7 +322,7 @@ final class LoaderContentArchiveTest {
         byte[] archive = LoaderTestArchive.archive(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:welcome","kind":"settlement","title":"Welcome","widgets":[]
+                  "id":"example:welcome","title":"Welcome","widgets":[]
                 }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[],
                 "future":true}
                 """,
@@ -379,12 +378,12 @@ final class LoaderContentArchiveTest {
                 """,
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:welcome","kind":"settlement","title":7,"widgets":[]
+                  "id":"example:welcome","title":7,"widgets":[]
                 }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
                 """,
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:welcome","kind":"settlement","title":"Welcome",
+                  "id":"example:welcome","title":"Welcome",
                   "widgets":[{"type":"input_text","id":"note","label":"Note","max_bytes":"8"}]}
                 }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
                 """)) {
@@ -404,7 +403,7 @@ final class LoaderContentArchiveTest {
         byte[] leadingEntry = LoaderTestArchive.archiveWithLeadingEntry(
                 """
                 {"schema":2,"screens":[{
-                  "id":"example:welcome","kind":"settlement","title":"Welcome","widgets":[]
+                  "id":"example:welcome","title":"Welcome","widgets":[]
                 }],"world_previews":[],"blocks":[],"items":[],"assets":[],"sounds":[]}
                 """);
         LoaderTestBundles.writeCache(cacheDirectory, leadingEntry);

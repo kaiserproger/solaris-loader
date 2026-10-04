@@ -8,11 +8,13 @@ import dev.solaris.agent.mcp.McpHttpServer;
 
 import java.lang.instrument.Instrumentation;
 import java.util.Properties;
+import java.util.function.Consumer;
 
 public final class SolarisClientAgent {
     private static AgentHttpBridge bridge;
     private static McpHttpServer mcp;
     private static boolean shutdownHookInstalled;
+    private static volatile Consumer<String> loaderViewRequester;
 
     private SolarisClientAgent() {
     }
@@ -27,6 +29,18 @@ public final class SolarisClientAgent {
 
     public static boolean startFromRuntime() {
         return start(null);
+    }
+
+    public static void registerLoaderViewRequester(Consumer<String> requester) {
+        loaderViewRequester = java.util.Objects.requireNonNull(requester);
+    }
+
+    static void requestLoaderView(String viewKey) {
+        Consumer<String> requester = loaderViewRequester;
+        if (requester == null) {
+            throw new IllegalStateException("Loader view requests are unavailable in this runtime");
+        }
+        requester.accept(viewKey);
     }
 
     static synchronized boolean start(String agentArgs) {

@@ -4,13 +4,12 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * One validated schema-2 screen of the activated Loader registry. Input
- * bindings are declared only by {@link LoaderScreenKind#HUD} screens and stay
- * empty for every modal kind.
+ * One validated schema-2 plugin view. Overlay presentation is declarative and
+ * independent of its opaque view key; only overlays host native input bindings.
  */
 public record LoaderScreenDefinition(
-        String id,
-        LoaderScreenKind kind,
+        LoaderViewKey id,
+        boolean overlay,
         String title,
         Optional<String> itemId,
         Optional<String> blockId,

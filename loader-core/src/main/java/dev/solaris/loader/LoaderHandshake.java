@@ -64,6 +64,8 @@ public final class LoaderHandshake {
             LoaderManifest manifest,
             LoaderEnvironment environment,
             LoaderActivatedContent content) {
+        LoaderPlatform platform = environment.platform();
+        requireJavaPlatform(platform);
         List<LoaderPermission> accepted = new ArrayList<>();
         List<String> cached = new ArrayList<>();
         for (LoaderBundle bundle : manifest.bundles()) {
@@ -93,7 +95,7 @@ public final class LoaderHandshake {
         }
         LoaderClientAck ack = new LoaderClientAck(
                 PROTOCOL_VERSION,
-                environment.platform(),
+                platform,
                 environment.loaderVersion(),
                 List.copyOf(accepted),
                 List.copyOf(cached),
@@ -155,9 +157,7 @@ public final class LoaderHandshake {
         if (manifest == null || manifest.protocol() != PROTOCOL_VERSION) {
             throw new IllegalArgumentException("unsupported loader protocol");
         }
-        if (platform == null) {
-            throw new IllegalArgumentException("loader platform is missing");
-        }
+        requireJavaPlatform(platform);
         requireText(loaderVersion, 64, "loader version");
         if (manifest.bundles() == null || manifest.bundles().isEmpty()) {
             throw new IllegalArgumentException("loader manifest must contain at least one bundle");
@@ -220,6 +220,15 @@ public final class LoaderHandshake {
             case WORLD_SELECTION -> LoaderPermission.SEND_WORLD_SELECTION;
             case SOUNDS -> LoaderPermission.PLAY_SOUNDS;
         };
+    }
+
+    private static void requireJavaPlatform(LoaderPlatform platform) {
+        if (platform == null) {
+            throw new IllegalArgumentException("loader platform is missing");
+        }
+        if (platform == LoaderPlatform.NATIVE) {
+            throw new IllegalArgumentException("native is not a Java loader platform");
+        }
     }
 
     private static void requireText(String value, int maxBytes, String name) {

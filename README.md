@@ -123,6 +123,14 @@ platform, permissions, and exact cache identities. `loader-fabric`, `loader-neof
 and `loader-forge` register the same Configuration-state manifest and
 acknowledgement payloads through their native 26.1.2 networking APIs.
 
+Bundle `loaders` metadata recognizes the shared supported-platform values
+`native`, `fabric`, `neoforge`, and `forge`. The `native` value is preserved for
+the Solaris native client; it is not a Java adapter identity. Each Java adapter
+is admitted only when its real platform is listed, and acknowledges as
+`fabric`, `neoforge`, or `forge`, never `native`. Unknown, empty, or duplicate
+supported-platform declarations still fail validation. This does not change
+Loader protocol **3** or client artifact index **schema 2**.
+
 The first manifest for an exact server address and permission set opens a
 Minecraft confirmation screen. Allow and deny decisions are stored separately
 per normalized server address in `permissions.properties` under the Loader
@@ -147,15 +155,17 @@ with `solaris-client.json` as its first entry. That closed schema **2** accepts
 `screens`, `world_previews`, `blocks`, `items`, `assets` and `sounds`; unknown
 fields, unknown widget types and out-of-bound geometry fail activation, and
 schema-1 indexes or the removed UI/interaction shapes have no decoder. Each
-screen declares one of the six kinds `settlement`, `construction`, `economy`,
-`garrison`, `army` or `hud` and a bounded widget list from `paged_table`,
-`tabs`, `input_number`, `input_text`, `select_enum`, `resource_panel`,
-`action_button` and `world_marker`; there is no HTML/JS, arbitrary Java,
-filesystem access or client-side scripting.
+screen declares an exact plugin-owned `id`: a lowercase namespaced resource
+identifier of 1..128 ASCII bytes, with no built-in product kinds. Its bounded
+widget list uses `paged_table`, `tabs`, `input_number`, `input_text`,
+`select_enum`, `resource_panel`, `action_button` and `world_marker`; there is no
+HTML/JS, arbitrary Java, filesystem access or client-side scripting. Unknown,
+foreign-namespace or conflicting declarations fail activation.
 
-A `hud` screen is non-modal: each owner's HUD is its own instance, several stay
-visible at once, and an update or close names one exact instance and revision, so
-a HUD never takes, replaces or closes the modal screen. A `hud` screen may also
+A screen with `overlay: true` is non-modal (the optional flag defaults to
+false): each owner's overlay is its own instance, several stay visible at
+once, and an update or close names one exact instance and revision, so an
+overlay never takes, replaces or closes the modal screen. Only an overlay may
 declare up to eight `input_bindings` (`key`, `press_action`, `release_action`):
 canonical `key.keyboard.*` names bound to owner-qualified view action ids, which
 require `view_actions` content and `send_view_actions`. The client resolves every
@@ -186,10 +196,13 @@ modal view screen is the paginated presentation for the exact originating
 connection - a paged table of rows, tabs, typed inputs, a resource panel, action
 buttons honouring `enabled` and showing `deny_reason`, and the `reason` line,
 with the declared item/block displays - and its caption is the activated screen
-declaration's own bounded `title`, never the wire `view_id`. A `hud` instance
-renders only its declared widgets, so a widgetless HUD draws nothing while still
-hosting its declared bindings. Both modes open with the authoritative model the
-`open_view` carried. Referenced items render
+declaration's own bounded `title`, never the wire `view_id`. Overlay instances
+render only their declared widgets, so a widgetless overlay draws nothing while
+still hosting its declared bindings. Neither mode invents interactive widgets
+for undeclared model actions, fields or tabs. Declared actions and inputs absent
+from the live model are hidden, not enabled no-op buttons or placeholder fields;
+live disabled actions remain disabled. Both modes open with the authoritative
+model the `open_view` carried. Referenced items render
 through a local vanilla stack with Minecraft 26.1.2's owner-namespaced
 `ITEM_MODEL`; no late registry mutation is used. `open_view` carries
 `view_instance_id`, `revision`, `view_id`, `title` and the model;
@@ -208,10 +221,12 @@ instance, revision, owner and presented typed field schema, and delivers
 `on_loader_view_action(event)` solely to the plugin owning the view
 namespace; stale revisions, foreign owners, substituted field ids or types and
 client-minted values are refused. Client-side `cancel_selection` and
-`view_request` (`settlement` or `army`) use the same closed JSON
-contract; the Loader registers only the bindings an activated `hud` screen
-declares - no rebinding, client-side scripting, fallback key table, wire-2
-fallback or client Lua runtime.
+`view_request` use the same closed JSON contract. The protocol-3 request field
+`request_kind` carries the exact declared screen `id`, not a built-in kind or
+alias; the client refuses undeclared keys and inactive connections. Presentation
+comes solely from the declaration, never from the key. The Loader registers
+only the bindings an activated overlay declares - no rebinding, client-side
+scripting, fallback key table, wire-2 fallback or client Lua runtime.
 
 Activation and disconnect clear the open modal, every HUD instance with its held
 bindings and action sink, Loader sound playback and the active registry, so
@@ -241,13 +256,24 @@ The [live fixture gate](../solaris/examples/loader-live-gate/README.md) captures
 audio output for all three platforms; no acknowledgement or chat response is
 treated as evidence that the sound played.
 
+Run the scoped bridge, agent, and platform tests against the intended core
+checkout (override `SOLARIS_REPO_ROOT` for a worktree):
+
 ```sh
-./gradlew \
+SOLARIS_REPO_ROOT=../solaris ./gradlew --no-daemon \
+  :bridge-core:test \
+  :java-agent:test \
   :loader-core:test \
   :loader-fabric:test \
   :loader-neoforge:test \
   :loader-forge:test
 ```
+
+`LoaderLiveGateFixtureTest` loads the core checkout's generated
+`rich-content.zip` archives, not its JSON templates. After changing the fixture
+screen schema, rebuild those archives and manifest hashes with the core's
+`tools/build-loader-live-gate-fixture.sh` before running these tests; legacy
+screen `kind` fields are rejected rather than adapted.
 
 Build distributable platform jars with:
 
@@ -361,6 +387,24 @@ Read-only tools:
 - `minecraft_wait_for_inventory`: wait for an exact item count.
 - `minecraft_wait_for_visible_item`: wait for an item entity near a position.
 - `minecraft_wait_for_no_visible_item`: wait for that item entity to disappear.
+- `minecraft_read_item_components`: on-demand native received-stack inspection,
+  separate from the tick observer. Arguments are `source` (`selected`, `player`,
+  or `container`) and `slot` (0..32767): `selected` forbids `slot` and resolves the
+  actual selected player inventory slot; `player` and `container` require it.
+  Player indices address the native player inventory; container indices address
+  the actual visible native menu, never a player-inventory fallback. Out-of-range
+  slots, no visible container, or an inactive client fail explicitly.
+  Returns `source`, resolved `slot`, actual `item_id`, `count`, and `components`,
+  keyed by present native namespaced component IDs. Container reads also return
+  `container_id` and `container_state_id`. Standard values use Minecraft's
+  registry-aware native JSON codecs, including integer `minecraft:max_damage`
+  and `minecraft:damage`. `minecraft:custom_data`, when present, is
+  `{"snbt":"<native Compound SNBT>"}` to preserve NBT numeric and array types;
+  absence remains absence. This SNBT is not the core's canonical binary NBT
+  carrier or a product-quality interpretation. Empty slots return
+  `minecraft:air`, count 0 and an empty component object. Unregistered,
+  non-serializable or codec-rejected components fail the whole read rather than
+  silently omitting values or inventing equivalents.
 
 Controls:
 
@@ -372,8 +416,20 @@ Controls:
   `minecraft_look_at_block`, `minecraft_use_item_on`.
 - Input: `minecraft_press_inputs`, `minecraft_wait_ticks`,
   `minecraft_open_inventory`, `minecraft_close_screen`,
+  `minecraft_request_loader_view` (`view_key`: exact declared namespaced ID;
+  requires the acknowledged live Loader connection),
   `minecraft_click_confirmation_button`, `minecraft_click_screen_button`,
   `minecraft_send_chat`.
+- `minecraft_set_screen_input`: genuine on-client-thread native EditBox editing.
+  Requires exact `expected_screen_class` and `expected_title` (1..256 characters),
+  `input_label` (1..128), and string `value` (0..256, including empty). The label
+  must name exactly one current native EditBox; it must be visible, enabled and
+  editable. The value must fit that widget's actual native maximum length.
+  The operation focuses the widget and invokes native `setValue`, including its
+  real responder, then verifies the widget/screen remain current and the native
+  value equals the requested value. Missing, ambiguous, disabled, stale or
+  truncating/rejecting controls fail explicitly. No Loader model/packet field is
+  written directly; a later ordinary action button submits the edited fields.
 - Containers: `minecraft_quick_move_container_slot`,
   `minecraft_click_container_slot`, and `minecraft_click_container_button`;
   ordinary clicks accept primary or secondary input and also confirm a

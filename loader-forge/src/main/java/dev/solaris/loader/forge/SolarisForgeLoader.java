@@ -8,6 +8,8 @@ import dev.solaris.loader.LoaderPermissionRequest;
 import dev.solaris.loader.LoaderPlatform;
 import dev.solaris.loader.LoaderRuntimeSettings;
 import dev.solaris.loader.LoaderViewMessage;
+import dev.solaris.loader.LoaderViewActionRequest;
+import dev.solaris.loader.LoaderViewKey;
 import dev.solaris.loader.LoaderSoundCommand;
 import dev.solaris.loader.minecraft.LoaderMinecraftSound;
 import dev.solaris.loader.minecraft.LoaderMinecraftView;
@@ -308,6 +310,18 @@ public final class SolarisForgeLoader {
             byte[] payload,
             boolean connectionActive) {
         return LoaderViewMessage.decode(payload, ACTIVE_CONTENT.get(), connectionActive);
+    }
+
+    static void requestView(String viewKey) {
+        Minecraft client = Minecraft.getInstance();
+        var listener = client.getConnection();
+        Connection origin = listener == null ? null : listener.getConnection();
+        boolean active = origin != null && origin.isConnected() && RESOURCE_PACK.owns(origin);
+        byte[] bytes = LoaderViewActionRequest.request(
+                new LoaderViewKey(viewKey), ACTIVE_CONTENT.get(), active)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Loader view request requires an active declared view"));
+        sendViewAction(client, origin, bytes);
     }
 
     private static void sendViewAction(

@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderBlockDefinition;
 import dev.solaris.loader.LoaderScreenDefinition;
-import dev.solaris.loader.LoaderScreenKind;
+import dev.solaris.loader.LoaderViewKey;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
@@ -18,8 +18,8 @@ final class LoaderMinecraftBlockTest {
     @Test
     void referencedBlockResolvesAndGeneratesCarrierModels() {
         LoaderScreenDefinition screen = new LoaderScreenDefinition(
-                "example:catalog",
-                LoaderScreenKind.CONSTRUCTION,
+                new LoaderViewKey("example:catalog"),
+                false,
                 "Catalog",
                 Optional.empty(),
                 Optional.of("example:ruby_block"),
@@ -35,7 +35,7 @@ final class LoaderMinecraftBlockTest {
                 "Sapphire Block");
         LoaderActivatedContent content = new LoaderActivatedContent(
                 List.of(),
-                Map.of(screen.id(), screen),
+                Map.of(screen.id().value(), screen),
                 Map.of(),
                 Map.of(block.id(), block, second.id(), second),
                 Map.of(),
@@ -73,8 +73,8 @@ final class LoaderMinecraftBlockTest {
     @Test
     void undeclaredBlockDoesNotResolveOrGenerateResources() {
         LoaderScreenDefinition screen = new LoaderScreenDefinition(
-                "example:catalog",
-                LoaderScreenKind.CONSTRUCTION,
+                new LoaderViewKey("example:catalog"),
+                false,
                 "Catalog",
                 Optional.empty(),
                 Optional.of("example:ruby_block"),

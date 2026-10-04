@@ -23,7 +23,7 @@ final class LoaderHandshakeTest {
                 "artifact": "client/rich.zip",
                 "sha256": "%s",
                 "size_bytes": 128,
-                "loaders": ["fabric", "neoforge", "forge"],
+                "loaders": ["native", "fabric", "neoforge", "forge"],
                 "content": ["views", "assets"],
                 "permissions": ["present_views", "load_assets"],
                 "cache_key": "%s"
@@ -33,13 +33,24 @@ final class LoaderHandshakeTest {
 
     @Test
     void acceptsTheSameManifestForAllThreeLoaderPlatforms() {
-        for (LoaderPlatform platform : LoaderPlatform.values()) {
+        for (LoaderPlatform platform : List.of(
+                LoaderPlatform.FABRIC, LoaderPlatform.NEOFORGE, LoaderPlatform.FORGE)) {
             LoaderEnvironment environment = environment(
                     platform,
                     Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
             LoaderManifest manifest = LoaderHandshake.validateTransferManifest(
                     MANIFEST,
                     environment);
+            assertEquals(
+                    List.of(
+                            LoaderPlatform.NATIVE,
+                            LoaderPlatform.FABRIC,
+                            LoaderPlatform.NEOFORGE,
+                            LoaderPlatform.FORGE),
+                    manifest.bundles().get(0).loaders());
+            assertEquals(
+                    manifest,
+                    new Gson().fromJson(new Gson().toJson(manifest), LoaderManifest.class));
             byte[] payload = LoaderHandshake.acknowledgement(
                     manifest,
                     environment,
@@ -53,6 +64,63 @@ final class LoaderHandshakeTest {
             assertEquals(List.of(CACHE_KEY), ack.cachedBundles());
             assertEquals(Map.of(), ack.carrierBlockStateIds());
         }
+    }
+
+    @Test
+    void rejectsUnknownEmptyAndDuplicateSupportedPlatforms() {
+        LoaderEnvironment environment = environment(
+                LoaderPlatform.FABRIC,
+                Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
+        for (String loaders : List.of(
+                "[\"native\", \"fabric\", \"unknown\"]",
+                "[]",
+                "[\"native\", \"native\", \"fabric\"]")) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LoaderHandshake.validateTransferManifest(withLoaders(loaders), environment));
+        }
+    }
+
+    @Test
+    void nativeSupportDoesNotAdmitAnUnsupportedJavaPlatform() {
+        for (LoaderPlatform platform : List.of(
+                LoaderPlatform.FABRIC, LoaderPlatform.NEOFORGE, LoaderPlatform.FORGE)) {
+            LoaderEnvironment environment = environment(
+                    platform,
+                    Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
+            for (String loaders : List.of("[\"native\"]", "[\"native\", \"%s\"]".formatted(
+                    platform == LoaderPlatform.FABRIC ? "forge" : "fabric"))) {
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> LoaderHandshake.inspectManifest(
+                                withLoaders(loaders), platform, "0.1.0"));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> LoaderHandshake.validateTransferManifest(withLoaders(loaders), environment));
+            }
+        }
+    }
+
+    @Test
+    void javaClientCannotClaimNativeOrAcknowledgeAsNative() {
+        LoaderEnvironment nativeEnvironment = environment(
+                LoaderPlatform.NATIVE,
+                Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
+        for (byte[] payload : List.of(MANIFEST, withLoaders("[\"native\"]"))) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LoaderHandshake.inspectManifest(
+                            payload, LoaderPlatform.NATIVE, "0.1.0"));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LoaderHandshake.validateTransferManifest(payload, nativeEnvironment));
+        }
+        LoaderManifest manifest = LoaderHandshake.inspectManifest(
+                MANIFEST, LoaderPlatform.FABRIC, "0.1.0");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderHandshake.acknowledgement(
+                        manifest, nativeEnvironment, LoaderActivatedContent.empty()));
     }
 
     @Test
@@ -252,6 +320,12 @@ final class LoaderHandshakeTest {
                         environment(
                                 LoaderPlatform.FABRIC,
                                 Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS))));
+    }
+
+    private static byte[] withLoaders(String loaders) {
+        return new String(MANIFEST, StandardCharsets.UTF_8)
+                .replace("[\"native\", \"fabric\", \"neoforge\", \"forge\"]", loaders)
+                .getBytes(StandardCharsets.UTF_8);
     }
 
     private static String content(LoaderContentKind kind) {

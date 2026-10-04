@@ -16,6 +16,8 @@ public interface ClientFacade {
 
     JsonObject observe();
 
+    JsonObject readItemComponents(String source, int slot);
+
     JsonObject readBlock(int x, int y, int z);
 
     JsonObject waitForLoadedBlock(int x, int y, int z, Duration timeout) throws Exception;
@@ -123,12 +125,21 @@ public interface ClientFacade {
 
     void closeCurrentScreen() throws Exception;
 
+    void requestLoaderView(String viewKey);
+
     void clickConfirmationButton(String expectedTitle, String buttonLabel) throws Exception;
 
     void clickScreenButton(
         String expectedScreenClass,
         String expectedTitle,
         String buttonLabel
+    ) throws Exception;
+
+    void setScreenInput(
+        String expectedScreenClass,
+        String expectedTitle,
+        String inputLabel,
+        String value
     ) throws Exception;
 
     void openInventory() throws Exception;
