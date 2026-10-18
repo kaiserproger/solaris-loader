@@ -9,6 +9,7 @@ import java.util.UUID;
 
 final class FakeScenarioClient implements ScenarioClient {
         final List<String> operations = new ArrayList<>();
+        Duration minimumZombieScanTimeout = Duration.ZERO;
         String logItemId = "minecraft:oak_log";
         String planksItemId = "minecraft:oak_planks";
         int oakLogs = 0;
@@ -19,6 +20,7 @@ final class FakeScenarioClient implements ScenarioClient {
         int woodenSwords = 0;
         int woodenHoes = 0;
         int cobblestones = 0;
+        int excavationCobblestoneReserve = -1;
         int cobblestoneSlabs = 0;
         int stonePickaxes = 0;
         int stoneSwords = 0;
@@ -26,6 +28,10 @@ final class FakeScenarioClient implements ScenarioClient {
         int rawIron = 0;
         int ironIngots = 0;
         int totalExperience = 0;
+        int furnaceBurnRemaining = 0;
+        int furnaceBurnTotal = 300;
+        int furnaceCookProgress = 0;
+        int furnaceCookTotal = 200;
         int ironSwords = 0;
         int shields = 0;
         boolean shieldBlockedAttackObserved = true;
@@ -67,6 +73,9 @@ final class FakeScenarioClient implements ScenarioClient {
         boolean nearLogsAvailable = true;
         long logsUnavailableDuringSoakAfterTick = Long.MAX_VALUE;
         boolean nearStoneAvailable = true;
+        int naturalStoneOverburdenRemaining = 0;
+        boolean failStoneOverburdenBreak = false;
+        boolean failExcavationExit = false;
         boolean fourthLogIsReachableDownFace = false;
         boolean failPostFurnaceLogApproach = false;
         boolean failCloseCurrentScreen = false;
@@ -84,10 +93,15 @@ final class FakeScenarioClient implements ScenarioClient {
         int failedLogPickupsRemaining = 0;
         int failedTorchPickupsRemaining = 0;
         int missingReachableStoneScansRemaining = 0;
+        int missingReachableIronScansRemaining = 0;
         int rawIronPickupBatchSize = 1;
         int droppedWoodenPickaxes = 0;
         int droppedWoodenSwords = 0;
         boolean dieOnNextHostileAttack = false;
+        double outsideReachHostileDistanceSquared = 2500.0;
+        int visibleHostileRepeats = 0;
+        final List<ScenarioCombatRecord> attackTelemetry = new ArrayList<>();
+        private final List<ScenarioCombatRecord> combatTelemetry = new ArrayList<>();
         long dieDuringDropBaselineAfterTick = Long.MAX_VALUE;
         boolean deathMaterializedDuringDropBaseline = false;
         boolean woodenPickaxePickupObserved = true;
@@ -315,6 +329,10 @@ final class FakeScenarioClient implements ScenarioClient {
                 return new ScenarioBlockTarget(1, 65, 1, "up", "campfire-target", "minecraft:campfire");
             }
             if (blockIds.contains("minecraft:iron_ore")) {
+                if (reach == ScenarioReach.WITHIN_SURVIVAL_REACH && missingReachableIronScansRemaining > 0) {
+                    missingReachableIronScansRemaining -= 1;
+                    return null;
+                }
                 if (reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH) {
                     return new ScenarioBlockTarget(11, 61, 7, "up", "far-natural-iron-ore", "minecraft:iron_ore");
                 }
@@ -350,7 +368,10 @@ final class FakeScenarioClient implements ScenarioClient {
         public boolean approachBlock(ScenarioBlockTarget target, Duration timeout) {
             operations.add("approach:" + target.blockId() + ":" + target.label());
             nearLogsAvailable = true;
-            nearStoneAvailable = true;
+            nearStoneAvailable = naturalStoneOverburdenRemaining == 0;
+            if (naturalStoneOverburdenRemaining > 0 && "far-natural-stone".equals(target.label())) {
+                return false;
+            }
             if (failPostFurnaceLogApproach && furnaces > 0 && logItemId.equals(target.blockId())) {
                 return false;
             }
@@ -403,8 +424,28 @@ final class FakeScenarioClient implements ScenarioClient {
         }
 
         @Override
+        public boolean approachColumn(int x, int z, Duration timeout) {
+            operations.add("approachColumn:" + x + ":" + z);
+            return naturalStoneOverburdenRemaining > 0 && x == 9 && z == 6;
+        }
+
+        @Override
+        public boolean excavateStaircaseToSurface(int surfaceY, int minimumCobblestoneCount, Duration timeout) {
+            operations.add("excavationExit:" + surfaceY);
+            excavationCobblestoneReserve = minimumCobblestoneCount;
+            return !failExcavationExit;
+        }
+
+        @Override
         public ScenarioBlockTarget findLoadedBlockInColumn(int x, int z, List<String> blockIds) {
             operations.add("findColumn:" + x + ":" + z + ":" + String.join("|", blockIds));
+            if (naturalStoneOverburdenRemaining > 0 && x == 9 && z == 6
+                && blockIds.contains("minecraft:dirt")) {
+                return new ScenarioBlockTarget(
+                    x, 62 + naturalStoneOverburdenRemaining, z, "up", "stone-overburden",
+                    naturalStoneOverburdenRemaining == 4 ? "minecraft:grass_block" : "minecraft:dirt"
+                );
+            }
             if (generatedRuinChestPresent && x == 72 && z == 8 && blockIds.contains("minecraft:chest")) {
                 return new ScenarioBlockTarget(72, 61, 8, "up", "generated-ruin-cache", "minecraft:chest");
             }
@@ -418,6 +459,15 @@ final class FakeScenarioClient implements ScenarioClient {
             Duration timeout
         ) {
             operations.add("breakVisible:" + target.blockId() + ":" + expectedDropItemId);
+            if ("stone-overburden".equals(target.label())) {
+                if (failStoneOverburdenBreak) {
+                    return new ScenarioBreakResult(
+                        false, false, false, false, new ScenarioHeldItem("minecraft:air", 0)
+                    );
+                }
+                naturalStoneOverburdenRemaining -= 1;
+                nearStoneAvailable = naturalStoneOverburdenRemaining == 0;
+            }
             return new ScenarioBreakResult(true, true, true, false, new ScenarioHeldItem("minecraft:air", 0));
         }
 
@@ -1057,6 +1107,9 @@ final class FakeScenarioClient implements ScenarioClient {
                 );
             }
             if (reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH && entityTypeIds.contains("minecraft:zombie")) {
+                if (timeout.compareTo(minimumZombieScanTimeout) < 0) {
+                    return null;
+                }
                 return new ScenarioEntityObservation(
                     "minecraft:zombie", 99, entityUuid(99), 12.5, 64.0, 8.5, 80.0, null
                 );
@@ -1106,7 +1159,8 @@ final class FakeScenarioClient implements ScenarioClient {
             shouldReturnHostile |= visibleHostileOutsideReachDuringSoak
                 && reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH;
             if (shouldReturnHostile) {
-                visibleHostileDuringSoak = false;
+                visibleHostileDuringSoak = visibleHostileRepeats > 0;
+                visibleHostileRepeats = Math.max(0, visibleHostileRepeats - 1);
                 visibleHostileOutsideReachDuringSoak = false;
                 if (!entityTypeIds.contains(visibleHostileTypeDuringSoak)) {
                     return null;
@@ -1118,7 +1172,7 @@ final class FakeScenarioClient implements ScenarioClient {
                     4.5,
                     64.0,
                     4.5,
-                    9.0,
+                    reach == ScenarioReach.OUTSIDE_SURVIVAL_REACH ? outsideReachHostileDistanceSquared : 9.0,
                     null
                 );
             }
@@ -1251,6 +1305,7 @@ final class FakeScenarioClient implements ScenarioClient {
         @Override
         public boolean attackEntityUntilRemoved(ScenarioEntityObservation entity, Duration timeout) {
             operations.add("attackEntityUntilRemoved:" + entity.entityType() + ":" + entity.entityId());
+            combatTelemetry.addAll(attackTelemetry);
             if (dieOnNextHostileAttack) {
                 dieOnNextHostileAttack = false;
                 healthAfterHostileCombat = 0.0F;
@@ -1258,6 +1313,13 @@ final class FakeScenarioClient implements ScenarioClient {
                 return false;
             }
             return true;
+        }
+
+        @Override
+        public List<ScenarioCombatRecord> drainCombatTelemetry() {
+            List<ScenarioCombatRecord> drained = List.copyOf(combatTelemetry);
+            combatTelemetry.clear();
+            return drained;
         }
 
         @Override
@@ -1580,6 +1642,15 @@ final class FakeScenarioClient implements ScenarioClient {
         }
 
         @Override
+        public ScenarioFurnaceState furnaceState() {
+            operations.add("furnaceState");
+            return new ScenarioFurnaceState(
+                furnaceBurnRemaining, furnaceBurnTotal, furnaceCookProgress, furnaceCookTotal,
+                containerItemIds[1] == null ? "minecraft:air" : containerItemIds[1], containerCounts[1]
+            );
+        }
+
+        @Override
         public boolean moveSelectedItemToContainerSlot(
             int containerSlot,
             String itemId,
@@ -1694,12 +1765,21 @@ final class FakeScenarioClient implements ScenarioClient {
                 containerCounts[2] = 1;
             }
             if (containerSlot == 2 && "minecraft:iron_ingot".equals(itemId) && "minecraft:raw_iron".equals(containerItemIds[0])) {
+                int requiredBurn = furnaceCookTotal * count - furnaceCookProgress;
+                int queuedBurn = planksItemId.equals(containerItemIds[1]) ? containerCounts[1] * 300 : 0;
+                if (furnaceBurnRemaining + queuedBurn < requiredBurn) {
+                    return false;
+                }
+                int fuelUsed = Math.max(0, (requiredBurn - furnaceBurnRemaining + 299) / 300);
                 int smeltedCount = Math.min(containerCounts[0], count);
                 containerCounts[0] = Math.max(0, containerCounts[0] - smeltedCount);
                 if (containerCounts[0] == 0) {
                     containerItemIds[0] = null;
                 }
-                containerCounts[1] = Math.max(0, containerCounts[1] - smeltedCount);
+                containerCounts[1] = Math.max(0, containerCounts[1] - fuelUsed);
+                // The next natural-ore trip may take longer than the residual burn.
+                furnaceBurnRemaining = 0;
+                furnaceCookProgress = 0;
                 if (containerCounts[1] == 0) {
                     containerItemIds[1] = null;
                 }

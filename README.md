@@ -358,6 +358,12 @@ catalog, and calls `minecraft_observe`:
 (cd ../solaris && python3 -m tools.harness mcp)
 ```
 
+The Java smoke sources compile against the vanilla 26.1.2 client JAR, not
+NeoForge-only extensions. Filled-shulker custody checks inspect all nonempty
+container templates and slot zero (`copyOne()`), retaining the exact three-diamond
+assertion. Bucket diagnostics use the vanilla outline/no-fluid POV ray and
+interaction range; actual bucket use still follows the native `Item.use` path.
+
 To test a real connection and structured world reads against Solaris:
 
 ```sh
@@ -476,5 +482,86 @@ target. Invalid, unloaded, blocked, and timed-out targets return errors.
 The existing `/rpc` client-agent bridge remains available for the historical
 real-client regression runner and can be launched independently with
 `:fabric-agent:runClientAgent`.
+
+Earned zombie-combat scenarios keep the outside-reach natural-hostile scan
+active for 40 seconds after the first nightfall time, covering the delay
+before surface spawning instead of switching to a melee-range-only scan
+before hostiles can appear. Killing the hostile and collecting its drop
+remain required. Each attack waits for the client's observed vanilla attack
+strength to reach 1.0, using the server-synchronized attack-speed attribute.
+The first attack records that attribute and held item for live-run evidence.
+An earned sword (iron, then stone, then wood) is preferred over an already-
+earned pickaxe; the tool-only stage never grants a weapon.
+Hostile scans choose only isolated targets: other loaded living hostiles must
+remain beyond six blocks of both the target and player, and creepers beyond
+seven. Live approach and attack recheck that isolation, verify eye-to-hitbox
+melee reach and line of sight, and kite between fully charged attacks. Combat
+movement checks the swept footprint against loaded, dry footing and refuses
+falls exceeding three blocks. At ten health or below the driver retreats;
+re-engagement requires fourteen health and, when hungry with owned edible food,
+observed food increase plus inventory consumption. It never grants food or
+health. Hostile-drop collection also refuses dangerous descents or nearby
+hostiles instead of chasing loot into another fight.
+Shield-block probes require a received `minecraft:item.shield.block`
+sound-entity packet bound to the local player during the probe, plus survival
+without health loss. Unchanged health alone is not proof, and shield wear is
+recorded but not substituted for the event: vanilla blocks below three damage
+do not consume durability.
+Stone progression can excavate grass/dirt above a buried natural stone
+target after a surface approach fails: it stands over the column, actually
+breaks and collects each overburden block, then reselects the earned pickaxe
+and still requires the stone's cobblestone drop and pickup. Reachable stone is
+mined without a redundant descent toward each target; wall stone and shallow
+cobblestone drops are preferred over deep natural shafts, whose uncollected
+drops remain honest failed pickups while other stone is mined. After mining,
+the exit cuts supported one-up/one-forward steps with three-block jump
+clearance, also clearing the takeoff ceiling over every column touched by
+the actual player hitbox, and choosing another direction at a cave gap. Where
+no supported step exists it can jump-place dirt/cobblestone actually owned
+beneath itself, requiring the real placed block, inventory consumption and
+grounded rise. A fully observed clear shaft with enough owned blocks prefers
+that direct pillar over cutting another staircase.
+Pillar headroom cuts collect their observed ceiling drops before measuring the
+placement inventory baseline, so a falling earned dirt drop cannot mask the
+required one-block consumption when the player lands.
+The exit reserves the caller's pending recipe cobblestone count: only surplus
+cobblestone or earned dirt can become pillar blocks. Otherwise it carves
+supported steps, retaining the materials needed for the actual next craft.
+Each raised staircase arrival stops walking and jumping at the target, then
+waits for observed grounding; airborne coordinates alone never complete a step
+or the surface exit.
+The exit budget scales with depth (forward/takeoff breaks plus arrival per
+rise), rather than the short cliff limit. The earned pickaxe, real break/drop
+proof and actual arrival at the original surface remain required; no blocks
+or items are injected, and an unbreakable or unreachable exit remains blocked.
+Iron search also examines actual loaded buried ore in a bounded 32-block
+horizontal/64-block downward window when no exposed ore is found, covering
+the main low-elevation iron band rather than assuming exposed surface ore. It only enters a
+dry, completely observed solid column above that ore, breaks each overburden
+layer with an owned pickaxe, and waits for one-block grounded descent after
+each break. Shaft ingress and pillar placement first sneak-walk to a stopped,
+grounded hitbox entirely inside the column, avoiding sprint coast onto a
+neighbour's footing. The ore itself still requires its real raw-iron drop and inventory
+increase. Returning to another station first reuses the earned excavation
+exit to the recorded surface; hidden resources are never injected and no
+minimum ore abundance is assumed.
+Block and column approaches also cut a supported staircase toward a cliff when
+an ordinary one-block jump cannot clear it, or a level passage when the ridge
+keeps rising above the target. Each deterministic segment is limited to four
+columns and four segments per approach, requires loaded dry existing
+footings and three-block jump clearance, and only removes listed natural rock
+or soil with a pickaxe actually present in inventory, checking each block's
+actual drop type. It reuses the excavation exit's
+real break/drop checks and observed walking arrival, restores the previously
+held item, and never teleports, injects blocks or relaxes scenario acceptance.
+Only an observed supported cliff plan activates a separate 120-second mining
+budget measured from approach start; unobstructed approaches retain their
+caller's ordinary deadline. Repeated segments cannot renew that budget.
+Passive-food and generic block/item-drop collection steer toward the lower
+drop column's center when the item lies below the vanilla pickup volume, rather than repeatedly
+jumping onto adjacent raised footing. Once the player's inflated pickup box
+intersects the item, movement stops. Item removal is not success: a separate
+bounded two-second applied-inventory wait still requires the requested item
+count to increase (and identity-bound collection still requires its take event).
 
 </details>

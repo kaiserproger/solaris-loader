@@ -28,7 +28,6 @@ final class M94InventoryCraftingScenarioTest {
 
         assertEquals("passed", report.result());
         assertEquals(List.of(
-            "teleport:2.5:81.0:0.5",
             "findDry:WITHIN_SURVIVAL_REACH",
             "give:minecraft:chest:1:0",
             "use:within-reach-place-clicked:minecraft:chest",
@@ -96,7 +95,6 @@ final class M94InventoryCraftingScenarioTest {
 
         assertEquals("passed", report.result());
         assertEquals(List.of(
-            "teleport:2.5:81.0:0.5",
             "findDry:WITHIN_SURVIVAL_REACH",
             "give:minecraft:chest:1:0",
             "use:within-reach-place-clicked:minecraft:chest",

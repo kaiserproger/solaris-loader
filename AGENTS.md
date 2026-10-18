@@ -30,6 +30,15 @@ Requires Java 25. MCP runs need `SOLARIS_CLIENT_MCP_TOKEN` (and optionally
 SOLARIS_CLIENT_MCP_TOKEN="$(openssl rand -hex 32)" ./gradlew --no-configuration-cache :fabric-agent:runClientMcp
 ```
 
+Playable iron-smelting stages read received furnace menu burn/cook data and
+fuel slot contents before each smelt, rather than assuming residual burn
+survives ore-gathering trips. Chestplate progression collects five initial logs:
+20 planks minus table (4), sticks (2), and wooden pickaxe (3) leaves 11 before
+furnace placement, sufficient for eight independently fuelled smelts without
+a later log trip. Observations record the actual menu values and fuel decision.
+Fuel-policy regressions live in `PlayableHeatStageTest`, `PlayableToolStageTest`,
+and the strict no-post-furnace-trip case in `PlayableCombatStageTest`.
+
 Keep the Loader wire protocol **3** and client artifact index **schema 2**
 contract: `loader-core` owns every codec and validation (protocol 3 handshake
 with `views`/`view_actions`/`world_previews`/`world_selection` content kinds,

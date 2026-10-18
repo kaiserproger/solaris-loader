@@ -31,9 +31,6 @@ final class M94InventoryCraftingScenario {
     private static final Duration INVENTORY_TIMEOUT = Duration.ofSeconds(5);
     private static final int HOTBAR_SLOT = 0;
     private static final int SHARED_CHEST_SLOT = 0;
-    private static final double SHARED_CHEST_SETUP_X = 2.5;
-    private static final double SHARED_CHEST_SETUP_Y = 81.0;
-    private static final double SHARED_CHEST_SETUP_Z = 0.5;
 
     static boolean supports(String id) {
         return ID.equals(id)
@@ -195,9 +192,6 @@ final class M94InventoryCraftingScenario {
     ) {
         List<String> observations = new ArrayList<>();
         try {
-            if (!movePrimaryToSharedChestSetup(client, observations)) {
-                return new ClientScenarioReport("blocked", id, observations);
-            }
             ScenarioBlockPair pair = client.findDryPlaceablePair(ScenarioReach.WITHIN_SURVIVAL_REACH);
             if (pair == null) {
                 observations.add("blocked: no loaded dry chest placement target found within survival reach");
@@ -336,9 +330,6 @@ final class M94InventoryCraftingScenario {
     ) {
         List<String> observations = new ArrayList<>();
         try {
-            if (!movePrimaryToSharedChestSetup(client, observations)) {
-                return new ClientScenarioReport("blocked", id, observations);
-            }
             ScenarioBlockPair pair = client.findDryPlaceablePair(ScenarioReach.WITHIN_SURVIVAL_REACH);
             if (pair == null) {
                 observations.add("blocked: no loaded dry chest placement target found within survival reach");
@@ -586,25 +577,6 @@ final class M94InventoryCraftingScenario {
 
     private static ClientScenarioReport blockedPhase(String id, String reason) {
         return new ClientScenarioReport("blocked", id, List.of("blocked: " + reason));
-    }
-
-    private static boolean movePrimaryToSharedChestSetup(
-        ScenarioClient client,
-        List<String> observations
-    ) throws Exception {
-        boolean teleported = client.teleportTo(
-            SHARED_CHEST_SETUP_X,
-            SHARED_CHEST_SETUP_Y,
-            SHARED_CHEST_SETUP_Z,
-            SETUP_TIMEOUT
-        );
-        observations.add(
-            "shared chest primary setup position: " + (teleported ? "passed" : "blocked")
-                + " x=" + SHARED_CHEST_SETUP_X
-                + " y=" + SHARED_CHEST_SETUP_Y
-                + " z=" + SHARED_CHEST_SETUP_Z
-        );
-        return teleported;
     }
 
     private static ChestProbeResult runSimpleChestOpenProbe(

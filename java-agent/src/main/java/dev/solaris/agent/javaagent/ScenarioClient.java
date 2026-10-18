@@ -163,6 +163,10 @@ interface ScenarioClient {
         throw new UnsupportedOperationException("scenario client does not support active container id reads");
     }
 
+    default ScenarioFurnaceState furnaceState() throws Exception {
+        throw new UnsupportedOperationException("scenario client does not support furnace menu data reads");
+    }
+
     default boolean moveSelectedItemToContainerSlot(
         int containerSlot,
         String itemId,
@@ -321,6 +325,11 @@ interface ScenarioClient {
         throw new UnsupportedOperationException("scenario client does not support entity removal attacks");
     }
 
+    /** Drains per-attack and per-engagement combat telemetry recorded since the previous drain. */
+    default List<ScenarioCombatRecord> drainCombatTelemetry() throws Exception {
+        return List.of();
+    }
+
     default boolean drainHungerBySprinting(Duration timeout) throws Exception {
         throw new UnsupportedOperationException("scenario client does not support natural hunger drain");
     }
@@ -456,6 +465,14 @@ interface ScenarioClient {
     default boolean approachPosition(int x, int z, Duration timeout) throws Exception {
         throw new UnsupportedOperationException("scenario client does not support natural movement toward positions");
     }
+    default boolean approachColumn(int x, int z, Duration timeout) throws Exception {
+        throw new UnsupportedOperationException("scenario client does not support standing over a block column");
+    }
+
+    default boolean excavateStaircaseToSurface(int surfaceY, int minimumCobblestoneCount, Duration timeout) throws Exception {
+        throw new UnsupportedOperationException("scenario client does not support earned-tool excavation exits");
+    }
+
 
     default ScenarioBlockTarget findLoadedBlockInColumn(int x, int z, List<String> blockIds)
         throws Exception {

@@ -3,6 +3,8 @@ package dev.solaris.agent.mixin;
 import com.mojang.logging.LogUtils;
 import dev.solaris.agent.javaagent.ClientStateEvents;
 import dev.solaris.agent.javaagent.ScenarioItemDropIdentity;
+import dev.solaris.agent.javaagent.ReceivedEntityQa;
+import dev.solaris.agent.javaagent.ReceivedContainerQa;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockChangedAckPacket;
@@ -13,7 +15,10 @@ import net.minecraft.network.protocol.game.ClientboundContainerSetDataPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEntityDataPacket;
+import net.minecraft.network.protocol.game.ClientboundSetEquipmentPacket;
 import net.minecraft.network.protocol.game.ClientboundSetTimePacket;
+import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
 import net.minecraft.network.protocol.game.ClientboundTakeItemEntityPacket;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.item.ItemEntity;
@@ -29,6 +34,16 @@ abstract class ClientPacketListenerMixin {
     private static final boolean SOLARIS_TRACE_BLOCK_BREAK = Boolean.getBoolean(
         "solaris.traceBlockBreak"
     );
+
+    @Inject(method = "handleSetEntityData", at = @At("RETURN"))
+    private void solaris$recordQaMetadata(ClientboundSetEntityDataPacket packet, CallbackInfo callbackInfo) {
+        ReceivedEntityQa.metadata(packet);
+    }
+
+    @Inject(method = "handleSetEquipment", at = @At("RETURN"))
+    private void solaris$recordQaEquipment(ClientboundSetEquipmentPacket packet, CallbackInfo callbackInfo) {
+        ReceivedEntityQa.equipment(packet);
+    }
 
     @Inject(method = "handleBlockChangedAck", at = @At("RETURN"))
     private void solaris$publishBlockChangeAck(
@@ -90,6 +105,16 @@ abstract class ClientPacketListenerMixin {
         ClientStateEvents.publishHealth();
     }
 
+    @Inject(method = "handleSoundEntityEvent", at = @At("RETURN"))
+    private void solaris$publishEntitySound(ClientboundSoundEntityPacket packet, CallbackInfo callbackInfo) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player != null) {
+            ClientStateEvents.publishEntitySound(
+                packet.getId(), minecraft.player.getId(), packet.getSound().value().location()
+            );
+        }
+    }
+
     @Inject(method = "handleOpenScreen", at = @At("RETURN"))
     private void solaris$publishOpenScreen(ClientboundOpenScreenPacket packet, CallbackInfo callbackInfo) {
         ClientStateEvents.publishContainerPacket();
@@ -108,6 +133,7 @@ abstract class ClientPacketListenerMixin {
         ClientboundContainerSetContentPacket packet,
         CallbackInfo callbackInfo
     ) {
+        ReceivedContainerQa.content(packet);
         ClientStateEvents.publishContainerPacket();
     }
 

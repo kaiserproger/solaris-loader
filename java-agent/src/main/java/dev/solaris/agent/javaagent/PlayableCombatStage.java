@@ -26,6 +26,9 @@ final class PlayableCombatStage {
 
     private static final Duration SHIELD_BLOCK_TIMEOUT = Duration.ofSeconds(8);
     private static final Duration HOSTILE_HIT_TIMEOUT = Duration.ofSeconds(10);
+    // Sleep/nightfall starts before surface hostile spawning. Keep the
+    // outside-reach scan active through both former 20-second scan windows.
+    private static final Duration NATURAL_ZOMBIE_SCAN_TIMEOUT = ENTITY_SCAN_TIMEOUT.multipliedBy(2);
     private static final float IRON_CHESTPLATE_MAX_ZOMBIE_HIT_DAMAGE = 2.75F;
 
     private static final List<String> ZOMBIE_ENTITY_IDS = List.of(
@@ -47,9 +50,19 @@ final class PlayableCombatStage {
             return new ClientScenarioReport("failed", id, observations);
         }
 
-        ScenarioHeldItem weapon = client.selectHotbarItem("minecraft:wooden_pickaxe", 1, HOTBAR_TIMEOUT);
-        if (!weapon.matches("minecraft:wooden_pickaxe", 1)) {
-            observations.add("blocked: earned wooden pickaxe exists but is not selectable for zombie combat");
+        String weaponId = "minecraft:wooden_pickaxe";
+        for (String candidate : List.of(
+            "minecraft:iron_sword", "minecraft:stone_sword", "minecraft:wooden_sword",
+            "minecraft:iron_pickaxe", "minecraft:stone_pickaxe"
+        )) {
+            if (client.inventoryCount(candidate) > 0) {
+                weaponId = candidate;
+                break;
+            }
+        }
+        ScenarioHeldItem weapon = client.selectHotbarItem(weaponId, 1, HOTBAR_TIMEOUT);
+        if (!weapon.matches(weaponId, 1)) {
+            observations.add("blocked: earned combat weapon exists but is not selectable: " + weaponId);
             return new ClientScenarioReport("blocked", id, observations);
         }
 
@@ -65,7 +78,7 @@ final class PlayableCombatStage {
         ScenarioEntityObservation zombie = client.findVisibleEntity(
             ZOMBIE_ENTITY_IDS,
             ScenarioReach.OUTSIDE_SURVIVAL_REACH,
-            ENTITY_SCAN_TIMEOUT
+            NATURAL_ZOMBIE_SCAN_TIMEOUT
         );
         if (zombie == null) {
             zombie = client.findVisibleEntity(
@@ -188,7 +201,7 @@ final class PlayableCombatStage {
         ScenarioEntityObservation zombie = client.findVisibleEntity(
             ZOMBIE_ENTITY_IDS,
             ScenarioReach.OUTSIDE_SURVIVAL_REACH,
-            ENTITY_SCAN_TIMEOUT
+            NATURAL_ZOMBIE_SCAN_TIMEOUT
         );
         if (zombie == null) {
             zombie = client.findVisibleEntity(
@@ -278,7 +291,7 @@ final class PlayableCombatStage {
         ScenarioEntityObservation zombie = client.findVisibleEntity(
             ZOMBIE_ENTITY_IDS,
             ScenarioReach.OUTSIDE_SURVIVAL_REACH,
-            ENTITY_SCAN_TIMEOUT
+            NATURAL_ZOMBIE_SCAN_TIMEOUT
         );
         if (zombie == null) {
             zombie = client.findVisibleEntity(
@@ -368,7 +381,7 @@ final class PlayableCombatStage {
         ScenarioEntityObservation zombie = client.findVisibleEntity(
             ZOMBIE_ENTITY_IDS,
             ScenarioReach.OUTSIDE_SURVIVAL_REACH,
-            ENTITY_SCAN_TIMEOUT
+            NATURAL_ZOMBIE_SCAN_TIMEOUT
         );
         if (zombie == null) {
             zombie = client.findVisibleEntity(
@@ -505,7 +518,7 @@ final class PlayableCombatStage {
         ScenarioEntityObservation zombie = client.findVisibleEntity(
             ZOMBIE_ENTITY_IDS,
             ScenarioReach.OUTSIDE_SURVIVAL_REACH,
-            ENTITY_SCAN_TIMEOUT
+            NATURAL_ZOMBIE_SCAN_TIMEOUT
         );
         if (zombie == null) {
             zombie = client.findVisibleEntity(

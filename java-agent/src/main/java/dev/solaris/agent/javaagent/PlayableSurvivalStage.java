@@ -24,6 +24,15 @@ final class PlayableSurvivalStage {
     private PlayableSurvivalStage() {
     }
     private static final float SURVIVAL_HOSTILE_DEFENSE_MIN_HEALTH = 15.0F;
+    /** Combat acceptance over the whole soak: at least this many hostiles must be killed ... */
+    private static final int MIN_HOSTILES_NEUTRALIZED = 1;
+    /** ... and the player may not die more often than this. */
+    private static final int MAX_RECOVERED_DEATHS = 3;
+    /** Damage taken within this many ticks means a hostile is attacking, even from outside melee reach. */
+    private static final long UNDER_FIRE_TICKS = 100L;
+    private static final double UNDER_FIRE_MAX_DISTANCE_SQUARED = 20.0 * 20.0;
+    /** A healthy night player walks up to a visible hostile this close instead of waiting for it forever. */
+    private static final double HUNT_MAX_DISTANCE_SQUARED = 48.0 * 48.0;
     private static final long DAY_LENGTH_TICKS = 24_000L;
 
     private static final List<String> PASSIVE_NATURAL_ENTITY_IDS = List.of(
@@ -36,7 +45,10 @@ final class PlayableSurvivalStage {
     private static final List<String> HOSTILE_ENTITY_IDS = List.of(
         "minecraft:zombie",
         "minecraft:skeleton",
-        "minecraft:spider"
+        "minecraft:spider",
+        // Run 20261016T095132: three slimes camped the respawn point and killed the player 15 times
+        // while the stage ignored them; any hostile that damages the player is a target.
+        "minecraft:slime"
     );
     private static final Duration SURVIVAL_SOAK_STEP_TIMEOUT = Duration.ofSeconds(30);
     private static final long SURVIVAL_RESOURCE_INTERVAL_TICKS = 500L;
@@ -80,6 +92,13 @@ final class PlayableSurvivalStage {
         boolean resourceWorkExhausted = false;
         int hostilesNeutralized = 0;
         int recoveredDeaths = 0;
+        int engagements = 0;
+        int unresolvedEngagements = 0;
+        int attacksSent = 0;
+        int hitsConfirmed = 0;
+        float lastHealth = client.playerHealth();
+        long lastDamageTick = Long.MIN_VALUE / 2;
+        client.drainCombatTelemetry();
         boolean sawNaturalPassive = false;
         boolean sawNaturalHostile = false;
         List<ScenarioItemDropIdentity> pickaxeDropsBefore = client.visibleItemDropIdentities("minecraft:wooden_pickaxe");
@@ -147,6 +166,24 @@ final class PlayableSurvivalStage {
                 swordDropsBefore = client.visibleItemDropIdentities("minecraft:wooden_sword");
                 continue;
             }
+            if (health < lastHealth) {
+                lastDamageTick = completedTicks;
+                ScenarioEntityObservation attacker = client.visibleEntity(
+                    HOSTILE_ENTITY_IDS,
+                    ScenarioReach.WITHIN_SURVIVAL_REACH
+                );
+                if (attacker == null) {
+                    attacker = client.visibleEntity(HOSTILE_ENTITY_IDS, ScenarioReach.OUTSIDE_SURVIVAL_REACH);
+                }
+                observations.add(
+                    "survival damage taken: completed_ticks=" + completedTicks
+                        + " health_before=" + lastHealth + " health_after=" + health
+                        + " nearest_hostile=" + (attacker == null ? "none"
+                            : attacker.entityType() + "#" + attacker.entityId()
+                                + "@" + String.format(java.util.Locale.ROOT, "%.1f", Math.sqrt(attacker.distanceSquared())))
+                );
+            }
+            lastHealth = health;
             pickaxeDropsBefore = nextPickaxeDropsBefore;
             swordDropsBefore = nextSwordDropsBefore;
 
@@ -172,12 +209,13 @@ final class PlayableSurvivalStage {
             }
 
             boolean night = isNightTime(currentServerTime);
+            boolean underFire = completedTicks - lastDamageTick <= UNDER_FIRE_TICKS;
             ScenarioEntityObservation hostile = client.visibleEntity(
                 HOSTILE_ENTITY_IDS,
                 ScenarioReach.WITHIN_SURVIVAL_REACH
             );
             boolean hostileWithinReach = hostile != null;
-            if (hostile == null && night) {
+            if (hostile == null && (night || underFire)) {
                 hostile = client.visibleEntity(
                     HOSTILE_ENTITY_IDS,
                     ScenarioReach.OUTSIDE_SURVIVAL_REACH
@@ -193,23 +231,25 @@ final class PlayableSurvivalStage {
                     );
                 }
                 if (!hostileWithinReach) {
+                    boolean hunt = health >= SURVIVAL_HOSTILE_DEFENSE_MIN_HEALTH
+                        && hostile.distanceSquared() <= HUNT_MAX_DISTANCE_SQUARED;
+                    if (!hunt && !(underFire && hostile.distanceSquared() <= UNDER_FIRE_MAX_DISTANCE_SQUARED)) {
+                        observations.add(
+                            "survival hostile defense: observed outside_reach=true engagement=deferred entity="
+                                + hostile.entityType()
+                                + " entity_id=" + hostile.entityId()
+                                + " distance=" + String.format(java.util.Locale.ROOT, "%.1f", Math.sqrt(hostile.distanceSquared()))
+                                + " health=" + health
+                        );
+                        continue;
+                    }
                     observations.add(
-                        "survival hostile defense: observed outside_reach=true engagement=deferred entity="
-                            + hostile.entityType()
-                            + " entity_id=" + hostile.entityId()
-                            + " health=" + health
+                        "survival hostile defense: " + (underFire ? "under_fire=true" : "hunt=true")
+                            + " engaging entity=" + hostile.entityType()
+                            + " entity_id=" + hostile.entityId() + " health=" + health
                     );
-                    continue;
                 }
-                if (health < SURVIVAL_HOSTILE_DEFENSE_MIN_HEALTH) {
-                    observations.add(
-                        "survival hostile defense: within_reach=true engagement=deferred_low_health entity="
-                            + hostile.entityType()
-                            + " entity_id=" + hostile.entityId()
-                            + " health=" + health
-                    );
-                    continue;
-                }
+                boolean injured = health < SURVIVAL_HOSTILE_DEFENSE_MIN_HEALTH;
                 if (!weapon.matches("minecraft:wooden_sword", 1)) {
                     observations.add(
                         "survival hostile defense: engagement=deferred no_combat_weapon=true entity="
@@ -219,15 +259,26 @@ final class PlayableSurvivalStage {
                     );
                     continue;
                 }
-                boolean approached = client.approachEntity(hostile, APPROACH_TIMEOUT);
+                // An injured player never charges a hostile that is not hurting it, but a hostile
+                // inside reach (or one that is shooting it) must be answered: the driver retreats/eats
+                // while healing and otherwise fights in place instead of idling under attack.
+                boolean approached = (hostileWithinReach && injured) || client.approachEntity(hostile, APPROACH_TIMEOUT);
                 boolean gone = approached && client.attackEntityUntilRemoved(hostile, ENTITY_ATTACK_TIMEOUT);
                 float healthAfterCombat = client.playerHealth();
+                engagements++;
+                for (ScenarioCombatRecord record : client.drainCombatTelemetry()) {
+                    observations.add(record.line());
+                    attacksSent += record.attack() ? 1 : 0;
+                    hitsConfirmed += record.hitConfirmed() ? 1 : 0;
+                }
                 observations.add(
                     "survival hostile defense: " + (gone && healthAfterCombat > 0.0F ? "passed" : "failed")
                         + " entity=" + hostile.entityType()
                         + " entity_id=" + hostile.entityId()
                         + " approached=" + approached
                         + " entity_gone=" + gone
+                        + " injured_engagement=" + injured
+                        + " health_before=" + health
                         + " health_after=" + healthAfterCombat
                 );
                 if (healthAfterCombat <= 0.0F) {
@@ -252,7 +303,10 @@ final class PlayableSurvivalStage {
                     continue;
                 }
                 if (!gone) {
-                    return new ClientScenarioReport("failed", id, observations);
+                    // The aggregate acceptance (neutralized hostiles, bounded deaths) judges the run;
+                    // the per-attack telemetry above attributes why this engagement did not finish.
+                    unresolvedEngagements++;
+                    continue;
                 }
                 hostilesNeutralized++;
                 continue;
@@ -356,7 +410,15 @@ final class PlayableSurvivalStage {
                 + " passive_observed=" + sawNaturalPassive
                 + " hostile_observed=" + sawNaturalHostile
         );
-        boolean soakPassed = inventoryStillPresent && naturalSpawnEvidence;
+        boolean combatAcceptance = combatAcceptancePassed(hostilesNeutralized, recoveredDeaths);
+        observations.add(
+            "survival combat acceptance: " + (combatAcceptance ? "passed" : "failed")
+                + " hostiles_neutralized=" + hostilesNeutralized + " required_min=" + MIN_HOSTILES_NEUTRALIZED
+                + " recovered_deaths=" + recoveredDeaths + " allowed_max=" + MAX_RECOVERED_DEATHS
+                + " engagements=" + engagements + " unresolved_engagements=" + unresolvedEngagements
+                + " attacks_sent=" + attacksSent + " hits_confirmed=" + hitsConfirmed
+        );
+        boolean soakPassed = inventoryStillPresent && naturalSpawnEvidence && combatAcceptance;
         observations.add(
             "20-minute survival soak: " + (soakPassed ? "passed" : "failed")
                 + " duration_millis=" + soakMillis
@@ -427,25 +489,29 @@ final class PlayableSurvivalStage {
         ScenarioBlockTarget anchor = readMarker(markerPath, "survival-death-recovery");
         int pickaxeCountAfterRespawn = client.inventoryCount("minecraft:wooden_pickaxe");
         int swordCountAfterRespawn = client.inventoryCount("minecraft:wooden_sword");
-
-        ScenarioBreakResult pickaxePickup = client.collectVisibleItemDropByIdentity(
-            anchor,
-            "minecraft:wooden_pickaxe",
-            pickaxeDrop,
-            1,
-            APPROACH_TIMEOUT
-        );
-        boolean pickaxeRecovered = pickaxePickup.pickupRestored()
-            && client.waitForInventoryCount(
+        // Death empties the inventory, so a pickaxe held right after respawn is the drop,
+        // collected on arrival when the respawn point lies next to the death drops.
+        boolean pickaxeAutoRecovered = pickaxeCountAfterRespawn > 0;
+        boolean pickaxeRecovered = pickaxeAutoRecovered;
+        if (!pickaxeAutoRecovered) {
+            ScenarioBreakResult pickaxePickup = client.collectVisibleItemDropByIdentity(
+                anchor,
                 "minecraft:wooden_pickaxe",
-                pickaxeCountAfterRespawn + 1,
-                INVENTORY_TIMEOUT
+                pickaxeDrop,
+                1,
+                APPROACH_TIMEOUT
             );
+            pickaxeRecovered = pickaxePickup.pickupRestored()
+                && client.waitForInventoryCount(
+                    "minecraft:wooden_pickaxe",
+                    pickaxeCountAfterRespawn + 1,
+                    INVENTORY_TIMEOUT
+                );
+        }
 
         int swordCountBeforePickup = client.inventoryCount("minecraft:wooden_sword");
         boolean swordRecoveryRequired = swordDrop != null;
-        boolean swordAutoRecovered = swordRecoveryRequired
-            && swordCountBeforePickup >= swordCountAfterRespawn + 1;
+        boolean swordAutoRecovered = swordRecoveryRequired && swordCountBeforePickup > 0;
         boolean swordRecovered = !swordRecoveryRequired;
         if (swordRecoveryRequired && !swordAutoRecovered) {
             ScenarioBreakResult swordPickup = client.collectVisibleItemDropByIdentity(
@@ -469,10 +535,15 @@ final class PlayableSurvivalStage {
             "survival death-drop recovery: " + (recovered ? "passed" : "failed")
                 + " pickaxe_recovered=" + pickaxeRecovered
                 + " sword_recovered=" + swordRecovered
+                + " pickaxe_auto_recovered=" + pickaxeAutoRecovered
                 + " sword_auto_recovered=" + swordAutoRecovered
                 + " sword_recovery_required=" + swordRecoveryRequired
         );
         return recovered;
+    }
+
+    static boolean combatAcceptancePassed(int hostilesNeutralized, int recoveredDeaths) {
+        return hostilesNeutralized >= MIN_HOSTILES_NEUTRALIZED && recoveredDeaths <= MAX_RECOVERED_DEATHS;
     }
 
     static boolean isNightTime(long gameTime) {

@@ -2,6 +2,7 @@ package dev.solaris.agent.javaagent;
 
 import dev.solaris.agent.client.ClientScenarioReport;
 
+import java.time.Duration;
 import java.util.List;
 
 import static dev.solaris.agent.javaagent.PlayableCoordinates.coordinates;
@@ -560,6 +561,7 @@ final class PlayableHeatStage {
 
         int miningAttempts = 0;
         int maxMiningAttempts = targetCobblestoneCount + 6;
+        int excavationSurfaceY = -1;
         while (
             client.inventoryCount("minecraft:cobblestone") < targetCobblestoneCount
                 && miningAttempts < maxMiningAttempts
@@ -584,6 +586,16 @@ final class PlayableHeatStage {
                         + " target=" + coordinates(farStone)
                 );
                 stone = client.findBreakableBlock(List.of("minecraft:stone"), ScenarioReach.WITHIN_SURVIVAL_REACH);
+                if (!approached && stone == null) {
+                    int surfaceY = excavateStoneOverburden(farStone, observations, client);
+                    if (surfaceY >= 0) {
+                        excavationSurfaceY = Math.max(excavationSurfaceY, surfaceY);
+                        stone = new ScenarioBlockTarget(
+                            farStone.x(), farStone.y(), farStone.z(), "up",
+                            "excavated-natural-stone", "minecraft:stone"
+                        );
+                    }
+                }
                 if (!approached) {
                     if (stone == null) {
                         return new ClientScenarioReport("blocked", id, observations);
@@ -598,14 +610,12 @@ final class PlayableHeatStage {
                 }
             }
 
-            boolean closeApproached = client.approachBlock(stone, APPROACH_TIMEOUT);
+            // This target was observed within survival reach (or exposed in the column).
+            // Walking onto it merely to get closer can descend into a natural shaft.
             observations.add(
-                "natural stone close approach: " + (closeApproached ? "passed" : "failed")
-                    + " target=" + coordinates(stone)
+                "natural stone close approach: skipped target=" + coordinates(stone)
+                    + " reason=already_within_survival_reach"
             );
-            if (!closeApproached) {
-                return new ClientScenarioReport("blocked", id, observations);
-            }
 
             int cobblestoneBefore = client.inventoryCount("minecraft:cobblestone");
             ScenarioBreakResult broke = client.breakBlockUntilDropVisible(
@@ -643,6 +653,16 @@ final class PlayableHeatStage {
                 return new ClientScenarioReport("failed", id, observations);
             }
         }
+        if (excavationSurfaceY >= 0) {
+            boolean exited = client.excavateStaircaseToSurface(excavationSurfaceY, targetCobblestoneCount, Duration.ofMinutes(2));
+            observations.add(
+                "natural stone excavation exit: " + (exited ? "passed" : "failed")
+                    + " surface_y=" + excavationSurfaceY
+            );
+            if (!exited) {
+                return new ClientScenarioReport("blocked", id, observations);
+            }
+        }
 
         int cobblestoneCount = client.inventoryCount("minecraft:cobblestone");
         if (cobblestoneCount < targetCobblestoneCount) {
@@ -659,6 +679,46 @@ final class PlayableHeatStage {
                 + " mining_attempts=" + miningAttempts
         );
         return new ClientScenarioReport("passed", id, observations);
+    }
+
+    private static int excavateStoneOverburden(
+        ScenarioBlockTarget stone,
+        List<String> observations,
+        ScenarioClient client
+    ) throws Exception {
+        List<String> soil = List.of("minecraft:grass_block", "minecraft:dirt");
+        ScenarioBlockTarget overburden = client.findLoadedBlockInColumn(stone.x(), stone.z(), soil);
+        if (overburden == null || overburden.y() <= stone.y()
+            || !client.approachColumn(stone.x(), stone.z(), APPROACH_TIMEOUT)) {
+            return -1;
+        }
+        int surfaceY = overburden.y() + 1;
+        int previousY = Integer.MAX_VALUE;
+        while (overburden != null && overburden.y() > stone.y()) {
+            if (overburden.y() >= previousY) {
+                return -1;
+            }
+            previousY = overburden.y();
+            ScenarioBreakResult broke = client.breakBlockUntilDropVisible(
+                overburden, "minecraft:dirt", BREAK_TIMEOUT
+            );
+            ScenarioBreakResult pickup = client.collectVisibleItemDrop(
+                overburden, "minecraft:dirt", 1, PICKUP_TIMEOUT
+            );
+            boolean cleared = broke.started() && broke.becameAir() && broke.sawDrop()
+                && pickup.pickupRestored();
+            observations.add(
+                "natural stone overburden break/drop/pickup: " + (cleared ? "passed" : "failed")
+                    + " target=" + coordinates(overburden)
+                    + " block=" + overburden.blockId()
+            );
+            if (!cleared) {
+                return -1;
+            }
+            overburden = client.findLoadedBlockInColumn(stone.x(), stone.z(), soil);
+        }
+        return client.selectHotbarItem("minecraft:wooden_pickaxe", 1, HOTBAR_TIMEOUT)
+            .matches("minecraft:wooden_pickaxe", 1) ? surfaceY : -1;
     }
 
     static ClientScenarioReport craftFurnaceInOpenTable(
@@ -715,7 +775,7 @@ final class PlayableHeatStage {
         PlayableHeatStage.FurnacePlacementOpenResult furnace,
         PlayableResourceStage.PlanksRecipe planks
     ) throws Exception {
-        return smeltRawIronInPlacedFurnace(id, observations, client, furnace, planks, true, 1);
+        return smeltRawIronInPlacedFurnace(id, observations, client, furnace, planks, 1);
     }
 
     static ClientScenarioReport smeltRawIronInPlacedFurnace(
@@ -726,16 +786,15 @@ final class PlayableHeatStage {
         PlayableResourceStage.PlanksRecipe planks,
         int smeltCount
     ) throws Exception {
-        return smeltRawIronInPlacedFurnace(id, observations, client, furnace, planks, true, smeltCount);
+        return smeltObservedRawIron(id, observations, client, furnace, planks, smeltCount);
     }
 
-    static ClientScenarioReport smeltRawIronInPlacedFurnace(
+    private static ClientScenarioReport smeltObservedRawIron(
         String id,
         List<String> observations,
         ScenarioClient client,
         PlayableHeatStage.FurnacePlacementOpenResult furnace,
         PlayableResourceStage.PlanksRecipe planks,
-        boolean addFuel,
         int smeltCount
     ) throws Exception {
         boolean furnaceApproached = client.approachBlock(furnace.furnaceTarget(), APPROACH_TIMEOUT);
@@ -773,9 +832,24 @@ final class PlayableHeatStage {
             return new ClientScenarioReport("failed", id, observations);
         }
 
+        ScenarioFurnaceState state = client.furnaceState();
+        boolean enoughBurn = state.hasEnoughBurn(smeltCount);
+        int queuedFuel = planks.planksItemId().equals(state.fuelItemId()) ? state.fuelCount() : 0;
+        int fuelCount = enoughBurn ? 0 : Math.max(0, smeltCount - queuedFuel);
+        boolean addFuel = fuelCount > 0;
+        observations.add(
+            "furnace iron observed state: burn_remaining=" + state.burnRemaining()
+                + " burn_total=" + state.burnTotal()
+                + " lit=" + (state.burnRemaining() > 0)
+                + " cook_progress=" + state.cookProgress()
+                + " cook_total=" + state.cookTotal()
+                + " fuel_item=" + state.fuelItemId()
+                + " fuel_count=" + state.fuelCount()
+                + " enough_burn=" + enoughBurn
+                + " fuel_to_add=" + fuelCount
+        );
         boolean fuelMoved = true;
         if (addFuel) {
-            int fuelCount = smeltCount > 1 ? 2 : 1;
             fuelMoved = client.moveSelectedItemToContainerSlot(
                 1,
                 planks.planksItemId(),
@@ -791,7 +865,8 @@ final class PlayableHeatStage {
             }
         } else {
             observations.add(
-                "furnace iron fuel transfer: skipped existing_burn=true"
+                "furnace iron fuel transfer: skipped existing_burn=" + (state.burnRemaining() > 0)
+                    + " enough_burn=" + enoughBurn + " queued_fuel=" + queuedFuel
                     + " slot=1 item=" + planks.planksItemId()
             );
         }
@@ -810,7 +885,7 @@ final class PlayableHeatStage {
             return new ClientScenarioReport("failed", id, observations);
         }
 
-        boolean fuelRemainderCleared = !addFuel || client.moveContainerSlotToInventory(
+        boolean fuelRemainderCleared = client.moveContainerSlotToInventory(
             1,
             planks.planksItemId(),
             1,

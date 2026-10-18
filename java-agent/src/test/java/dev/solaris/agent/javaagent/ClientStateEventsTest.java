@@ -1,5 +1,6 @@
 package dev.solaris.agent.javaagent;
 
+import net.minecraft.resources.Identifier;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -12,6 +13,39 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ClientStateEventsTest {
+    @Test
+    void shieldBlockProofRequiresTheOwnEntityAndExactIncomingBlockSound() {
+        long before = ClientStateEvents.shieldBlockVersion();
+        long stateBefore = ClientStateEvents.version();
+        ClientStateEvents.publishEntitySound(8, 7, Identifier.parse("minecraft:item.shield.block"));
+        ClientStateEvents.publishEntitySound(7, 7, Identifier.parse("minecraft:entity.player.hurt"));
+        ClientStateEvents.publishEntitySound(7, 7, Identifier.parse("minecraft:item.shield.break"));
+        assertEquals(before, ClientStateEvents.shieldBlockVersion());
+        assertEquals(stateBefore, ClientStateEvents.version());
+
+        ClientStateEvents.publishEntitySound(7, 7, Identifier.parse("minecraft:item.shield.block"));
+        assertEquals(before + 1, ClientStateEvents.shieldBlockVersion());
+        assertEquals(stateBefore + 1, ClientStateEvents.version());
+        // A subsequent probe starts from this version, never reusing the old block event.
+        long nextProbe = ClientStateEvents.shieldBlockVersion();
+        assertFalse(ClientStateEvents.shieldBlockVersion() > nextProbe);
+    }
+
+    @Test
+    void appliedShieldBlockSoundWakesTheStateWaitWithoutRequiringDurability() throws Exception {
+        long stateBefore = ClientStateEvents.version();
+        CompletableFuture<Boolean> waiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitChange(stateBefore, Duration.ofSeconds(1));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+        ClientStateEvents.publishEntitySound(7, 7, Identifier.parse("minecraft:item.shield.block"));
+        assertTrue(waiter.get(1, TimeUnit.SECONDS));
+    }
+
     @Test
     void itemTakeEventsAreCollectorBoundBoundedAndClearable() {
         ClientStateEvents.clearItemTakenEvents();

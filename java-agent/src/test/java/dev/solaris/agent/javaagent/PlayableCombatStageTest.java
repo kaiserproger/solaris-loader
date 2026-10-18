@@ -54,6 +54,42 @@ final class PlayableCombatStageTest {
         );
     }
     @Test
+    void earnedToolZombieCombatPrefersBestAlreadyEarnedSword() {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.woodenSwords = 1;
+        client.stoneSwords = 1;
+        client.ironSwords = 1;
+
+        ClientScenarioReport report = new PlayableRealClientLoopScenario().run(
+            "playable-21-earned-tool-zombie-combat",
+            Path.of("run/screenshots"),
+            client
+        );
+
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertFalse(client.usedDebugSetup());
+        assertTrue(client.operations.contains("selectHotbar:minecraft:iron_sword:1"));
+        assertTrue(report.observations().stream().anyMatch(entry -> entry.contains("weapon=minecraft:iron_sword")));
+    }
+
+    @Test
+    void naturalZombieScanRemainsOutsideReachUntilSurfaceSpawnsCanAppear() {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.minimumZombieScanTimeout = Duration.ofSeconds(25);
+
+        ClientScenarioReport report = new PlayableRealClientLoopScenario().run(
+            "playable-21-earned-tool-zombie-combat",
+            Path.of("run/screenshots"),
+            client
+        );
+
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertFalse(client.usedDebugSetup());
+        assertTrue(client.operations.contains(
+            "attackEntityDrop:minecraft:zombie:entity_id=99:minecraft:rotten_flesh:1"
+        ));
+    }
+    @Test
     void earnedToolZombieCombatFailsClosedIfPlayerDiesDuringCombat() {
         FakeScenarioClient client = new FakeScenarioClient();
         client.healthAfterHostileCombat = 0.0F;
@@ -441,7 +477,9 @@ final class PlayableCombatStageTest {
             () -> String.join("\n", report.observations()) + "\noperations=" + client.operations
         );
         assertTrue(
-            report.observations().stream().anyMatch(entry -> entry.contains("iron chestplate fuel planks: passed")),
+            report.observations().stream().anyMatch(entry ->
+                entry.contains("iron chestplate fuel planks: passed")
+                    && entry.contains("planks_count=11") && entry.contains("expected_at_least=8")),
             "iron chestplate progression should carry enough planks for eight smelts"
         );
         assertFalse(
@@ -449,11 +487,11 @@ final class PlayableCombatStageTest {
             "iron chestplate progression should not need a post-furnace log trip for fuel"
         );
         assertEquals(
-            4,
+            8,
             client.operations.stream()
                     .filter("moveToContainer:1:minecraft:oak_planks:1"::equals)
                     .count(),
-            "iron chestplate progression should refresh fuel every other ingot and avoid a post-furnace log trip"
+            "iron chestplate progression should refuel every expired burn without a post-furnace log trip"
         );
     }
     @Test

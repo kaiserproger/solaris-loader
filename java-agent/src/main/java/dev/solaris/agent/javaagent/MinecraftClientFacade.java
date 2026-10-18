@@ -1413,6 +1413,9 @@ public final class MinecraftClientFacade implements ClientFacade {
     @Override
     public ClientScenarioReport runScenario(String id, Path screenshotsDir) {
         ScenarioClient client = new MinecraftScenarioClient(new MinecraftClientExecutor());
+        if (VanillaUiSmokeScenario.supports(id)) {
+            return new VanillaUiSmokeScenario(new MinecraftClientExecutor(), client, this, screenshotsDir).run(id);
+        }
         if (PlayableBuildingPlacementScenario.supports(id)) {
             return new PlayableBuildingPlacementScenario().run(id, screenshotsDir, client);
         }

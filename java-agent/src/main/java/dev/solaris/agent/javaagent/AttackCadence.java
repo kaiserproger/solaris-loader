@@ -5,6 +5,6 @@ final class AttackCadence {
     }
 
     static boolean ready(float attackStrength) {
-        return attackStrength >= 0.90F;
+        return attackStrength >= 1.0F;
     }
 }

@@ -17,6 +17,175 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class PlayableHeatStageTest {
     @Test
+    void excavationExitReservesEveryCobblestoneNeededByThePendingRecipe() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.woodenPickaxes = 1;
+        client.nearStoneAvailable = false;
+        client.naturalStoneOverburdenRemaining = 4;
+        ClientScenarioReport report = PlayableHeatStage.mineCobblestoneWithWoodenPickaxe(
+            "playable-07-furnace-placement-open", new ArrayList<>(), client, 8
+        );
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertEquals(8, client.excavationCobblestoneReserve);
+        assertEquals(8, client.cobblestones);
+        assertFalse(client.usedDebugSetup());
+    }
+
+    @Test
+    void ironSmeltRefuelsAfterBurnoutOnEveryVisit() throws Exception {
+        FakeScenarioClient client = ironSmeltClient();
+        for (int visit = 0; visit < 2; visit++) {
+            client.rawIron = 1;
+            ClientScenarioReport report = smeltIron(client);
+            assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+            assertTrue(report.observations().stream().anyMatch(line ->
+                line.contains("burn_remaining=0") && line.contains("fuel_to_add=1")));
+        }
+        assertEquals(2, client.operations.stream()
+            .filter("moveToContainer:1:minecraft:oak_planks:1"::equals).count());
+        assertEquals(2, client.ironIngots);
+    }
+
+    @Test
+    void ironSmeltRefuelsLitFurnaceWithInsufficientRemainingBurn() throws Exception {
+        FakeScenarioClient client = ironSmeltClient();
+        client.furnaceBurnRemaining = 199;
+        ClientScenarioReport report = smeltIron(client);
+        assertEquals("passed", report.result());
+        assertTrue(client.operations.contains("moveToContainer:1:minecraft:oak_planks:1"));
+        assertTrue(report.observations().stream().anyMatch(line ->
+            line.contains("lit=true") && line.contains("enough_burn=false")));
+    }
+
+    @Test
+    void ironSmeltReusesEnoughObservedBurnIncludingCookProgress() throws Exception {
+        FakeScenarioClient client = ironSmeltClient();
+        client.furnaceBurnRemaining = 150;
+        client.furnaceCookProgress = 50;
+        ClientScenarioReport report = smeltIron(client);
+        assertEquals("passed", report.result());
+        assertFalse(client.operations.contains("moveToContainer:1:minecraft:oak_planks:1"));
+        assertTrue(report.observations().stream().anyMatch(line ->
+            line.contains("existing_burn=true") && line.contains("enough_burn=true")));
+    }
+
+    @Test
+    void ironSmeltUsesObservedQueuedFuelWithoutClaimingExistingBurn() throws Exception {
+        FakeScenarioClient client = ironSmeltClient();
+        client.containerItemIds[1] = client.planksItemId;
+        client.containerCounts[1] = 1;
+        ClientScenarioReport report = smeltIron(client);
+        assertEquals("passed", report.result());
+        assertFalse(client.operations.contains("moveToContainer:1:minecraft:oak_planks:1"));
+        assertTrue(report.observations().stream().anyMatch(line ->
+            line.contains("existing_burn=false") && line.contains("queued_fuel=1")));
+    }
+
+    @Test
+    void ironSmeltDoesNotAssumeUnknownCookDurationIsCovered() throws Exception {
+        FakeScenarioClient client = ironSmeltClient();
+        client.furnaceBurnRemaining = 1;
+        client.furnaceCookTotal = 0;
+        assertEquals("passed", smeltIron(client).result());
+        assertTrue(client.operations.contains("moveToContainer:1:minecraft:oak_planks:1"));
+    }
+
+    private static FakeScenarioClient ironSmeltClient() {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.rawIron = 1;
+        client.oakPlanks = 4;
+        client.stonePickaxes = 1;
+        return client;
+    }
+
+    private static ClientScenarioReport smeltIron(FakeScenarioClient client) throws Exception {
+        PlayableResourceStage.PlanksRecipe planks =
+            new PlayableResourceStage.PlanksRecipe(client.logItemId, client.planksItemId);
+        PlayableHeatStage.FurnacePlacementOpenResult furnace = new PlayableHeatStage.FurnacePlacementOpenResult(
+            new ClientScenarioReport("passed", "fuel-policy", List.of()), planks,
+            new ScenarioBlockTarget(1, 65, 1, "up", "furnace-target", "minecraft:furnace")
+        );
+        return PlayableHeatStage.smeltRawIronInPlacedFurnace(
+            "fuel-policy", new ArrayList<>(), client, furnace, planks
+        );
+    }
+
+    @Test
+    void reachableStoneMinesWithoutWalkingDownToEveryTargetAndReplacesUncollectedDrops() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.woodenPickaxes = 1;
+        client.failedCobblestonePickupsRemaining = 2;
+        ClientScenarioReport report = PlayableHeatStage.mineCobblestoneWithWoodenPickaxe(
+            "playable-07-furnace-placement-open", new ArrayList<>(), client, 8
+        );
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertEquals(8, client.cobblestones);
+        assertEquals(10, client.operations.stream()
+            .filter("breakVisible:minecraft:stone:minecraft:cobblestone"::equals).count());
+        assertFalse(client.operations.stream().anyMatch(operation -> operation.startsWith("approach:minecraft:stone:")));
+        assertFalse(client.usedDebugSetup());
+    }
+
+    @Test
+    void buriedStoneApproachExcavatesRealOverburdenBeforeMiningCobblestone() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.woodenPickaxes = 1;
+        client.nearStoneAvailable = false;
+        client.naturalStoneOverburdenRemaining = 4;
+
+        ClientScenarioReport report = PlayableHeatStage.mineCobblestoneWithWoodenPickaxe(
+            "playable-05-stone-tool-progression", new ArrayList<>(), client, 1
+        );
+
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertEquals(0, client.naturalStoneOverburdenRemaining);
+        assertEquals(1, client.cobblestones);
+        assertTrue(client.operations.contains("approachColumn:9:6"));
+        assertEquals(1, client.operations.stream()
+            .filter("breakVisible:minecraft:grass_block:minecraft:dirt"::equals).count());
+        assertEquals(3, client.operations.stream()
+            .filter("breakVisible:minecraft:dirt:minecraft:dirt"::equals).count());
+        assertTrue(client.operations.indexOf("excavationExit:67")
+            > client.operations.indexOf("collect:minecraft:stone:minecraft:cobblestone:1"));
+        assertFalse(client.usedDebugSetup());
+    }
+
+    @Test
+    void buriedStoneApproachRemainsBlockedWhenOverburdenCannotBeBroken() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.woodenPickaxes = 1;
+        client.nearStoneAvailable = false;
+        client.naturalStoneOverburdenRemaining = 4;
+        client.failStoneOverburdenBreak = true;
+
+        ClientScenarioReport report = PlayableHeatStage.mineCobblestoneWithWoodenPickaxe(
+            "playable-05-stone-tool-progression", new ArrayList<>(), client, 1
+        );
+
+        assertEquals("blocked", report.result());
+        assertEquals(0, client.cobblestones);
+        assertFalse(client.operations.contains("breakVisible:minecraft:stone:minecraft:cobblestone"));
+    }
+
+    @Test
+    void earnedStoneDoesNotPassProgressionWhileStillTrappedInExcavation() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.woodenPickaxes = 1;
+        client.nearStoneAvailable = false;
+        client.naturalStoneOverburdenRemaining = 4;
+        client.failExcavationExit = true;
+
+        ClientScenarioReport report = PlayableHeatStage.mineCobblestoneWithWoodenPickaxe(
+            "playable-05-stone-tool-progression", new ArrayList<>(), client, 3
+        );
+
+        assertEquals("blocked", report.result());
+        assertEquals(3, client.cobblestones);
+        assertTrue(client.operations.contains("excavationExit:67"));
+        assertFalse(client.usedDebugSetup());
+    }
+
+    @Test
     void furnacePlacementCraftsPlacesAndOpensEarnedFurnaceWithoutDebugSetup() {
         FakeScenarioClient client = new FakeScenarioClient();
 

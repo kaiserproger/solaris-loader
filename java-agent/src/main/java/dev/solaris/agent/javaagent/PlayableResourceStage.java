@@ -515,7 +515,18 @@ final class PlayableResourceStage {
         List<String> observations,
         ScenarioClient client
     ) throws Exception {
-        LogToPlanksResult planks = PlayableResourceStage.runLogToPlanks(id, observations, client, 4, true, false);
+        return prepareWoodenToolAndTable(id, observations, client, 4);
+    }
+
+    static WoodenToolTableResult prepareWoodenToolAndTable(
+        String id,
+        List<String> observations,
+        ScenarioClient client,
+        int initialLogCount
+    ) throws Exception {
+        LogToPlanksResult planks = PlayableResourceStage.runLogToPlanks(
+            id, observations, client, initialLogCount, true, false
+        );
         if (!"passed".equals(planks.report().result())) {
             return new WoodenToolTableResult(planks.report(), planks.planks(), null);
         }

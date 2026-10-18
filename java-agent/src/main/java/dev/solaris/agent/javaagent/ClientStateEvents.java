@@ -1,5 +1,7 @@
 package dev.solaris.agent.javaagent;
 
+import net.minecraft.resources.Identifier;
+
 import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -8,6 +10,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public final class ClientStateEvents {
     private static final int MAX_ITEM_TAKEN_EVENTS = 64;
+    private static final Identifier SHIELD_BLOCK_SOUND = Identifier.parse("minecraft:item.shield.block");
     private static final ReentrantLock LOCK = new ReentrantLock();
     private static final Condition STATE_CHANGED = LOCK.newCondition();
     private static final Condition TICK_CHANGED = LOCK.newCondition();
@@ -20,6 +23,7 @@ public final class ClientStateEvents {
     private static long stateVersion;
     private static long tickVersion;
     private static long healthVersion;
+    private static long shieldBlockVersion;
     private static long serverTimeVersion;
     private static long blockChangeAckVersion;
     private static long containerPacketVersion;
@@ -50,6 +54,15 @@ public final class ClientStateEvents {
         LOCK.lock();
         try {
             return healthVersion;
+        } finally {
+            LOCK.unlock();
+        }
+    }
+
+    public static long shieldBlockVersion() {
+        LOCK.lock();
+        try {
+            return shieldBlockVersion;
         } finally {
             LOCK.unlock();
         }
@@ -118,6 +131,21 @@ public final class ClientStateEvents {
         try {
             healthVersion += 1;
             HEALTH_CHANGED.signalAll();
+        } finally {
+            LOCK.unlock();
+        }
+    }
+
+    public static void publishEntitySound(int entityId, int playerEntityId, Identifier sound) {
+        if (entityId != playerEntityId || !SHIELD_BLOCK_SOUND.equals(sound)) {
+            return;
+        }
+        LOCK.lock();
+        try {
+            shieldBlockVersion += 1;
+            stateVersion += 1;
+            STATE_CHANGED.signalAll();
+            TICK_OR_STATE_CHANGED.signalAll();
         } finally {
             LOCK.unlock();
         }

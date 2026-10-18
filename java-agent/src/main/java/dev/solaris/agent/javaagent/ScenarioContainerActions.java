@@ -2,9 +2,11 @@ package dev.solaris.agent.javaagent;
 
 import dev.solaris.agent.client.ClientTaskExecutor;
 import net.minecraft.client.Minecraft;
+import net.minecraft.network.protocol.game.ServerboundPlaceRecipePacket;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 
 import java.time.Duration;
 import java.util.Objects;
@@ -21,6 +23,58 @@ import static dev.solaris.agent.javaagent.ScenarioClientState.requireInPlay;
  */
 final class ScenarioContainerActions {
     private ScenarioContainerActions() {
+    }
+
+    /**
+     * A recipe-book craft as a vanilla player does it: the recipe click puts the ingredients
+     * into the grid, then a shift-click on the result slot (menu slot 0 in both the inventory
+     * and the crafting table) crafts every set the grid holds into the inventory.
+     */
+    static boolean craftRecipe(
+        ClientTaskExecutor executor,
+        int containerId,
+        int recipeDisplayId,
+        boolean useMaxItems,
+        Duration duration
+    ) throws Exception {
+        long deadlineNanos = System.nanoTime() + duration.toNanos();
+        ContainerUpdateCheckpoint placed = executor.callOnClientThread(() -> {
+            Minecraft minecraft = requireInPlay();
+            AbstractContainerMenu menu = minecraft.player.containerMenu;
+            ContainerUpdateCheckpoint before = new ContainerUpdateCheckpoint(
+                menu.containerId,
+                menu.getStateId()
+            );
+            minecraft.getConnection().send(new ServerboundPlaceRecipePacket(
+                containerId,
+                new RecipeDisplayId(recipeDisplayId),
+                useMaxItems
+            ));
+            return before;
+        });
+        if (!waitForContainerStateAdvance(executor, placed, deadlineNanos)) {
+            return false;
+        }
+        ContainerUpdateCheckpoint taken = executor.callOnClientThread(() -> {
+            Minecraft minecraft = requireInPlay();
+            AbstractContainerMenu menu = minecraft.player.containerMenu;
+            if (menu.slots.isEmpty() || menu.slots.get(0).getItem().isEmpty()) {
+                return null;
+            }
+            ContainerUpdateCheckpoint before = new ContainerUpdateCheckpoint(
+                menu.containerId,
+                menu.getStateId()
+            );
+            minecraft.gameMode.handleContainerInput(
+                menu.containerId,
+                0,
+                0,
+                ContainerInput.QUICK_MOVE,
+                minecraft.player
+            );
+            return before;
+        });
+        return taken != null && waitForContainerStateAdvance(executor, taken, deadlineNanos);
     }
 
     static boolean closeCurrentScreenOnClientThread(Minecraft minecraft) {

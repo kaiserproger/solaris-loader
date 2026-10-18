@@ -147,6 +147,26 @@ final class PlayableSurvivalStageTest {
     }
 
     @Test
+    void fullLoopDefendsAgainstVisibleSlimeDuringSurvivalSoak() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.visiblePassiveDuringSoak = true;
+        client.visibleHostileDuringSoak = true;
+        client.visibleHostileTypeDuringSoak = "minecraft:slime";
+
+        ClientScenarioReport report = new PlayableRealClientLoopScenario(Duration.ofMillis(1)).run(
+            "playable-04-twenty-minute-survival-loop",
+            Path.of("build/tmp/playable-04-slime-test/screenshots"),
+            client
+        );
+
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertTrue(
+            client.operations.contains("attackEntityUntilRemoved:minecraft:slime:199"),
+            "slimes camping the respawn point must be fought, not ignored"
+        );
+    }
+
+    @Test
     void fullLoopObservesDistantHostileAtNightWithoutChargingAcrossTheWorld() throws Exception {
         FakeScenarioClient client = new FakeScenarioClient();
         client.visiblePassiveDuringSoak = true;
@@ -159,9 +179,9 @@ final class PlayableSurvivalStageTest {
             client
         );
 
-        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertEquals("failed", report.result(), () -> String.join("\n", report.observations()));
         assertTrue(
-            client.operations.contains("visibleEntity:minecraft:zombie|minecraft:skeleton|minecraft:spider:outside-survival-reach"),
+            client.operations.contains("visibleEntity:minecraft:zombie|minecraft:skeleton|minecraft:spider|minecraft:slime:outside-survival-reach"),
             "the long survival gate must scan beyond melee reach once night begins"
         );
         assertFalse(
@@ -172,6 +192,31 @@ final class PlayableSurvivalStageTest {
             report.observations().stream().anyMatch(entry ->
                 entry.contains("outside_reach=true") && entry.contains("engagement=deferred")
             ),
+            () -> String.join("\n", report.observations())
+        );
+    }
+
+    @Test
+    void fullLoopHuntsAHealthyNightHostileThatStaysOutsideMeleeReach() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.visiblePassiveDuringSoak = true;
+        client.clientTicks = 12_522L;
+        client.visibleHostileOutsideReachDuringSoak = true;
+        client.outsideReachHostileDistanceSquared = 15.0 * 15.0;
+
+        ClientScenarioReport report = new PlayableRealClientLoopScenario(Duration.ofMillis(1)).run(
+            "playable-04-twenty-minute-survival-loop",
+            Path.of("build/tmp/playable-04-hunt-test/screenshots"),
+            client
+        );
+
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertTrue(
+            client.operations.stream().anyMatch(operation -> operation.startsWith("attackEntityUntilRemoved:")),
+            "a healthy night player must go and kill a visible hostile instead of waiting for it forever"
+        );
+        assertTrue(
+            report.observations().stream().anyMatch(entry -> entry.contains("hunt=true engaging")),
             () -> String.join("\n", report.observations())
         );
     }
@@ -190,7 +235,7 @@ final class PlayableSurvivalStageTest {
             client
         );
 
-        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertEquals("failed", report.result(), () -> String.join("\n", report.observations()));
         assertFalse(
             client.operations.stream().anyMatch(operation -> operation.startsWith("attackEntityUntilRemoved:")),
             "an injured survival player must not charge a hostile outside melee reach"
@@ -198,7 +243,7 @@ final class PlayableSurvivalStageTest {
     }
 
     @Test
-    void fullLoopDefersHostileAlreadyWithinReachWhenBadlyInjured() throws Exception {
+    void fullLoopDefendsInPlaceWithoutChargingWhenBadlyInjuredHostileIsWithinReach() throws Exception {
         FakeScenarioClient client = new FakeScenarioClient();
         client.visiblePassiveDuringSoak = true;
         client.visibleHostileDuringSoak = true;
@@ -212,12 +257,16 @@ final class PlayableSurvivalStageTest {
 
         assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
         assertFalse(
+            client.operations.stream().anyMatch(operation -> operation.startsWith("approachEntity:")),
+            "a badly injured survival player must not charge a hostile"
+        );
+        assertTrue(
             client.operations.stream().anyMatch(operation -> operation.startsWith("attackEntityUntilRemoved:")),
-            "a badly injured survival player must not start a fresh melee exchange"
+            "a hostile already inside reach must be answered instead of idling under attack"
         );
         assertTrue(
             report.observations().stream().anyMatch(entry ->
-                entry.contains("within_reach=true") && entry.contains("engagement=deferred_low_health")
+                entry.contains("survival hostile defense:") && entry.contains("injured_engagement=true")
             ),
             () -> String.join("\n", report.observations())
         );
@@ -262,6 +311,7 @@ final class PlayableSurvivalStageTest {
         client.visiblePassiveDuringSoak = true;
         client.visibleHostileDuringSoak = true;
         client.dieOnNextHostileAttack = true;
+        client.visibleHostileRepeats = 1;
 
         ClientScenarioReport report = new PlayableRealClientLoopScenario(Duration.ofMillis(1_050)).run(
             "playable-04-twenty-minute-survival-loop",
@@ -340,4 +390,63 @@ final class PlayableSurvivalStageTest {
         );
     }
 
+    @Test
+    void combatAcceptanceRequiresAKillAndAtMostThreeDeaths() {
+        assertFalse(PlayableSurvivalStage.combatAcceptancePassed(0, 0), "no neutralized hostile must fail");
+        assertTrue(PlayableSurvivalStage.combatAcceptancePassed(1, 0));
+        assertTrue(PlayableSurvivalStage.combatAcceptancePassed(1, 3), "three deaths are the allowed maximum");
+        assertFalse(PlayableSurvivalStage.combatAcceptancePassed(5, 4), "a fourth death must fail");
+        assertFalse(PlayableSurvivalStage.combatAcceptancePassed(0, 18), "a death loop without kills must fail");
+    }
+
+    @Test
+    void fullLoopRecordsPerAttackTelemetryIntoTheObservationsAndSummary() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.visiblePassiveDuringSoak = true;
+        client.visibleHostileDuringSoak = true;
+        client.attackTelemetry.add(new ScenarioCombatRecord("combat attack: tick=10 entity=minecraft:zombie sent=true hit_confirmed=true", true, true));
+        client.attackTelemetry.add(new ScenarioCombatRecord("combat attack: tick=22 entity=minecraft:zombie sent=true hit_confirmed=false", true, false));
+        client.attackTelemetry.add(new ScenarioCombatRecord("combat engagement: phase=attack attacks_sent=2", false, false));
+
+        ClientScenarioReport report = new PlayableRealClientLoopScenario(Duration.ofMillis(1)).run(
+            "playable-04-twenty-minute-survival-loop",
+            Path.of("build/tmp/playable-04-telemetry-test/screenshots"),
+            client
+        );
+
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertTrue(report.observations().contains("combat attack: tick=10 entity=minecraft:zombie sent=true hit_confirmed=true"));
+        assertTrue(report.observations().contains("combat engagement: phase=attack attacks_sent=2"));
+        assertTrue(
+            report.observations().stream().anyMatch(entry ->
+                entry.contains("survival combat acceptance: passed")
+                    && entry.contains("hostiles_neutralized=1")
+                    && entry.contains("attacks_sent=2")
+                    && entry.contains("hits_confirmed=1")
+            ),
+            () -> String.join("\n", report.observations())
+        );
+    }
+
+    @Test
+    void fullLoopFailsWithoutAHostileKillEvenWhenSpawnEvidenceExists() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.visiblePassiveDuringSoak = true;
+        client.visibleHostileOutsideReachDuringSoak = true;
+        client.clientTicks = 12_522L;
+
+        ClientScenarioReport report = new PlayableRealClientLoopScenario(Duration.ofMillis(1)).run(
+            "playable-04-twenty-minute-survival-loop",
+            Path.of("build/tmp/playable-04-no-kill-test/screenshots"),
+            client
+        );
+
+        assertEquals("failed", report.result(), () -> String.join("\n", report.observations()));
+        assertTrue(
+            report.observations().stream().anyMatch(entry ->
+                entry.contains("survival combat acceptance: failed") && entry.contains("hostiles_neutralized=0")
+            ),
+            () -> String.join("\n", report.observations())
+        );
+    }
 }

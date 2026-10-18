@@ -245,7 +245,17 @@ final class PlayableToolStage {
         List<String> observations,
         ScenarioClient client
     ) throws Exception {
-        PlayableResourceStage.WoodenToolTableResult prepared = PlayableResourceStage.prepareWoodenToolAndTable(id, observations, client);
+        return prepareIronProgressionBase(id, observations, client, 4);
+    }
+
+    private static IronProgressionBaseResult prepareIronProgressionBase(
+        String id,
+        List<String> observations,
+        ScenarioClient client,
+        int initialLogCount
+    ) throws Exception {
+        PlayableResourceStage.WoodenToolTableResult prepared =
+            PlayableResourceStage.prepareWoodenToolAndTable(id, observations, client, initialLogCount);
         if (!"passed".equals(prepared.report().result())) {
             return new IronProgressionBaseResult(prepared.report(), prepared, null);
         }
@@ -470,19 +480,21 @@ final class PlayableToolStage {
         List<String> observations,
         ScenarioClient client
     ) throws Exception {
-        IronProgressionBaseResult base = prepareIronProgressionBase(id, observations, client);
+        // Five logs yield 20 planks; table (4), sticks (2), and pickaxe (3)
+        // leave 11 before furnace placement, enough for eight independent burns.
+        IronProgressionBaseResult base = prepareIronProgressionBase(id, observations, client, 5);
         if (!"passed".equals(base.report().result())) {
             return new IronChestplateProgressionResult(base.report(), null);
         }
 
         PlayableResourceStage.PlanksRecipe fuelPlanks = base.prepared().planks();
         int fuelPlanksCount = client.inventoryCount(fuelPlanks.planksItemId());
-        boolean enoughFuel = fuelPlanksCount >= 4;
+        boolean enoughFuel = fuelPlanksCount >= 8;
         observations.add(
             "iron chestplate fuel planks: " + (enoughFuel ? "passed" : "failed")
                 + " planks_item=" + fuelPlanks.planksItemId()
                 + " planks_count=" + fuelPlanksCount
-                + " expected_at_least=4"
+                + " expected_at_least=8"
         );
         if (!enoughFuel) {
             return new IronChestplateProgressionResult(
@@ -502,7 +514,6 @@ final class PlayableToolStage {
                 client,
                 base.placedFurnace(),
                 fuelPlanks,
-                ingot % 2 == 0,
                 1
             );
             if (!"passed".equals(smelt.result())) {
@@ -585,11 +596,9 @@ final class PlayableToolStage {
                 if (!approached) {
                     return new ClientScenarioReport("blocked", id, observations);
                 }
-                ore = client.findBreakableBlock(IRON_ORE_BLOCK_IDS, ScenarioReach.WITHIN_SURVIVAL_REACH);
-                if (ore == null) {
-                    observations.add("blocked: natural iron ore remained outside survival reach after approach");
-                    return new ClientScenarioReport("blocked", id, observations);
-                }
+                // Approach proved this exact observed ore reachable. A ring scan
+                // excludes the player's own column, including the exposed shaft floor.
+                ore = farOre;
             }
 
             boolean closeApproached = client.approachBlock(ore, APPROACH_TIMEOUT);

@@ -17,6 +17,36 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class PlayableToolStageTest {
     @Test
+    void chestplateRefuelsAllEightSmeltsWhenOreTripsExhaustResidualBurn() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        ClientScenarioReport report = PlayableToolStage.craftEarnedIronChestplateProgression(
+            "fuel-policy-chestplate", new ArrayList<>(), client
+        );
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertEquals(8, client.operations.stream()
+            .filter("moveToContainer:1:minecraft:oak_planks:1"::equals).count());
+        assertEquals(8, client.operations.stream().filter("furnaceState"::equals).count());
+        assertEquals(1, client.ironChestplates);
+        assertFalse(client.usedDebugSetup());
+    }
+
+    @Test
+    void approachedBuriedOreRetainsItsObservedTargetWhenRingScanExcludesTheShaftFloor() throws Exception {
+        FakeScenarioClient client = new FakeScenarioClient();
+        client.stonePickaxes = 1;
+        client.missingReachableIronScansRemaining = 2;
+        ClientScenarioReport report = PlayableToolStage.mineRawIronWithStonePickaxe(
+            "playable-23-iron-ingot-progression", new ArrayList<>(), client
+        );
+        assertEquals("passed", report.result(), () -> String.join("\n", report.observations()));
+        assertEquals(1, client.rawIron);
+        assertEquals(1, client.missingReachableIronScansRemaining);
+        assertTrue(client.operations.contains("approach:minecraft:iron_ore:far-natural-iron-ore"));
+        assertTrue(client.operations.contains("breakVisible:minecraft:iron_ore:minecraft:raw_iron"));
+        assertFalse(client.usedDebugSetup());
+    }
+
+    @Test
     void stoneToolProgressionMinesCobblestoneAndCraftsStonePickaxeWithoutDebugSetup() {
         FakeScenarioClient client = new FakeScenarioClient();
 

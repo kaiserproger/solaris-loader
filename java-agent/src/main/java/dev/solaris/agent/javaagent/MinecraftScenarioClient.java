@@ -17,22 +17,27 @@ import net.minecraft.client.multiplayer.chat.GuiMessage;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.protocol.game.ServerboundPlaceRecipePacket;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
 import net.minecraft.network.protocol.game.ServerboundSignUpdatePacket;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.animal.sheep.Sheep;
 import net.minecraft.world.entity.item.ItemEntity;
+import net.minecraft.world.entity.monster.Creeper;
+import net.minecraft.world.entity.monster.Enemy;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.AbstractFurnaceMenu;
+import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.DyeColor;
-import net.minecraft.world.item.crafting.display.RecipeDisplayId;
 import net.minecraft.world.item.crafting.display.ShapedCraftingRecipeDisplay;
 import net.minecraft.world.item.crafting.display.SlotDisplayContext;
 import net.minecraft.world.level.LightLayer;
@@ -82,17 +87,36 @@ import static dev.solaris.agent.javaagent.ScenarioBlockTargets.pos;
 
 public final class MinecraftScenarioClient implements ScenarioClient {
     private static final double PICKUP_APPROACH_DISTANCE_SQUARED = 4.0;
+    private static final long PICKUP_INVENTORY_CONVERGENCE_NANOS = 2_000_000_000L;
     private static final double POSITION_APPROACH_DISTANCE_SQUARED = 2.25;
+    private static final double COMBAT_DIAGONAL = Math.sqrt(0.5);
+    private static final double[] COMBAT_RETREAT_DIRECTIONS = {
+        1.0, 0.0, COMBAT_DIAGONAL, COMBAT_DIAGONAL, 0.0, 1.0, -COMBAT_DIAGONAL, COMBAT_DIAGONAL,
+        -1.0, 0.0, -COMBAT_DIAGONAL, -COMBAT_DIAGONAL, 0.0, -1.0, COMBAT_DIAGONAL, -COMBAT_DIAGONAL
+    };
     private static final Direction[] HUNGER_DRAIN_DIRECTIONS = {
         Direction.EAST,
         Direction.WEST,
         Direction.SOUTH,
         Direction.NORTH
     };
+    private static final List<String> EXCAVATION_BLOCKS = List.of(
+        "minecraft:stone", "minecraft:deepslate", "minecraft:granite", "minecraft:diorite",
+        "minecraft:andesite", "minecraft:tuff", "minecraft:dirt", "minecraft:grass_block", "minecraft:cobblestone"
+    );
+    // Two blocks fit a standing player; the third lets it jump onto the next step.
+    private static final int EXCAVATION_HEADROOM = CliffStaircase.HEADROOM;
+    private static final List<String> EXCAVATION_TOOLS =
+        List.of("minecraft:iron_pickaxe", "minecraft:stone_pickaxe", "minecraft:wooden_pickaxe");
+    private static final int MAX_CLIFFS_PER_APPROACH = 4;
+    private static final Duration CLIFF_APPROACH_TIMEOUT = Duration.ofSeconds(120);
+    private int buriedOreSurfaceY = -1;
     private static final AtomicReference<BlockBreakAutomation> ACTIVE_BLOCK_BREAK =
         new AtomicReference<>();
+    private static final Field FURNACE_MENU_DATA = furnaceMenuDataField();
 
     private final ClientTaskExecutor executor;
+    private final CombatLedger combatLedger = new CombatLedger();
 
     MinecraftScenarioClient(ClientTaskExecutor executor) {
         this.executor = executor;
@@ -415,17 +439,16 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         return finalSample;
     }
 
+    /** Recipe-book craft: place the recipe, then shift-click the result (vanilla flow). */
     @Override
     public void placeRecipe(int containerId, int recipeDisplayId, boolean useMaxItems) throws Exception {
-        executor.callOnClientThread(() -> {
-            Minecraft minecraft = requireInPlay();
-            minecraft.getConnection().send(new ServerboundPlaceRecipePacket(
-                containerId,
-                new RecipeDisplayId(recipeDisplayId),
-                useMaxItems
-            ));
-            return null;
-        });
+        ScenarioContainerActions.craftRecipe(
+            executor,
+            containerId,
+            recipeDisplayId,
+            useMaxItems,
+            Duration.ofSeconds(5)
+        );
     }
 
     /**
@@ -577,6 +600,34 @@ public final class MinecraftScenarioClient implements ScenarioClient {
     @Override
     public int activeContainerId() throws Exception {
         return executor.callOnClientThread(ScenarioContainerActions::activeContainerIdOnClientThread);
+    }
+
+    @Override
+    public ScenarioFurnaceState furnaceState() throws Exception {
+        return executor.callOnClientThread(() -> {
+            AbstractContainerMenu menu = requireInPlay().player.containerMenu;
+            if (!(menu instanceof AbstractFurnaceMenu furnace)) {
+                throw new IllegalStateException("active menu is not a furnace: " + menu.getClass().getName());
+            }
+            ContainerData data = (ContainerData) FURNACE_MENU_DATA.get(furnace);
+            ItemStack fuel = furnace.getSlot(1).getItem();
+            String itemId = fuel.isEmpty() ? "minecraft:air" : BuiltInRegistries.ITEM.getKey(fuel.getItem()).toString();
+            return furnaceSnapshot(data, itemId, fuel.getCount());
+        });
+    }
+
+    static ScenarioFurnaceState furnaceSnapshot(ContainerData data, String fuelItemId, int fuelCount) {
+        return new ScenarioFurnaceState(data.get(0), data.get(1), data.get(2), data.get(3), fuelItemId, fuelCount);
+    }
+
+    private static Field furnaceMenuDataField() {
+        try {
+            Field field = AbstractFurnaceMenu.class.getDeclaredField("data");
+            field.setAccessible(true);
+            return field;
+        } catch (ReflectiveOperationException error) {
+            throw new ExceptionInInitializerError(error);
+        }
     }
 
     @Override
@@ -784,7 +835,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         ScenarioEntityObservation finalSample = null;
         do {
             long observedVersion = ClientStateEvents.version();
-            finalSample = executor.callOnClientThread(() -> visibleEntityOnClientThread(entityTypeIds, reach));
+            finalSample = executor.callOnClientThread(() -> visibleEntityOnClientThread(entityTypeIds, reach, true));
             if (finalSample != null) {
                 return finalSample;
             }
@@ -819,7 +870,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
     @Override
     public ScenarioEntityObservation visibleEntity(List<String> entityTypeIds, ScenarioReach reach)
         throws Exception {
-        return executor.callOnClientThread(() -> visibleEntityOnClientThread(entityTypeIds, reach));
+        return executor.callOnClientThread(() -> visibleEntityOnClientThread(entityTypeIds, reach, false));
     }
 
     @Override
@@ -1045,6 +1096,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
     @Override
     public boolean approachEntity(ScenarioEntityObservation entity, Duration timeout) throws Exception {
         long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        CombatAttempt combat = new CombatAttempt(selectedItem().itemId());
+        String outcome = "timeout";
         int detourDirection = 0;
         int preferredDetourDirection = 1;
         try {
@@ -1066,6 +1119,13 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                         minecraft.options.keyLeft.setDown(false);
                         minecraft.options.keyRight.setDown(false);
                         return new EntityApproachSample(false, false, 0);
+                    }
+                    if (current instanceof Enemy) {
+                        observeCombatTarget(minecraft, current, clientTick(minecraft), combat);
+                        boolean ready = driveCombatOnClientThread(minecraft, current, true, combat);
+                        return new EntityApproachSample(true, ready && ScenarioReach.WITHIN_SURVIVAL_REACH.includes(
+                            minecraft.player.position().distanceToSqr(current.position())
+                        ), 0);
                     }
                     Vec3 target = entityLookTarget(current);
                     minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES, target);
@@ -1090,26 +1150,38 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     );
                     return new EntityApproachSample(true, inReach, nextDetourDirection);
                 });
+                eatOwnedFoodForCombatRecovery(combat, deadlineNanos);
                 if (detourDirection == 0 && sample.detourDirection() != 0) {
                     preferredDetourDirection = -sample.detourDirection();
                 }
                 detourDirection = sample.detourDirection();
+                if (combat.gaveUp) {
+                    outcome = "gave_up_stuck";
+                    break;
+                }
                 if (sample.visible() && sample.inReach()) {
+                    outcome = "in_reach";
                     return true;
                 }
                 if (!awaitClientTick(observedVersion, deadlineNanos)) {
                     break;
                 }
             } while (true);
-            return executor.callOnClientThread(() -> {
-                Minecraft minecraft = requireInPlay();
+            boolean closeEnough = executor.callOnClientThread(() -> {
                 Entity current = entityByIdOnClientThread(entity.entityId());
                 return current != null
+                    && (!(current instanceof Enemy) || (!combat.recovery.recovering()
+                        && !(current instanceof Creeper)))
                     && ScenarioReach.WITHIN_SURVIVAL_REACH.includes(
-                        minecraft.player.position().distanceToSqr(current.position())
-                    );
+                        requireInPlay().player.position().distanceToSqr(current.position()));
             });
+            outcome = closeEnough ? "in_reach_after_timeout" : "timeout";
+            return closeEnough;
         } finally {
+            if (combat.hostile) {
+                combatLedger.engagement("approach", entity.entityType(), entity.entityId(), 0,
+                    combat.withheldSummary(), outcome);
+            }
             executor.callOnClientThread(() -> {
                 Minecraft minecraft = Minecraft.getInstance();
                 if (minecraft.options != null) {
@@ -1118,6 +1190,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     minecraft.options.keyJump.setDown(false);
                     minecraft.options.keyLeft.setDown(false);
                     minecraft.options.keyRight.setDown(false);
+                    minecraft.options.keyDown.setDown(false);
                 }
                 return null;
             });
@@ -1142,6 +1215,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         double lastY = entity.y();
         double lastZ = entity.z();
         ScenarioHeldItem selected = selectedItem();
+        CombatAttempt combat = new CombatAttempt(selected.itemId());
         try {
             do {
                 long observedVersion = ClientStateEvents.tickVersion();
@@ -1158,16 +1232,14 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     Entity current = entityByIdOnClientThread(entity.entityId());
                     Vec3 dropPosition = itemDropPositionOnClientThread(expectedDropItemId, near);
                     if (current != null) {
-                        Vec3 target = entityLookTarget(current);
-                        minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES, target);
-                        minecraft.options.keySprint.setDown(
-                            minecraft.player.position().distanceToSqr(current.position()) > PICKUP_APPROACH_DISTANCE_SQUARED
-                        );
-                        minecraft.options.keyUp.setDown(
-                            minecraft.player.position().distanceToSqr(current.position()) > PICKUP_APPROACH_DISTANCE_SQUARED
-                        );
-                        minecraft.options.keyJump.setDown(false);
+                        observeCombatTarget(minecraft, current, currentTick, combat);
+                        mayAttack = driveCombatOnClientThread(minecraft, current, mayAttack, combat);
                         if (mayAttack) {
+                            if (capturedLastAttackTick < 0L) {
+                                recordAttackCadence(minecraft.player, current);
+                            }
+                            recordCombatAttack(minecraft, current, entity.entityType(), currentTick);
+                            combat.sent++;
                             minecraft.gameMode.attack(minecraft.player, current);
                             minecraft.player.swing(InteractionHand.MAIN_HAND);
                         }
@@ -1183,19 +1255,49 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                             currentTick
                         );
                     }
+                    combatLedger.targetRemoved(entity.entityId());
                     if (dropPosition != null) {
-                        minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES, dropPosition);
-                        double distanceToDrop = minecraft.player.position().distanceToSqr(dropPosition);
-                        MovementClearance clearance = MovementDetour.clearance(minecraft, dropPosition);
-                        minecraft.options.keySprint.setDown(distanceToDrop > 0.64);
-                        minecraft.options.keyUp.setDown(true);
+                        Vec3 playerPosition = minecraft.player.position();
+                        var playerBox = minecraft.player.getBoundingBox();
+                        boolean inPickupVolume = pickupVolumeIntersects(
+                            playerBox.minX, playerBox.minY, playerBox.minZ,
+                            playerBox.maxX, playerBox.maxY, playerBox.maxZ,
+                            dropPosition.x, dropPosition.y, dropPosition.z
+                        );
+                        if (combat.hostile) {
+                            boolean nearby = hostileNearbyOnClientThread(minecraft, null, null);
+                            if (!CombatTactics.dropChaseAllowed(playerPosition.y, dropPosition.y, nearby)) {
+                                stopCombatMotion(minecraft);
+                                if (nearby) {
+                                    retreatFromHostilesOnClientThread(minecraft);
+                                }
+                            } else if (inPickupVolume) {
+                                stopCombatMotion(minecraft);
+                            } else {
+                                moveCombatSafelyOnClientThread(minecraft, dropPosition, combat);
+                            }
+                            return new EntityAttackSample(false, true, true, selectedItemOnClientThread(),
+                                inventoryCountOnClientThread(expectedDropItemId), dropPosition.x, dropPosition.y,
+                                dropPosition.z, currentTick);
+                        }
+                        Vec3 target = dropPosition.y - playerPosition.y <= -0.75
+                            ? new Vec3(
+                                pickupApproachCoordinate(playerPosition.y, dropPosition.y, dropPosition.x),
+                                dropPosition.y,
+                                pickupApproachCoordinate(playerPosition.y, dropPosition.y, dropPosition.z)
+                            )
+                            : dropPosition;
+                        minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES, target);
+                        MovementClearance clearance = MovementDetour.clearance(minecraft, target);
+                        minecraft.options.keySprint.setDown(
+                            !inPickupVolume && playerPosition.distanceToSqr(target) > 0.64
+                        );
+                        minecraft.options.keyUp.setDown(!inPickupVolume);
                         minecraft.options.keyJump.setDown(
-                            minecraft.player.horizontalCollision && clearance.raisedForward()
+                            !inPickupVolume && minecraft.player.horizontalCollision && clearance.raisedForward()
                         );
                     } else {
-                        minecraft.options.keySprint.setDown(false);
-                        minecraft.options.keyUp.setDown(false);
-                        minecraft.options.keyJump.setDown(false);
+                        stopCombatMotion(minecraft);
                     }
                     return new EntityAttackSample(
                         false,
@@ -1220,8 +1322,23 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 if (sample.attackSent()) {
                     lastAttackTick = sample.tick();
                 }
+                eatOwnedFoodForCombatRecovery(combat, deadlineNanos);
                 if (removed && pickupRestored) {
                     return new ScenarioBreakResult(started, true, sawDrop, true, selected);
+                }
+                if (removed && sawDrop && !sample.visibleDrop()) {
+                    // Removal and inventory application can arrive on different
+                    // client events. Only the inventory delta proves collection.
+                    InventoryPickupResult pickup = waitForInventoryPickup(
+                        expectedDropItemId,
+                        initialCount,
+                        expectedSelectedCount,
+                        near,
+                        System.nanoTime() + PICKUP_INVENTORY_CONVERGENCE_NANOS
+                    );
+                    return new ScenarioBreakResult(
+                        started, true, sawDrop, pickup.confirmed(), selectedItem(), pickup.detail()
+                    );
                 }
                 if (!awaitClientTick(observedVersion, deadlineNanos)) {
                     break;
@@ -1232,9 +1349,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             executor.callOnClientThread(() -> {
                 Minecraft minecraft = Minecraft.getInstance();
                 if (minecraft.options != null) {
-                    minecraft.options.keyUp.setDown(false);
-                    minecraft.options.keySprint.setDown(false);
-                    minecraft.options.keyJump.setDown(false);
+                    stopCombatMotion(minecraft);
                 }
                 return null;
             });
@@ -1247,6 +1362,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         long deadlineNanos = System.nanoTime() + timeout.toNanos();
         long lastAttackTick = -1L;
         boolean started = false;
+        String outcome = "timeout";
+        CombatAttempt combat = new CombatAttempt(selectedItem().itemId());
         try {
             while (true) {
                 long observedVersion = ClientStateEvents.tickVersion();
@@ -1256,18 +1373,20 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     long currentTick = clientTick(minecraft);
                     Entity current = entityByIdOnClientThread(entity.entityId());
                     if (current == null) {
+                        combatLedger.targetRemoved(entity.entityId());
                         return new EntityRemovalAttackSample(false, true, currentTick);
                     }
+                    observeCombatTarget(minecraft, current, currentTick, combat);
 
-                    Vec3 target = entityLookTarget(current);
-                    minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES, target);
-                    double distanceSquared = minecraft.player.position().distanceToSqr(current.position());
-                    minecraft.options.keySprint.setDown(distanceSquared > PICKUP_APPROACH_DISTANCE_SQUARED);
-                    minecraft.options.keyUp.setDown(distanceSquared > PICKUP_APPROACH_DISTANCE_SQUARED);
-                    minecraft.options.keyJump.setDown(false);
                     boolean mayAttack = currentTick != capturedLastAttackTick
                         && AttackCadence.ready(minecraft.player.getAttackStrengthScale(0.0F));
+                    mayAttack = driveCombatOnClientThread(minecraft, current, mayAttack, combat);
                     if (mayAttack) {
+                        if (capturedLastAttackTick < 0L) {
+                            recordAttackCadence(minecraft.player, current);
+                        }
+                        recordCombatAttack(minecraft, current, entity.entityType(), currentTick);
+                        combat.sent++;
                         minecraft.gameMode.attack(minecraft.player, current);
                         minecraft.player.swing(InteractionHand.MAIN_HAND);
                     }
@@ -1277,24 +1396,42 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 if (sample.attackSent()) {
                     lastAttackTick = sample.tick();
                 }
+                eatOwnedFoodForCombatRecovery(combat, deadlineNanos);
+                if (combat.gaveUp) {
+                    outcome = "gave_up_stuck";
+                    return false;
+                }
                 if (sample.removed()) {
+                    outcome = "removed";
                     return started;
+                }
+                if (executor.callOnClientThread(() -> {
+                    Minecraft minecraft = Minecraft.getInstance();
+                    return minecraft.player != null && minecraft.player.getHealth() <= 0.0F;
+                })) {
+                    outcome = "player_died";
+                    return false;
                 }
                 if (!awaitClientTick(observedVersion, deadlineNanos)) {
                     return false;
                 }
             }
         } finally {
+            combatLedger.engagement("attack", entity.entityType(), entity.entityId(), combat.sent,
+                combat.withheldSummary(), outcome);
             executor.callOnClientThread(() -> {
                 Minecraft minecraft = Minecraft.getInstance();
                 if (minecraft.options != null) {
-                    minecraft.options.keyUp.setDown(false);
-                    minecraft.options.keySprint.setDown(false);
-                    minecraft.options.keyJump.setDown(false);
+                    stopCombatMotion(minecraft);
                 }
                 return null;
             });
         }
+    }
+
+    @Override
+    public List<ScenarioCombatRecord> drainCombatTelemetry() {
+        return combatLedger.drain();
     }
 
     @Override
@@ -1416,13 +1553,14 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             Minecraft minecraft = requireInPlay();
             ItemStack selected = minecraft.player.getInventory().getSelectedItem();
             float health = minecraft.player.getHealth();
+            long shieldBlockVersion = ClientStateEvents.shieldBlockVersion();
             if (!ScenarioContainerActions.itemStackMatches(selected, itemId, 1)) {
-                return new ShieldBlockSample(false, health, selected.getDamageValue());
+                return new ShieldBlockSample(false, health, selected.getDamageValue(), shieldBlockVersion);
             }
             minecraft.options.keyUse.setDown(true);
             InteractionResult result = minecraft.gameMode.useItem(minecraft.player, InteractionHand.MAIN_HAND);
             boolean started = !"PASS".equals(result.toString()) || minecraft.player.isUsingItem();
-            return new ShieldBlockSample(started, health, selected.getDamageValue());
+            return new ShieldBlockSample(started, health, selected.getDamageValue(), shieldBlockVersion);
         });
         if (!initial.useStarted()) {
             return new ScenarioShieldBlockResult(
@@ -1446,10 +1584,11 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     return new ShieldBlockSample(
                         ScenarioContainerActions.itemStackMatches(selected, itemId, 1) && minecraft.player.isUsingItem(),
                         minecraft.player.getHealth(),
-                        selected.getDamageValue()
+                        selected.getDamageValue(),
+                        ClientStateEvents.shieldBlockVersion()
                     );
                 });
-                boolean blockedAttackObserved = sample.shieldDamage() > initial.shieldDamage();
+                boolean blockedAttackObserved = sample.shieldBlockVersion() > initial.shieldBlockVersion();
                 if (blockedAttackObserved || sample.health() < initial.health() || !sample.useStarted()) {
                     return new ScenarioShieldBlockResult(
                         true,
@@ -1971,6 +2110,34 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         return (long) observedCount >= (long) initialCount + expectedPickupCount;
     }
 
+    static double pickupApproachCoordinate(double playerFeetY, double dropFeetY, double coordinate) {
+        // A drop below the pickup box needs the lower column's footing, not
+        // repeated forward/jump oscillation against its raised neighbour.
+        return dropFeetY - playerFeetY <= -0.75 ? Math.floor(coordinate) + 0.5 : coordinate;
+    }
+
+    static boolean shallowStonePickup(double playerFeetY, double dropFeetY) {
+        return Double.isFinite(dropFeetY) && dropFeetY >= playerFeetY - 1.25;
+    }
+
+    static boolean pillarPlacementConfirmed(
+        String material, String observedBlock, int before, int after, boolean grounded, double feetY, int originY
+    ) {
+        return material.equals(observedBlock) && before > 0 && after == before - 1
+            && grounded && feetY >= originY + 0.9;
+    }
+
+    static boolean pickupVolumeIntersects(
+        double minX, double minY, double minZ,
+        double maxX, double maxY, double maxZ,
+        double dropX, double dropY, double dropZ
+    ) {
+        // Vanilla player box inflated (1, .5, 1), against the .25 item box.
+        return dropX + 0.125 > minX - 1.0 && dropX - 0.125 < maxX + 1.0
+            && dropY + 0.25 > minY - 0.5 && dropY < maxY + 0.5
+            && dropZ + 0.125 > minZ - 1.0 && dropZ - 0.125 < maxZ + 1.0;
+    }
+
     @Override
     public ScenarioBreakResult breakBlockUntilDropVisible(
         ScenarioBlockTarget target,
@@ -2132,6 +2299,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         Duration timeout
     ) throws Exception {
         long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        long inventoryDeadlineNanos = Long.MIN_VALUE;
         int detourDirection = 0;
         int preferredDetourDirection = 1;
         boolean sawDrop = false;
@@ -2148,7 +2316,6 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 int currentPreferredDirection = preferredDetourDirection;
                 PickupSample sample = executor.callOnClientThread(() -> {
                     Minecraft minecraft = requireInPlay();
-                    Vec3 center = Vec3.atLowerCornerWithOffset(pos(near), 0.5, 0.5, 0.5);
                     Vec3 dropPosition = expectedIdentity == null
                         ? itemDropPositionOnClientThread(expectedDropItemId, pos(near))
                         : itemDropPositionOnClientThread(expectedDropItemId, expectedIdentity);
@@ -2176,19 +2343,38 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                             minecraft.player.onGround(),
                             0,
                             clientTick(minecraft),
-                            identityTaken
+                            identityTaken,
+                            false
                         );
                     }
-                    Vec3 target = dropPosition == null ? center : dropPosition;
+                    Vec3 playerPosition = minecraft.player.position();
+                    var playerBox = minecraft.player.getBoundingBox();
+                    boolean inPickupVolume = dropPosition != null && pickupVolumeIntersects(
+                        playerBox.minX, playerBox.minY, playerBox.minZ,
+                        playerBox.maxX, playerBox.maxY, playerBox.maxZ,
+                        dropPosition.x, dropPosition.y, dropPosition.z
+                    );
+                    boolean avoidDeepDrop = expectedIdentity == null && "minecraft:cobblestone".equals(expectedDropItemId)
+                        && dropPosition != null && !inPickupVolume
+                        && !shallowStonePickup(playerPosition.y, dropPosition.y);
+                    Vec3 target = dropPosition == null
+                        ? Vec3.atLowerCornerWithOffset(pos(near), 0.5, 0.5, 0.5)
+                        : dropPosition.y - playerPosition.y <= -0.75
+                            ? new Vec3(
+                                pickupApproachCoordinate(playerPosition.y, dropPosition.y, dropPosition.x),
+                                dropPosition.y,
+                                pickupApproachCoordinate(playerPosition.y, dropPosition.y, dropPosition.z)
+                            )
+                            : dropPosition;
                     clearFoliageObstacleTowardOnClientThread(near);
                     minecraft.player.lookAt(
                         EntityAnchorArgument.Anchor.EYES,
                         target
                     );
                     MovementClearance clearance = MovementDetour.clearance(minecraft, target);
-                    boolean stepUp = minecraft.player.horizontalCollision
+                    boolean stepUp = !inPickupVolume && minecraft.player.horizontalCollision
                         && clearance.raisedForward();
-                    int nextDetourDirection = MovementDetour.choose(
+                    int nextDetourDirection = inPickupVolume ? 0 : MovementDetour.choose(
                         currentDetourDirection,
                         currentPreferredDirection,
                         minecraft.player.horizontalCollision && !stepUp,
@@ -2196,9 +2382,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                         clearance.left(),
                         clearance.right()
                     );
-                    Vec3 playerPosition = minecraft.player.position();
-                    boolean approaching = playerPosition.distanceToSqr(target)
-                        > PICKUP_APPROACH_DISTANCE_SQUARED;
+                    boolean approaching = !avoidDeepDrop && (dropPosition != null
+                        ? !inPickupVolume
+                        : playerPosition.distanceToSqr(target) > PICKUP_APPROACH_DISTANCE_SQUARED);
                     minecraft.options.keySprint.setDown(approaching);
                     minecraft.options.keyUp.setDown(approaching && nextDetourDirection == 0);
                     minecraft.options.keyJump.setDown(approaching && stepUp);
@@ -2220,7 +2406,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                         minecraft.player.onGround(),
                         nextDetourDirection,
                         clientTick(minecraft),
-                        identityTaken
+                        identityTaken,
+                        avoidDeepDrop
                     );
                 });
                 latestSample = sample;
@@ -2246,6 +2433,10 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                         pickupDetail(sample)
                     );
                 }
+                if (sample.avoidDeepDrop() && !pickupRestored) {
+                    return new ScenarioBreakResult(true, false, true, false, selected,
+                        "deep stone drop left for other reachable stone; " + pickupDetail(sample));
+                }
                 if (expectedIdentity != null && dropGone && !itemTakeObserved) {
                     return new ScenarioBreakResult(
                         true,
@@ -2256,8 +2447,11 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                         pickupDetail(sample)
                     );
                 }
-                if (expectedIdentity != null && dropGone) {
-                    if (!awaitClientStateChange(observedStateVersion, deadlineNanos)) {
+                if (dropGone && (sawDrop || itemTakeObserved)) {
+                    if (inventoryDeadlineNanos == Long.MIN_VALUE) {
+                        inventoryDeadlineNanos = System.nanoTime() + PICKUP_INVENTORY_CONVERGENCE_NANOS;
+                    }
+                    if (!awaitClientStateChange(observedStateVersion, inventoryDeadlineNanos)) {
                         break;
                     }
                     continue;
@@ -2309,16 +2503,166 @@ public final class MinecraftScenarioClient implements ScenarioClient {
 
     @Override
     public ScenarioBlockTarget findBreakableBlock(List<String> blockIds, ScenarioReach reach) throws Exception {
-        return executor.callOnClientThread(() -> findBreakableBlockOnClientThread(blockIds, reach));
+        return executor.callOnClientThread(() -> {
+            if (reach == ScenarioReach.WITHIN_SURVIVAL_REACH && blockIds.equals(List.of("minecraft:stone"))) {
+                Minecraft minecraft = requireInPlay();
+                BlockPos origin = minecraft.player.blockPosition();
+                // Prefer walls at feet/head height over floor blocks leading down a natural shaft.
+                for (int radius = 1; radius <= 4; radius++) {
+                    for (int dx = -radius; dx <= radius; dx++) {
+                        for (int dz = -radius; dz <= radius; dz++) {
+                            if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) {
+                                continue;
+                            }
+                            for (int dy = 0; dy <= 3; dy++) {
+                                ScenarioBlockTarget block = breakableBlockTarget(origin.offset(dx, dy, dz),
+                                    minecraft.player.getEyePosition(), reach, blockIds);
+                                if (block != null) {
+                                    return block;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            ScenarioBlockTarget exposed = findBreakableBlockOnClientThread(blockIds, reach);
+            if (exposed != null || reach != ScenarioReach.OUTSIDE_SURVIVAL_REACH
+                || !blockIds.contains("minecraft:iron_ore")) {
+                return exposed;
+            }
+            return loadedBuriedOreOnClientThread(blockIds);
+        });
+    }
+
+    private static ScenarioBlockTarget loadedBuriedOreOnClientThread(List<String> blockIds) {
+        Minecraft minecraft = requireInPlay();
+        BlockPos origin = minecraft.player.blockPosition();
+        BlockPos nearest = null;
+        double nearestDistance = Double.MAX_VALUE;
+        BlockPos.MutableBlockPos block = new BlockPos.MutableBlockPos();
+        boolean includeDeepslate = blockIds.contains("minecraft:deepslate_iron_ore");
+        for (int dx = -32; dx <= 32; dx++) {
+            for (int dz = -32; dz <= 32; dz++) {
+                for (int dy = -64; dy <= 0; dy++) {
+                    block.set(origin.getX() + dx, origin.getY() + dy, origin.getZ() + dz);
+                    if (!minecraft.level.isLoaded(block)) {
+                        continue;
+                    }
+                    var kind = minecraft.level.getBlockState(block).getBlock();
+                    if (kind != Blocks.IRON_ORE && (!includeDeepslate || kind != Blocks.DEEPSLATE_IRON_ORE)) {
+                        continue;
+                    }
+                    double distance = block.distSqr(origin);
+                    if (distance < nearestDistance && buriedOreColumnTopOnClientThread(block, origin.getY()) >= 0) {
+                        nearestDistance = distance;
+                        nearest = block.immutable();
+                    }
+                }
+            }
+        }
+        return nearest == null ? null : new ScenarioBlockTarget(nearest.getX(), nearest.getY(), nearest.getZ(),
+            "up", "loaded-buried-natural-ore", blockIdAt(nearest));
+    }
+
+    private static int buriedOreColumnTopOnClientThread(BlockPos ore, int referenceY) {
+        Minecraft minecraft = requireInPlay();
+        int top = -1;
+        for (int y = referenceY + 8; y > ore.getY(); y--) {
+            BlockPos block = new BlockPos(ore.getX(), y, ore.getZ());
+            if (excavationSupportedOnClientThread(block) && isPlayerPassable(block.above())
+                && isPlayerPassable(block.above(2))) {
+                top = y + 1;
+                break;
+            }
+        }
+        if (top < 0 || !excavationSupportedOnClientThread(ore.below())
+            || !minecraft.level.getFluidState(ore).isEmpty()
+            || !CliffStaircase.shaftClearable(new CliffStaircase.Step(ore.getX(), ore.getY(), ore.getZ()), top,
+                block -> excavatableOnClientThread(new BlockPos(block.x(), block.y(), block.z())))) {
+            return -1; // No blind fall through a cave, liquid or unbreakable layer.
+        }
+        return top;
+    }
+
+    private boolean approachBuriedOre(ScenarioBlockTarget ore, Duration timeout) throws Exception {
+        if (!approachColumn(ore.x(), ore.z(), timeout)
+            || !centerOverColumn(ore.x(), ore.z(), timeout, ore.y() + 0.9)) {
+            return false;
+        }
+        int surfaceY = executor.callOnClientThread(() -> requireInPlay().player.blockPosition().getY());
+        if (executor.callOnClientThread(() -> buriedOreColumnTopOnClientThread(pos(ore), surfaceY)) != surfaceY) {
+            return false;
+        }
+        buriedOreSurfaceY = Math.max(buriedOreSurfaceY, surfaceY);
+        long deadlineNanos = System.nanoTime() + excavationBudgetNanos(timeout, surfaceY - ore.y());
+        String tool = executor.callOnClientThread(() -> EXCAVATION_TOOLS.stream()
+            .filter(item -> inventoryCountOnClientThread(item) > 0).findFirst().orElse(null));
+        if (tool == null) {
+            return false;
+        }
+        for (int y = surfaceY - 1; y > ore.y(); y--) {
+            if (!clearExcavationBlock(new BlockPos(ore.x(), y, ore.z()), tool, deadlineNanos)) {
+                return false;
+            }
+            long settleDeadline = Math.min(deadlineNanos, System.nanoTime() + Duration.ofSeconds(5).toNanos());
+            boolean landed = false;
+            while (System.nanoTime() < settleDeadline) {
+                long version = ClientStateEvents.tickVersion();
+                int footingY = y;
+                if (executor.callOnClientThread(() -> requireInPlay().player.onGround()
+                    && Math.abs(requireInPlay().player.getY() - footingY) < 0.1)) {
+                    landed = true;
+                    break;
+                }
+                if (!awaitClientTick(version, settleDeadline)) {
+                    break;
+                }
+            }
+            if (!landed) {
+                return false;
+            }
+        }
+        return executor.callOnClientThread(() -> breakableBlockTarget(pos(ore), requireInPlay().player.getEyePosition(),
+            ScenarioReach.WITHIN_SURVIVAL_REACH, List.of(ore.blockId())) != null);
     }
 
     @Override
     public boolean approachBlock(ScenarioBlockTarget target, Duration timeout) throws Exception {
-        long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        if (!List.of("minecraft:iron_ore", "minecraft:deepslate_iron_ore").contains(target.blockId())
+            && buriedOreSurfaceY >= 0) {
+            if (!excavateStaircaseToSurface(buriedOreSurfaceY, 0, timeout)) {
+                return false;
+            }
+            buriedOreSurfaceY = -1;
+        }
+        if (executor.callOnClientThread(() -> breakableBlockTarget(pos(target), requireInPlay().player.getEyePosition(),
+            ScenarioReach.WITHIN_SURVIVAL_REACH, List.of(target.blockId())) != null)) {
+            return true;
+        }
+        if ("loaded-buried-natural-ore".equals(target.label())) {
+            return approachBuriedOre(target, timeout);
+        }
+        long startedNanos = System.nanoTime();
+        long deadlineNanos = startedNanos + approachBudgetNanos(timeout, false);
+        long cliffDeadlineNanos = startedNanos + approachBudgetNanos(timeout, true);
         int detourDirection = 0;
         int preferredDetourDirection = 1;
+        int cliffsCrossed = 0;
         try {
             do {
+                if (cliffsCrossed < MAX_CLIFFS_PER_APPROACH) {
+                    List<BlockPos> steps = executor.callOnClientThread(
+                        () -> cliffStaircaseOnClientThread(Vec3.atCenterOf(pos(target)))
+                    );
+                    if (!steps.isEmpty()) {
+                        deadlineNanos = Math.max(deadlineNanos, cliffDeadlineNanos);
+                        if (!crossCliff(steps, deadlineNanos, target)) {
+                            return false;
+                        }
+                        cliffsCrossed++;
+                        detourDirection = 0;
+                    }
+                }
                 long observedVersion = ClientStateEvents.tickVersion();
                 int currentDetourDirection = detourDirection;
                 int currentPreferredDirection = preferredDetourDirection;
@@ -2393,12 +2737,37 @@ public final class MinecraftScenarioClient implements ScenarioClient {
 
     @Override
     public boolean approachPosition(int x, int z, Duration timeout) throws Exception {
-        long deadlineNanos = System.nanoTime() + timeout.toNanos();
+        return approachPosition(x, z, timeout, POSITION_APPROACH_DISTANCE_SQUARED, Double.NEGATIVE_INFINITY, true);
+    }
+
+    @Override
+    public boolean approachColumn(int x, int z, Duration timeout) throws Exception {
+        return approachPosition(x, z, timeout, 0.04, Double.NEGATIVE_INFINITY, true);
+    }
+
+    private boolean approachPosition(
+        int x, int z, Duration timeout, double distanceSquared, double minimumY, boolean allowExcavation
+    ) throws Exception {
+        long startedNanos = System.nanoTime();
+        long deadlineNanos = startedNanos + approachBudgetNanos(timeout, false);
+        long cliffDeadlineNanos = startedNanos + approachBudgetNanos(timeout, true);
         Vec3 target = new Vec3(x + 0.5, 0.0, z + 0.5);
         int detourDirection = 0;
         int preferredDetourDirection = 1;
+        int cliffsCrossed = 0;
         try {
             do {
+                if (allowExcavation && cliffsCrossed < MAX_CLIFFS_PER_APPROACH) {
+                    List<BlockPos> steps = executor.callOnClientThread(() -> cliffStaircaseOnClientThread(target));
+                    if (!steps.isEmpty()) {
+                        deadlineNanos = Math.max(deadlineNanos, cliffDeadlineNanos);
+                        if (!crossCliff(steps, deadlineNanos, null)) {
+                            return false;
+                        }
+                        cliffsCrossed++;
+                        detourDirection = 0;
+                    }
+                }
                 long observedVersion = ClientStateEvents.tickVersion();
                 int currentDetourDirection = detourDirection;
                 int currentPreferredDirection = preferredDetourDirection;
@@ -2422,15 +2791,17 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                         clearance.left(),
                         clearance.right()
                     );
-                    minecraft.options.keySprint.setDown(true);
-                    minecraft.options.keyUp.setDown(nextDetourDirection == 0);
-                    minecraft.options.keyJump.setDown(stepUp);
-                    minecraft.options.keyLeft.setDown(nextDetourDirection < 0);
-                    minecraft.options.keyRight.setDown(nextDetourDirection > 0);
-                    double deltaX = minecraft.player.getX() - target.x;
-                    double deltaZ = minecraft.player.getZ() - target.z;
+                    boolean reachedPosition = positionReached(
+                        minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ(),
+                        target.x, target.z, distanceSquared, minimumY
+                    );
+                    minecraft.options.keySprint.setDown(!reachedPosition && distanceSquared >= 0.04);
+                    minecraft.options.keyUp.setDown(!reachedPosition && nextDetourDirection == 0);
+                    minecraft.options.keyJump.setDown(!reachedPosition && stepUp);
+                    minecraft.options.keyLeft.setDown(!reachedPosition && nextDetourDirection < 0);
+                    minecraft.options.keyRight.setDown(!reachedPosition && nextDetourDirection > 0);
                     return new ApproachSample(
-                        deltaX * deltaX + deltaZ * deltaZ <= POSITION_APPROACH_DISTANCE_SQUARED,
+                        positionArrivalConfirmed(reachedPosition, minimumY, minecraft.player.onGround()),
                         nextDetourDirection
                     );
                 });
@@ -2447,9 +2818,10 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             } while (true);
             return executor.callOnClientThread(() -> {
                 Minecraft minecraft = requireInPlay();
-                double deltaX = minecraft.player.getX() - target.x;
-                double deltaZ = minecraft.player.getZ() - target.z;
-                return deltaX * deltaX + deltaZ * deltaZ <= POSITION_APPROACH_DISTANCE_SQUARED;
+                return positionArrivalConfirmed(positionReached(
+                    minecraft.player.getX(), minecraft.player.getY(), minecraft.player.getZ(),
+                    target.x, target.z, distanceSquared, minimumY
+                ), minimumY, minecraft.player.onGround());
             });
         } finally {
             executor.callOnClientThread(() -> {
@@ -2465,6 +2837,372 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             });
         }
     }
+    static boolean positionReached(
+        double playerX, double playerY, double playerZ,
+        double targetX, double targetZ, double distanceSquared, double minimumY
+    ) {
+        double deltaX = playerX - targetX;
+        double deltaZ = playerZ - targetZ;
+        return playerY >= minimumY && deltaX * deltaX + deltaZ * deltaZ <= distanceSquared;
+    }
+
+    static boolean positionArrivalConfirmed(boolean reachedPosition, double minimumY, boolean grounded) {
+        return reachedPosition && (!Double.isFinite(minimumY) || grounded);
+    }
+
+    static long approachBudgetNanos(Duration timeout, boolean excavating) {
+        return excavating ? Math.max(timeout.toNanos(), CLIFF_APPROACH_TIMEOUT.toNanos()) : timeout.toNanos();
+    }
+
+    private static List<BlockPos> cliffStaircaseOnClientThread(Vec3 target) {
+        Minecraft minecraft = requireInPlay();
+        if (!minecraft.player.onGround() || !minecraft.player.horizontalCollision
+            || MovementDetour.clearance(minecraft, target).raisedForward()) {
+            return List.of();
+        }
+        Direction direction = CliffStaircase.toward(
+            target.x - minecraft.player.getX(), target.z - minecraft.player.getZ()
+        );
+        BlockPos origin = minecraft.player.blockPosition();
+        return CliffStaircase.route(
+            new CliffStaircase.Step(origin.getX(), origin.getY(), origin.getZ()), direction,
+            step -> excavationSupportedOnClientThread(new BlockPos(step.x(), step.y(), step.z())),
+            step -> isPlayerPassable(new BlockPos(step.x(), step.y(), step.z())),
+            step -> excavatableOnClientThread(new BlockPos(step.x(), step.y(), step.z()))
+        ).stream().map(step -> new BlockPos(step.x(), step.y(), step.z())).toList();
+    }
+
+    private static boolean excavationSupportedOnClientThread(BlockPos block) {
+        Minecraft minecraft = requireInPlay();
+        return minecraft.level.isLoaded(block) && minecraft.level.getFluidState(block).isEmpty()
+            && !minecraft.level.getBlockState(block).getCollisionShape(minecraft.level, block).isEmpty();
+    }
+
+    private static boolean excavatableOnClientThread(BlockPos block) {
+        Minecraft minecraft = requireInPlay();
+        return minecraft.level.isLoaded(block) && minecraft.level.getFluidState(block).isEmpty()
+            && EXCAVATION_BLOCKS.contains(blockIdAt(block));
+    }
+
+    private boolean crossCliff(List<BlockPos> steps, long deadlineNanos, ScenarioBlockTarget approachTarget) throws Exception {
+        ScenarioHeldItem previous = selectedItem();
+        executor.callOnClientThread(() -> {
+            Minecraft minecraft = requireInPlay();
+            minecraft.options.keyUp.setDown(false);
+            minecraft.options.keySprint.setDown(false);
+            minecraft.options.keyJump.setDown(false);
+            minecraft.options.keyLeft.setDown(false);
+            minecraft.options.keyRight.setDown(false);
+            return null;
+        });
+        try {
+            return excavateSteps(steps, deadlineNanos, approachTarget);
+        } finally {
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (previous.count() > 0 && remainingNanos > 0L) {
+                selectHotbarItem(previous.itemId(), 1, Duration.ofNanos(remainingNanos));
+            }
+        }
+    }
+
+
+    @Override
+    public boolean excavateStaircaseToSurface(int surfaceY, int minimumCobblestoneCount, Duration timeout) throws Exception {
+        int depth = executor.callOnClientThread(() -> Math.max(0, surfaceY - requireInPlay().player.blockPosition().getY()));
+        long deadlineNanos = System.nanoTime() + excavationBudgetNanos(timeout, depth);
+        ScenarioHeldItem previous = selectedItem();
+        try {
+            for (int rise = 0; rise < depth; ) {
+                if (executor.callOnClientThread(() -> requireInPlay().player.onGround()
+                    && requireInPlay().player.getY() >= surfaceY - 0.1)) {
+                    return true;
+                }
+                boolean directPillar = executor.callOnClientThread(() -> {
+                    BlockPos origin = requireInPlay().player.blockPosition();
+                    return CliffStaircase.pillarFits(
+                        new CliffStaircase.Step(origin.getX(), origin.getY(), origin.getZ()), surfaceY,
+                        availablePillarBlocks(inventoryCountOnClientThread("minecraft:dirt"),
+                            inventoryCountOnClientThread("minecraft:cobblestone"), minimumCobblestoneCount),
+                        block -> isPlayerPassable(new BlockPos(block.x(), block.y(), block.z()))
+                    );
+                });
+                if (directPillar) {
+                    if (!pillarOneBlock(minimumCobblestoneCount, deadlineNanos)) {
+                        return false;
+                    }
+                    rise++;
+                    continue;
+                }
+                List<BlockPos> steps = executor.callOnClientThread(() -> excavationStaircaseOnClientThread(surfaceY));
+                if (!steps.isEmpty()) {
+                    if (!crossCliff(steps, deadlineNanos, null)) {
+                        return false;
+                    }
+                    rise += steps.size();
+                } else {
+                    if (!pillarOneBlock(minimumCobblestoneCount, deadlineNanos)) {
+                        return false;
+                    }
+                    rise++;
+                }
+            }
+            return executor.callOnClientThread(() -> requireInPlay().player.onGround()
+                && requireInPlay().player.getY() >= surfaceY - 0.1);
+        } finally {
+            long remaining = deadlineNanos - System.nanoTime();
+            if (previous.count() > 0 && remaining > 0) {
+                selectHotbarItem(previous.itemId(), 1, Duration.ofNanos(remaining));
+            }
+        }
+    }
+
+    static long excavationBudgetNanos(Duration timeout, int depth) {
+        // Three forward blocks, up to four takeoff ceiling blocks, plus actual arrival per rise.
+        return Math.max(timeout.toNanos(), Duration.ofSeconds(50L * Math.max(0, depth)).toNanos());
+    }
+
+    static boolean groundedInsideColumn(
+        double minX, double minZ, double maxX, double maxZ, double velocityX, double velocityZ,
+        int x, int z, boolean grounded
+    ) {
+        return grounded && minX >= x + 0.02 && maxX <= x + 0.98 && minZ >= z + 0.02 && maxZ <= z + 0.98
+            && velocityX * velocityX + velocityZ * velocityZ < 0.0001;
+    }
+
+    private boolean centerOverColumn(int x, int z, Duration timeout, double minimumY) throws Exception {
+        long deadlineNanos = System.nanoTime() + Math.min(timeout.toNanos(), Duration.ofSeconds(5).toNanos());
+        boolean previousSneak = executor.callOnClientThread(() -> {
+            Minecraft minecraft = requireInPlay();
+            boolean previous = minecraft.options.keyShift.isDown();
+            minecraft.options.keyShift.setDown(true);
+            return previous;
+        });
+        try {
+            while (System.nanoTime() < deadlineNanos) {
+                long version = ClientStateEvents.tickVersion();
+                if (executor.callOnClientThread(() -> {
+                    Minecraft minecraft = requireInPlay();
+                    Vec3 target = new Vec3(x + 0.5, minecraft.player.getEyeY(), z + 0.5);
+                    minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES, target);
+                    boolean reached = positionReached(minecraft.player.getX(), minecraft.player.getY(),
+                        minecraft.player.getZ(), x + 0.5, z + 0.5, 0.0064, minimumY);
+                    minecraft.options.keySprint.setDown(false);
+                    minecraft.options.keyUp.setDown(!reached);
+                    minecraft.options.keyLeft.setDown(false);
+                    minecraft.options.keyRight.setDown(false);
+                    minecraft.options.keyJump.setDown(!reached && minecraft.player.horizontalCollision
+                        && MovementDetour.clearance(minecraft, target).raisedForward());
+                    var box = minecraft.player.getBoundingBox();
+                    Vec3 velocity = minecraft.player.getDeltaMovement();
+                    return reached && groundedInsideColumn(box.minX, box.minZ, box.maxX, box.maxZ,
+                        velocity.x, velocity.z, x, z, minecraft.player.onGround());
+                })) {
+                    return true;
+                }
+                if (!awaitClientTick(version, deadlineNanos)) {
+                    break;
+                }
+            }
+            return false;
+        } finally {
+            executor.callOnClientThread(() -> {
+                Minecraft minecraft = requireInPlay();
+                minecraft.options.keyUp.setDown(false);
+                minecraft.options.keySprint.setDown(false);
+                minecraft.options.keyJump.setDown(false);
+                minecraft.options.keyLeft.setDown(false);
+                minecraft.options.keyRight.setDown(false);
+                minecraft.options.keyShift.setDown(previousSneak);
+                return null;
+            });
+        }
+    }
+
+    static int availablePillarBlocks(int dirtCount, int cobblestoneCount, int minimumCobblestoneCount) {
+        return dirtCount + Math.max(0, cobblestoneCount - minimumCobblestoneCount);
+    }
+
+    private boolean pillarOneBlock(int minimumCobblestoneCount, long deadlineNanos) throws Exception {
+        BlockPos origin = executor.callOnClientThread(() -> requireInPlay().player.blockPosition());
+        if (!centerOverColumn(origin.getX(), origin.getZ(),
+            Duration.ofNanos(Math.max(1, deadlineNanos - System.nanoTime())), origin.getY() - 0.1)) {
+            System.out.println("Solaris excavation pillar: column_center_failed origin=" + origin);
+            return false;
+        }
+        String tool = executor.callOnClientThread(() -> EXCAVATION_TOOLS.stream()
+            .filter(item -> inventoryCountOnClientThread(item) > 0).findFirst().orElse(null));
+        if (tool == null) {
+            return false;
+        }
+        for (int height = 2; height <= EXCAVATION_HEADROOM; height++) {
+            BlockPos ceiling = origin.above(height);
+            if (executor.callOnClientThread(() -> isPlayerPassable(ceiling))) {
+                continue;
+            }
+            String drop = executor.callOnClientThread(() -> excavationDrop(blockIdAt(ceiling)));
+            int beforeCeilingPickup = inventoryCount(drop);
+            if (!clearExcavationBlock(ceiling, tool, deadlineNanos)
+                || !waitForInventoryPickup(drop, beforeCeilingPickup, 1, ceiling, deadlineNanos).confirmed()) {
+                return false;
+            }
+        }
+        String material = executor.callOnClientThread(() -> List.of("minecraft:dirt", "minecraft:cobblestone").stream()
+            .filter(item -> inventoryCountOnClientThread(item) > ("minecraft:cobblestone".equals(item)
+                ? minimumCobblestoneCount : 0)).findFirst().orElse(null));
+        if (material == null || deadlineNanos <= System.nanoTime()) {
+            return false;
+        }
+        int before = inventoryCount(material);
+        ScenarioHeldItem held = selectHotbarItem(material, 1, Duration.ofNanos(deadlineNanos - System.nanoTime()));
+        if (!held.matches(material, 1)) {
+            return false;
+        }
+        boolean placed = false;
+        long jumpDeadlineNanos = Math.min(deadlineNanos, System.nanoTime() + Duration.ofSeconds(5).toNanos());
+        try {
+            while (System.nanoTime() < jumpDeadlineNanos) {
+                long version = ClientStateEvents.tickVersion();
+                boolean ready = executor.callOnClientThread(() -> {
+                    Minecraft minecraft = requireInPlay();
+                    minecraft.options.keyUp.setDown(false);
+                    minecraft.options.keySprint.setDown(false);
+                    minecraft.options.keyLeft.setDown(false);
+                    minecraft.options.keyRight.setDown(false);
+                    minecraft.options.keyJump.setDown(true);
+                    return minecraft.player.getY() >= origin.getY() + 1.01;
+                });
+                if (ready) {
+                    ScenarioBlockTarget clicked = new ScenarioBlockTarget(origin.getX(), origin.getY() - 1,
+                        origin.getZ(), "up", "earned-egress-pillar", executor.callOnClientThread(() -> blockIdAt(origin.below())));
+                    useItemOn(clicked, held);
+                    placed = true;
+                    break;
+                }
+                if (!awaitClientTick(version, jumpDeadlineNanos)) {
+                    return false;
+                }
+            }
+        } finally {
+            executor.callOnClientThread(() -> {
+                requireInPlay().options.keyJump.setDown(false);
+                return null;
+            });
+        }
+        if (!placed) {
+            return false;
+        }
+        long settleDeadlineNanos = Math.min(deadlineNanos, System.nanoTime() + Duration.ofSeconds(5).toNanos());
+        while (System.nanoTime() < settleDeadlineNanos) {
+            long version = ClientStateEvents.tickVersion();
+            if (executor.callOnClientThread(() -> pillarPlacementConfirmed(
+                material, blockIdAt(origin), before, inventoryCountOnClientThread(material),
+                requireInPlay().player.onGround(), requireInPlay().player.getY(), origin.getY()))) {
+                return true;
+            }
+            if (!awaitClientTick(version, settleDeadlineNanos)) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    private boolean clearExcavationBlock(BlockPos block, String tool, long deadlineNanos) throws Exception {
+        if (executor.callOnClientThread(() -> isPlayerPassable(block))) {
+            return true;
+        }
+        ScenarioBlockTarget target = executor.callOnClientThread(() -> breakableBlockTarget(
+            block, requireInPlay().player.getEyePosition(), ScenarioReach.WITHIN_SURVIVAL_REACH, EXCAVATION_BLOCKS
+        ));
+        long remaining = deadlineNanos - System.nanoTime();
+        if (target == null || remaining <= 0
+            || !selectHotbarItem(tool, 1, Duration.ofNanos(remaining)).matches(tool, 1)) {
+            System.out.println("Solaris excavation clear: target_unavailable block=" + block
+                + " target=" + target + " remaining_nanos=" + remaining);
+            return false;
+        }
+        remaining = deadlineNanos - System.nanoTime();
+        if (remaining <= 0) {
+            return false;
+        }
+        String drop = excavationDrop(target.blockId());
+        ScenarioBreakResult broke = breakBlockUntilDropVisible(target, drop, Duration.ofNanos(remaining));
+        boolean cleared = broke.started() && broke.becameAir() && broke.sawDrop();
+        if (!cleared) {
+            System.out.println("Solaris excavation clear: break_failed target=" + target + " result=" + broke);
+        }
+        return cleared;
+    }
+
+    static String excavationDrop(String blockId) {
+        return switch (blockId) {
+            case "minecraft:stone" -> "minecraft:cobblestone";
+            case "minecraft:deepslate" -> "minecraft:cobbled_deepslate";
+            case "minecraft:grass_block" -> "minecraft:dirt";
+            default -> blockId;
+        };
+    }
+
+    private boolean excavateSteps(List<BlockPos> steps, long deadlineNanos, ScenarioBlockTarget approachTarget) throws Exception {
+        String tool = executor.callOnClientThread(() -> EXCAVATION_TOOLS.stream()
+            .filter(item -> inventoryCountOnClientThread(item) > 0).findFirst().orElse(null));
+        if (tool == null) {
+            return false;
+        }
+        for (BlockPos step : steps) {
+            if (approachTarget != null && executor.callOnClientThread(() -> breakableBlockTarget(
+                pos(approachTarget), requireInPlay().player.getEyePosition(),
+                ScenarioReach.WITHIN_SURVIVAL_REACH, List.of(approachTarget.blockId())
+            ) != null)) {
+                return true;
+            }
+            List<BlockPos> takeoff = executor.callOnClientThread(() -> {
+                Minecraft minecraft = requireInPlay();
+                var box = minecraft.player.getBoundingBox();
+                return CliffStaircase.takeoffClearance(box.minX, box.minZ, box.maxX, box.maxZ,
+                    minecraft.player.getY()).stream()
+                    .map(block -> new BlockPos(block.x(), block.y(), block.z())).toList();
+            });
+            for (BlockPos ceiling : takeoff) {
+                if (!clearExcavationBlock(ceiling, tool, deadlineNanos)) {
+                    return false;
+                }
+            }
+            for (int headroom = 0; headroom < EXCAVATION_HEADROOM; headroom++) {
+                BlockPos block = step.above(headroom);
+                if (!clearExcavationBlock(block, tool, deadlineNanos)) {
+                    return false;
+                }
+            }
+            long remainingNanos = deadlineNanos - System.nanoTime();
+            if (remainingNanos <= 0L
+                || !approachPosition(
+                    step.getX(), step.getZ(), Duration.ofNanos(remainingNanos), 0.25, step.getY() - 0.1, false
+                )) {
+                System.out.println("Solaris excavation staircase: arrival_failed step=" + step
+                    + " remaining_nanos=" + remainingNanos);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static List<BlockPos> excavationStaircaseOnClientThread(int surfaceY) {
+        Minecraft minecraft = requireInPlay();
+        BlockPos origin = minecraft.player.blockPosition();
+        List<BlockPos> longest = List.of();
+        for (Direction direction : HORIZONTAL_DIRECTIONS) {
+            List<BlockPos> steps = CliffStaircase.toSurface(
+                new CliffStaircase.Step(origin.getX(), origin.getY(), origin.getZ()), surfaceY, direction,
+                step -> excavationSupportedOnClientThread(new BlockPos(step.x(), step.y(), step.z())),
+                step -> isPlayerPassable(new BlockPos(step.x(), step.y(), step.z())),
+                step -> excavatableOnClientThread(new BlockPos(step.x(), step.y(), step.z()))
+            ).stream().map(step -> new BlockPos(step.x(), step.y(), step.z())).toList();
+            if (steps.size() > longest.size()) {
+                longest = steps;
+            }
+        }
+        return longest;
+    }
 
     @Override
     public ScenarioBlockTarget findLoadedBlockInColumn(int x, int z, List<String> blockIds) throws Exception {
@@ -2474,7 +3212,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 return null;
             }
             Vec3 eye = minecraft.player.getEyePosition();
-            for (int y = minecraft.level.getMinY(); y < minecraft.level.getMaxY(); y++) {
+            for (int y = minecraft.level.getMaxY() - 1; y >= minecraft.level.getMinY(); y--) {
                 BlockPos target = new BlockPos(x, y, z);
                 if (!minecraft.level.isLoaded(target)) {
                     continue;
@@ -2950,10 +3688,14 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             if (entity instanceof ItemEntity itemEntity && !entity.isRemoved()) {
                 ItemStack stack = itemEntity.getItem();
                 double distance = entity.distanceToSqr(center);
+                if ("minecraft:cobblestone".equals(itemId)
+                    && !shallowStonePickup(minecraft.player.getY(), entity.getY())) {
+                    distance += 16.0; // A reachable drop wins without hiding deep-drop failure evidence.
+                }
                 if (
                     !stack.isEmpty()
                         && Objects.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()).toString(), itemId)
-                        && distance <= 16.0
+                        && entity.distanceToSqr(center) <= 16.0
                 ) {
                     if (distance < nearestDistance) {
                         nearestDistance = distance;
@@ -2980,20 +3722,407 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             : null;
     }
 
+    private static double eyeToBoxDistanceSquared(Minecraft minecraft, Entity target) {
+        Vec3 eye = minecraft.player.getEyePosition();
+        var box = target.getBoundingBox();
+        double dx = eye.x - Math.max(box.minX, Math.min(eye.x, box.maxX));
+        double dy = eye.y - Math.max(box.minY, Math.min(eye.y, box.maxY));
+        double dz = eye.z - Math.max(box.minZ, Math.min(eye.z, box.maxZ));
+        return dx * dx + dy * dy + dz * dz;
+    }
+
+    private static boolean driveCombatOnClientThread(
+        Minecraft minecraft, Entity target, boolean attackReady, CombatAttempt combat
+    ) {
+        stopCombatMotion(minecraft);
+        minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES, entityLookTarget(target));
+        double distanceSquared = minecraft.player.position().distanceToSqr(target.position());
+        if (!(target instanceof Enemy)) {
+            minecraft.options.keySprint.setDown(distanceSquared > PICKUP_APPROACH_DISTANCE_SQUARED);
+            minecraft.options.keyUp.setDown(distanceSquared > PICKUP_APPROACH_DISTANCE_SQUARED);
+            return attackReady;
+        }
+        combat.hostile = true;
+        ItemStack food = combat.recovery.recovering() || minecraft.player.getHealth() <= 10.0F
+            ? edibleOwnedFoodOnClientThread(minecraft) : ItemStack.EMPTY;
+        combat.recovery.update(minecraft.player.getHealth(), !food.isEmpty());
+        combat.requestedFood = null;
+        boolean creeper = target instanceof Creeper;
+        boolean crowded = hostileNearbyOnClientThread(minecraft, target, target.position());
+        double eyeBoxDistance = Math.sqrt(eyeToBoxDistanceSquared(minecraft, target));
+        combat.minDistance = Math.min(combat.minDistance, eyeBoxDistance);
+        combat.maxDistance = Math.max(combat.maxDistance, eyeBoxDistance);
+        boolean inMelee = !creeper && eyeBoxDistance <= 3.0;
+        boolean retreatToEat = combat.recovery.recovering() && !combat.recovery.ateOwnedFood() && !food.isEmpty();
+        combat.crowdedSeen += crowded ? 1 : 0;
+        if (inMelee) {
+            // A hostile inside melee reach is already hitting the player and keeps pace with any
+            // retreat (zombie speed ~ sprint speed): stand still and trade blows instead of
+            // retreating, eating or backing off for cooldown.
+            combat.standAndFight++;
+            combat.bestDistanceTick = -1L;
+            combat.retreatUntilTick = -1L;
+        } else if (creeper || retreatToEat) {
+            // Only a creeper (never melee it) or a real chance to eat owned food justifies running;
+            // fleeing a crowd without shelter just feeds the mobs and skeleton fire for free.
+            retreatFromHostilesOnClientThread(minecraft);
+            combat.retreatToEat += retreatToEat ? 1 : 0;
+            if (retreatToEat && safeToEatOnClientThread(minecraft, 10.0)) {
+                combat.requestedFood = BuiltInRegistries.ITEM.getKey(food.getItem()).toString();
+            }
+        } else {
+            // A target that cannot be closed (shooting skeleton across water or a ledge) must not
+            // be stood against: after STUCK ticks without progress, run out of its fire for a while
+            // and report the engagement as abandoned so the caller can re-evaluate.
+            long now = minecraft.player.tickCount;
+            boolean wantsApproach = distanceSquared > 7.29;
+            if (!wantsApproach) {
+                // Close enough that the next swing is only waiting on cooldown/knockback: not stuck.
+                combat.bestDistanceTick = -1L;
+                combat.retreatUntilTick = -1L;
+            } else if (combat.bestDistanceTick < 0L || eyeBoxDistance < combat.bestDistance - 0.5) {
+                combat.bestDistance = eyeBoxDistance;
+                combat.bestDistanceTick = now;
+            }
+            if (combat.retreatUntilTick >= 0L
+                || (combat.bestDistanceTick >= 0L && now - combat.bestDistanceTick > CombatAttempt.STUCK_TICKS)) {
+                if (combat.retreatUntilTick < 0L) {
+                    combat.retreatUntilTick = now + CombatAttempt.STUCK_RETREAT_TICKS;
+                }
+                retreatFromHostilesOnClientThread(minecraft);
+                combat.stuckRetreat++;
+                combat.gaveUp |= now >= combat.retreatUntilTick;
+            } else {
+                int movement = CombatTactics.movement(distanceSquared, attackReady);
+                if (movement < 0) {
+                    retreatFromHostilesOnClientThread(minecraft);
+                } else if (movement > 0) {
+                    if (!moveCombatSafelyOnClientThread(minecraft, target.position(), combat)) {
+                        combat.moveBlocked++;
+                    }
+                }
+            }
+        }
+        if (creeper) {
+            combat.withheldCreeper++;
+            return false;
+        }
+        if (!attackReady) {
+            combat.withheldNotReady++;
+            return false;
+        }
+        if (eyeToBoxDistanceSquared(minecraft, target) > 9.0) {
+            combat.withheldOutOfReach++;
+            return false;
+        }
+        if (!minecraft.player.hasLineOfSight(target)) {
+            combat.withheldNoLineOfSight++;
+            return false;
+        }
+        if (!selectedItemOnClientThread().matches(combat.weaponId, 1)) {
+            combat.withheldWrongWeapon++;
+            combat.reselectWeapon = true;
+            return false;
+        }
+        return true;
+    }
+
+    private static boolean hostileNearbyOnClientThread(Minecraft minecraft, Entity target, Vec3 targetPosition) {
+        for (Entity other : minecraft.level.entitiesForRendering()) {
+            if (!(other instanceof Enemy) || other == target || other.isRemoved() || !other.isAlive()) {
+                continue;
+            }
+            double targetDistance = targetPosition == null ? Double.POSITIVE_INFINITY
+                : other.distanceToSqr(targetPosition);
+            if (CombatTactics.hostileTooClose(other instanceof Creeper,
+                other.distanceToSqr(minecraft.player.position()), targetDistance)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void stopCombatMotion(Minecraft minecraft) {
+        minecraft.options.keyUp.setDown(false);
+        minecraft.options.keyDown.setDown(false);
+        minecraft.options.keySprint.setDown(false);
+        minecraft.options.keyJump.setDown(false);
+        minecraft.options.keyLeft.setDown(false);
+        minecraft.options.keyRight.setDown(false);
+    }
+
+    private static boolean moveCombatSafelyOnClientThread(
+        Minecraft minecraft, Vec3 target, CombatAttempt combat
+    ) {
+        stopCombatMotion(minecraft);
+        Vec3 offset = target.subtract(minecraft.player.position());
+        double distance = Math.hypot(offset.x, offset.z);
+        if (distance < 1.0E-6) {
+            return false;
+        }
+        double dx = offset.x / distance;
+        double dz = offset.z / distance;
+        minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES,
+            new Vec3(target.x, minecraft.player.getEyeY(), target.z));
+        MovementClearance clearance = MovementDetour.clearance(minecraft, target);
+        boolean stepUp = minecraft.player.horizontalCollision && clearance.raisedForward();
+        boolean direct = (clearance.direct() || stepUp) && safeCombatFooting(minecraft, dx, dz);
+        boolean left = clearance.left() && safeCombatFooting(minecraft, dz, -dx);
+        boolean right = clearance.right() && safeCombatFooting(minecraft, -dz, dx);
+        int detour = MovementDetour.choose(combat.detourDirection, combat.preferredDetourDirection,
+            !direct, direct, left, right);
+        if (combat.detourDirection == 0 && detour != 0) {
+            combat.preferredDetourDirection = -detour;
+        }
+        combat.detourDirection = detour;
+        if (!(detour == 0 ? direct : detour < 0 ? left : right)) {
+            return false;
+        }
+        minecraft.options.keyUp.setDown(detour == 0);
+        minecraft.options.keyLeft.setDown(detour < 0);
+        minecraft.options.keyRight.setDown(detour > 0);
+        minecraft.options.keyJump.setDown(detour == 0 && stepUp);
+        return true;
+    }
+
+    private static boolean safeCombatFooting(Minecraft minecraft, double dx, double dz) {
+        var box = minecraft.player.getBoundingBox();
+        double feetY = box.minY;
+        int highestSupport = (int) Math.floor(feetY);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        // Probe the swept footprint, including walking coast, not just an endpoint
+        // that could skip a narrow hole.
+        for (int step = 1; step <= 4; step++) {
+            double advance = step * 0.4;
+            int minX = (int) Math.floor(box.minX + dx * advance + 0.01);
+            int maxX = (int) Math.floor(box.maxX + dx * advance - 0.01);
+            int minZ = (int) Math.floor(box.minZ + dz * advance + 0.01);
+            int maxZ = (int) Math.floor(box.maxZ + dz * advance - 0.01);
+            for (int x = minX; x <= maxX; x++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    boolean supported = false;
+                    for (int y = highestSupport; y >= highestSupport - 4; y--) {
+                        pos.set(x, y, z);
+                        if (!minecraft.level.hasChunkAt(pos) || !minecraft.level.getFluidState(pos).isEmpty()) {
+                            return false;
+                        }
+                        var shape = minecraft.level.getBlockState(pos).getCollisionShape(minecraft.level, pos);
+                        if (!shape.isEmpty()) {
+                            double top = y + shape.max(Direction.Axis.Y);
+                            supported = CombatTactics.safeSupport(feetY, y)
+                                && top >= feetY - 3.0 && top <= feetY + 1.0;
+                            break;
+                        }
+                    }
+                    if (!supported) {
+                        return false;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    private static void retreatFromHostilesOnClientThread(Minecraft minecraft) {
+        stopCombatMotion(minecraft);
+        Vec3 player = minecraft.player.position();
+        double bestScore = nearestHostileDistanceScore(minecraft, player.x, player.y, player.z);
+        double bestDx = 0.0;
+        double bestDz = 0.0;
+        for (int direction = 0; direction < 8; direction++) {
+            double dx = COMBAT_RETREAT_DIRECTIONS[direction * 2];
+            double dz = COMBAT_RETREAT_DIRECTIONS[direction * 2 + 1];
+            double score = nearestHostileDistanceScore(minecraft, player.x + dx * 1.6, player.y, player.z + dz * 1.6);
+            if (score <= bestScore || !safeCombatFooting(minecraft, dx, dz)
+                || !minecraft.level.noCollision(minecraft.player, minecraft.player.getBoundingBox()
+                    .expandTowards(dx * 0.8, 0.0, dz * 0.8).deflate(0.01))) {
+                continue;
+            }
+            bestScore = score;
+            bestDx = dx;
+            bestDz = dz;
+        }
+        if (bestDx != 0.0 || bestDz != 0.0) {
+            minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES,
+                new Vec3(player.x + bestDx, minecraft.player.getEyeY(), player.z + bestDz));
+            minecraft.options.keyUp.setDown(true);
+            minecraft.options.keySprint.setDown(true);
+        }
+    }
+
+    private static double nearestHostileDistanceScore(Minecraft minecraft, double x, double y, double z) {
+        double nearest = Double.POSITIVE_INFINITY;
+        for (Entity hostile : minecraft.level.entitiesForRendering()) {
+            if (!(hostile instanceof Enemy) || hostile.isRemoved() || !hostile.isAlive()) {
+                continue;
+            }
+            double dx = x - hostile.getX();
+            double dy = y - hostile.getY();
+            double dz = z - hostile.getZ();
+            double score = (dx * dx + dy * dy + dz * dz) / (hostile instanceof Creeper ? 49.0 : 36.0);
+            nearest = Math.min(nearest, score);
+        }
+        return nearest;
+    }
+
+    private static ItemStack edibleOwnedFoodOnClientThread(Minecraft minecraft) {
+        if (minecraft.player.getFoodData().getFoodLevel() >= 20) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack best = ItemStack.EMPTY;
+        int nutrition = 0;
+        for (int slot = 0; slot < 36; slot++) {
+            ItemStack stack = minecraft.player.getInventory().getItem(slot);
+            var food = stack.get(DataComponents.FOOD);
+            if (!stack.isEmpty() && food != null && stack.get(DataComponents.CONSUMABLE) != null
+                && food.nutrition() > nutrition) {
+                best = stack;
+                nutrition = food.nutrition();
+            }
+        }
+        return best;
+    }
+
+    private static boolean safeToEatOnClientThread(Minecraft minecraft, double distance) {
+        for (Entity hostile : minecraft.level.entitiesForRendering()) {
+            if (!(hostile instanceof Enemy) || hostile.isRemoved() || !hostile.isAlive()) {
+                continue;
+            }
+            double clearance = hostile instanceof Creeper ? distance + 1.0 : distance;
+            if (hostile.distanceToSqr(minecraft.player.position()) <= clearance * clearance) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void eatOwnedFoodForCombatRecovery(CombatAttempt combat, long deadlineNanos) throws Exception {
+        if (combat.reselectWeapon && System.nanoTime() < deadlineNanos) {
+            combat.reselectWeapon = false;
+            selectHotbarItem(combat.weaponId, 1,
+                Duration.ofNanos(Math.min(2_000_000_000L, deadlineNanos - System.nanoTime())));
+        }
+        String food = combat.requestedFood;
+        combat.requestedFood = null;
+        if (food == null || System.nanoTime() >= deadlineNanos) {
+            return;
+        }
+        try {
+            ScenarioHeldItem held = selectHotbarItem(food, 1,
+                Duration.ofNanos(Math.min(2_000_000_000L, deadlineNanos - System.nanoTime())));
+            if (!held.matches(food, 1)) {
+                return;
+            }
+            FoodUseSample initial = executor.callOnClientThread(() -> {
+                Minecraft minecraft = requireInPlay();
+                return new FoodUseSample(true, minecraft.player.getFoodData().getFoodLevel(),
+                    inventoryCountOnClientThread(food));
+            });
+            long eatDeadline = Math.min(deadlineNanos, System.nanoTime() + 3_000_000_000L);
+            do {
+                long version = ClientStateEvents.tickVersion();
+                FoodUseSample sample = executor.callOnClientThread(() -> {
+                    Minecraft minecraft = requireInPlay();
+                    boolean safe = safeToEatOnClientThread(minecraft, 7.0);
+                    minecraft.options.keyUse.setDown(safe);
+                    retreatFromHostilesOnClientThread(minecraft);
+                    if (safe && !minecraft.player.isUsingItem()) {
+                        minecraft.gameMode.useItem(minecraft.player, InteractionHand.MAIN_HAND);
+                    }
+                    return new FoodUseSample(safe, minecraft.player.getFoodData().getFoodLevel(),
+                        inventoryCountOnClientThread(food));
+                });
+                if (sample.foodLevel() > initial.foodLevel() && sample.itemCount() < initial.itemCount()) {
+                    combat.recovery.foodConsumed();
+                    break;
+                }
+                if (!sample.started() || !awaitClientTick(version, eatDeadline)) {
+                    break;
+                }
+            } while (true);
+        } finally {
+            executor.callOnClientThread(() -> {
+                Minecraft minecraft = Minecraft.getInstance();
+                if (minecraft.options != null) {
+                    minecraft.options.keyUse.setDown(false);
+                    stopCombatMotion(minecraft);
+                }
+                if (minecraft.gameMode != null && minecraft.player != null) {
+                    minecraft.gameMode.releaseUsingItem(minecraft.player);
+                }
+                return null;
+            });
+            long remaining = deadlineNanos - System.nanoTime();
+            if (remaining > 0L) {
+                selectHotbarItem(combat.weaponId, 1, Duration.ofNanos(Math.min(2_000_000_000L, remaining)));
+            }
+        }
+    }
+
+    private static final class CombatAttempt {
+        final CombatTactics.Recovery recovery = new CombatTactics.Recovery();
+        final String weaponId;
+        boolean hostile;
+        String requestedFood;
+        int detourDirection;
+        int preferredDetourDirection = 1;
+        int sent;
+        int withheldCreeper;
+        int withheldNotReady;
+        int withheldOutOfReach;
+        int withheldNoLineOfSight;
+        int withheldWrongWeapon;
+        int retreatToEat;
+        int crowdedSeen;
+        int standAndFight;
+        static final long STUCK_TICKS = 100L;
+        static final long STUCK_RETREAT_TICKS = 100L;
+        int moveBlocked;
+        int stuckRetreat;
+        double bestDistance = Double.POSITIVE_INFINITY;
+        long bestDistanceTick = -1L;
+        long retreatUntilTick = -1L;
+        boolean gaveUp;
+        float lastPlayerHealth = Float.NaN;
+        double minDistance = Double.POSITIVE_INFINITY;
+        double maxDistance;
+        boolean reselectWeapon;
+
+        CombatAttempt(String weaponId) {
+            this.weaponId = weaponId;
+        }
+
+        String withheldSummary() {
+            return "creeper:" + withheldCreeper + ",not_ready:" + withheldNotReady
+                + ",out_of_reach:" + withheldOutOfReach + ",no_line_of_sight:" + withheldNoLineOfSight
+                + ",wrong_weapon:" + withheldWrongWeapon + ",retreat_to_eat:" + retreatToEat
+                + ",crowded_seen:" + crowdedSeen + ",stand_and_fight:" + standAndFight
+                + ",stuck_retreat:" + stuckRetreat
+                + ",move_blocked:" + moveBlocked + ",eye_box_dist_min:" + String.format(Locale.ROOT, "%.1f", minDistance)
+                + ",eye_box_dist_max:" + String.format(Locale.ROOT, "%.1f", maxDistance);
+        }
+    }
+
     private static ScenarioEntityObservation visibleEntityOnClientThread(
         List<String> entityTypeIds,
-        ScenarioReach reach
+        ScenarioReach reach,
+        boolean skipCrowdedHostiles
     ) {
         Minecraft minecraft = requireInPlay();
         Vec3 playerPosition = minecraft.player.position();
         ScenarioEntityObservation nearest = null;
         double nearestDistance = Double.MAX_VALUE;
         for (Entity entity : minecraft.level.entitiesForRendering()) {
-            if (entity.isRemoved() || entity == minecraft.player) {
+            if (entity.isRemoved() || !entity.isAlive() || entity == minecraft.player) {
                 continue;
             }
             String observedTypeId = BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString();
             if (!entityTypeIds.contains(observedTypeId)) {
+                continue;
+            }
+            if (entity instanceof Enemy
+                && (entity instanceof Creeper
+                    || (skipCrowdedHostiles && hostileNearbyOnClientThread(minecraft, entity, entity.position())))) {
                 continue;
             }
             double distance = entity.distanceToSqr(playerPosition);
@@ -3425,6 +4554,48 @@ public final class MinecraftScenarioClient implements ScenarioClient {
 
 
 
+    private void observeCombatTarget(Minecraft minecraft, Entity target, long tick, CombatAttempt combat) {
+        float playerHealth = minecraft.player.getHealth();
+        if (!Float.isNaN(combat.lastPlayerHealth) && playerHealth < combat.lastPlayerHealth) {
+            StringBuilder nearby = new StringBuilder();
+            int count = 0;
+            for (Entity other : minecraft.level.entitiesForRendering()) {
+                if (!(other instanceof Enemy) || other.isRemoved() || !other.isAlive()) {
+                    continue;
+                }
+                double distance = Math.sqrt(other.distanceToSqr(minecraft.player.position()));
+                if (distance > 6.0) {
+                    continue;
+                }
+                count++;
+                nearby.append(nearby.length() == 0 ? "" : ",")
+                    .append(BuiltInRegistries.ENTITY_TYPE.getKey(other.getType()).getPath())
+                    .append('#').append(other.getId())
+                    .append(String.format(Locale.ROOT, "@%.1f", distance));
+            }
+            combatLedger.playerDamaged(tick, combat.lastPlayerHealth, playerHealth, target.getId(), count, nearby.toString());
+        }
+        combat.lastPlayerHealth = playerHealth;
+        if (target instanceof LivingEntity living) {
+            combatLedger.observeTarget(target.getId(), tick, living.getHealth());
+        }
+    }
+
+    private void recordCombatAttack(Minecraft minecraft, Entity target, String entityType, long tick) {
+        float targetHealth = target instanceof LivingEntity living ? living.getHealth() : Float.NaN;
+        combatLedger.attackSent(tick, entityType, target.getId(),
+            Math.sqrt(eyeToBoxDistanceSquared(minecraft, target)), targetHealth, minecraft.player.getHealth());
+    }
+
+    private static void recordAttackCadence(Player player, Entity target) {
+        System.out.println(
+            "Solaris combat attack cadence: entity_id=" + target.getId()
+                + " held_item=" + BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem())
+                + " attack_speed=" + player.getAttributeValue(Attributes.ATTACK_SPEED)
+                + " attack_strength=" + player.getAttackStrengthScale(0.0F)
+        );
+    }
+
     private static long clientTick(Minecraft minecraft) {
         return Integer.toUnsignedLong(minecraft.player.tickCount);
     }
@@ -3493,7 +4664,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         boolean onGround,
         int detourDirection,
         long tick,
-        boolean identityTaken
+        boolean identityTaken,
+        boolean avoidDeepDrop
     ) {
     }
 
@@ -3598,7 +4770,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
     private record FoodUseSample(boolean started, int foodLevel, int itemCount) {
     }
 
-    private record ShieldBlockSample(boolean useStarted, float health, int shieldDamage) {
+    private record ShieldBlockSample(boolean useStarted, float health, int shieldDamage, long shieldBlockVersion) {
     }
 
 }
