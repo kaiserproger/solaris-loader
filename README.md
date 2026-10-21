@@ -1,8 +1,8 @@
 # Solaris Loader
 
 Optional **client-side mod** for [Solaris](https://github.com/kaiserproger/solaris)
-servers whose plugins — retained Luau `0.6.0` or WebAssembly components of the
-`solaris:plugin` `0.7.0` contract — provide custom views, HUDs, assets, sounds,
+servers whose plugins — WebAssembly components of the `solaris:plugin` `0.7.0`
+contract — provide custom views, HUDs, assets, sounds,
 items and blocks. If the server uses only server-side plugins, an ordinary
 vanilla client is enough.
 
@@ -29,9 +29,9 @@ allows verification with `sha256sum -c SHA256SUMS --ignore-missing` on Linux;
 on Windows, compare `Get-FileHash FILE.jar -Algorithm SHA256` with that file.
 
 Current Loader protocol is **3** with client artifact index **schema 2**. The
-plugin API the Loader carries is **0.6.0** for retained Luau packages and
-**0.7.0** for WebAssembly components; the Loader itself handles the same typed
-view, HUD, sound and item surface for both. These are alpha contracts:
+server plugin frontend is the WebAssembly component API **0.7.0** only; the
+Luau `0.6.0` frontend is retired, and the plugin API version does not change
+the client wire protocol or artifact schema. These are alpha contracts:
 match the server's declared compatibility, not just similar version numbers.
 Schema-1 bundles, the removed UI/interaction content kinds and wire-2 messages
 fail closed instead of being bridged. Releases remain previews, not broad
@@ -224,7 +224,20 @@ client-minted values are refused. Client-side `cancel_selection` and
 `view_request` use the same closed JSON contract. The protocol-3 request field
 `request_kind` carries the exact declared screen `id`, not a built-in kind or
 alias; the client refuses undeclared keys and inactive connections. Presentation
-comes solely from the declaration, never from the key. The Loader registers
+comes solely from the declaration, never from the key.
+
+An overlay may also declare `view_request_bindings` (`key`, `view`): canonical
+`key.keyboard.*` names, each naming a screen of the same bundle, sharing the
+overlay's eight-binding bound and key namespace with `input_bindings` (a key
+is either a view-action edge or a view request, never both) and requiring the
+same `view_actions` content and `send_view_actions` permission. These keys are
+armed when the content is activated, with no live view instance: a press with
+gameplay focus (no GUI, overlay or inactive window; a key remapped to vanilla
+attack/use is suppressed like any other binding; autorepeat is not an edge)
+sends one `view_request` for the declared screen on the acknowledged Play
+connection, and the server answers with an ordinary `open_view`. A key used by
+two activated bundles, a name the client's own key table cannot resolve, or a
+target the bundle does not declare refuses activation. The Loader registers
 only the bindings an activated overlay declares - no rebinding, client-side
 scripting, fallback key table, wire-2 fallback or client Lua runtime.
 

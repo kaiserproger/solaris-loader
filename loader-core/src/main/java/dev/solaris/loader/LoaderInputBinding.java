@@ -12,7 +12,10 @@ public record LoaderInputBinding(
         String key,
         String pressAction,
         String releaseAction) {
-    /** The schema-2 bound of one screen's {@code input_bindings} array. */
+    /**
+     * The schema-2 bound of one screen's {@code input_bindings} plus
+     * {@code view_request_bindings} entries together.
+     */
     public static final int MAX_BINDINGS_PER_SCREEN = 8;
     /** The prefix shared by every native keyboard key name. */
     public static final String KEY_PREFIX = "key.keyboard.";

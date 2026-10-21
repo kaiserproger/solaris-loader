@@ -25,6 +25,7 @@ final class LoaderViewTest {
             Optional.empty(),
             Optional.empty(),
             List.of(),
+            List.of(),
             List.of());
     private static final LoaderActivatedContent CONTENT = new LoaderActivatedContent(
             List.of("example:content/1/hash"),
@@ -168,7 +169,7 @@ final class LoaderViewTest {
         }
         LoaderViewKey arbitrary = new LoaderViewKey("example:warehouse/catalog.v2-1");
         LoaderScreenDefinition declaration = new LoaderScreenDefinition(
-                arbitrary, false, "Catalog", Optional.empty(), Optional.empty(), List.of(), List.of());
+                arbitrary, false, "Catalog", Optional.empty(), Optional.empty(), List.of(), List.of(), List.of());
         LoaderActivatedContent registry = new LoaderActivatedContent(
                 List.of(), Map.of(arbitrary.value(), declaration),
                 Map.of(), Map.of(), Map.of(), Map.of(), Map.of());

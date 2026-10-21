@@ -11,6 +11,7 @@ import dev.solaris.loader.LoaderViewMessage;
 import dev.solaris.loader.LoaderViewActionRequest;
 import dev.solaris.loader.LoaderViewKey;
 import dev.solaris.loader.LoaderSoundCommand;
+import dev.solaris.loader.minecraft.LoaderMinecraftInput;
 import dev.solaris.loader.minecraft.LoaderMinecraftSound;
 import dev.solaris.loader.minecraft.LoaderMinecraftView;
 import dev.solaris.loader.minecraft.LoaderRuntimeResourcePack;
@@ -270,6 +271,9 @@ public final class SolarisForgeLoader {
             LoaderMinecraftView.clear();
             LoaderMinecraftSound.clear();
             ACTIVE_CONTENT.set(outgoing.activatedContent());
+            LoaderMinecraftInput.armRequestKeys(
+                    outgoing.activatedContent(),
+                    view -> tryRequestView(view.value()));
         }
     }
 
@@ -313,15 +317,22 @@ public final class SolarisForgeLoader {
     }
 
     static void requestView(String viewKey) {
+        if (!tryRequestView(viewKey)) {
+            throw new IllegalStateException(
+                    "Loader view request requires an active declared view");
+        }
+    }
+
+    /** Send one declared view request on the active Loader connection; false when none applies. */
+    static boolean tryRequestView(String viewKey) {
         Minecraft client = Minecraft.getInstance();
         var listener = client.getConnection();
         Connection origin = listener == null ? null : listener.getConnection();
         boolean active = origin != null && origin.isConnected() && RESOURCE_PACK.owns(origin);
-        byte[] bytes = LoaderViewActionRequest.request(
-                new LoaderViewKey(viewKey), ACTIVE_CONTENT.get(), active)
-                .orElseThrow(() -> new IllegalStateException(
-                        "Loader view request requires an active declared view"));
-        sendViewAction(client, origin, bytes);
+        Optional<byte[]> bytes = LoaderViewActionRequest.request(
+                new LoaderViewKey(viewKey), ACTIVE_CONTENT.get(), active);
+        bytes.ifPresent(request -> sendViewAction(client, origin, request));
+        return bytes.isPresent();
     }
 
     private static void sendViewAction(

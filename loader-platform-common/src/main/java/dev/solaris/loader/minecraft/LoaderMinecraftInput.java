@@ -1,11 +1,17 @@
 package dev.solaris.loader.minecraft;
 
 import com.mojang.blaze3d.platform.InputConstants;
+import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderInputBinding;
+import dev.solaris.loader.LoaderScreenDefinition;
+import dev.solaris.loader.LoaderViewKey;
+import dev.solaris.loader.LoaderViewRequestBinding;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.function.Consumer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
@@ -25,6 +31,8 @@ import net.minecraft.client.input.KeyEvent;
  */
 public final class LoaderMinecraftInput {
     private static boolean inputFocusedBefore;
+    private static Map<Integer, LoaderViewKey> requestKeys = Map.of();
+    private static Consumer<LoaderViewKey> requester = ignored -> { };
 
     private LoaderMinecraftInput() {
     }
@@ -38,20 +46,78 @@ public final class LoaderMinecraftInput {
             List<LoaderInputBinding> declared) {
         Map<Integer, LoaderInputBinding> resolved = new LinkedHashMap<>();
         for (LoaderInputBinding binding : declared) {
-            InputConstants.Key key;
-            try {
-                key = InputConstants.getKey(binding.key());
-            } catch (IllegalArgumentException invalidKey) {
-                return Optional.empty();
-            }
-            if (key.getType() != InputConstants.Type.KEYSYM
-                    || key.getValue() < 0
-                    || !key.getName().equals(binding.key())
-                    || resolved.putIfAbsent(key.getValue(), binding) != null) {
+            OptionalInt key = nativeKey(binding.key());
+            if (key.isEmpty() || resolved.putIfAbsent(key.getAsInt(), binding) != null) {
                 return Optional.empty();
             }
         }
         return Optional.of(resolved);
+    }
+
+    /** The client's own keyboard key code for one canonical name, or empty when it has none. */
+    private static OptionalInt nativeKey(String name) {
+        InputConstants.Key key;
+        try {
+            key = InputConstants.getKey(name);
+        } catch (IllegalArgumentException invalidKey) {
+            return OptionalInt.empty();
+        }
+        if (key.getType() != InputConstants.Type.KEYSYM
+                || key.getValue() < 0
+                || !key.getName().equals(name)) {
+            return OptionalInt.empty();
+        }
+        return OptionalInt.of(key.getValue());
+    }
+
+    /**
+     * Refuse activated content whose declared view-request keys this client
+     * cannot name natively, before any acknowledgement arms them: a key that
+     * would silently never fire is a refused declaration, not a dead binding.
+     */
+    static void validate(LoaderActivatedContent content) {
+        resolveRequestKeys(content);
+    }
+
+    /**
+     * Arm every overlay-declared view-request key of the activated content.
+     * The key edge sends the exact declared screen id through {@code requester}
+     * (the adapter's active-connection {@code view_request} sender); no live
+     * view instance is needed, and {@link #clear()} disarms them on unmount.
+     */
+    public static void armRequestKeys(
+            LoaderActivatedContent content,
+            Consumer<LoaderViewKey> requester) {
+        requestKeys = resolveRequestKeys(content);
+        LoaderMinecraftInput.requester = requester;
+    }
+
+    private static Map<Integer, LoaderViewKey> resolveRequestKeys(LoaderActivatedContent content) {
+        Map<Integer, LoaderViewKey> resolved = new LinkedHashMap<>();
+        for (LoaderScreenDefinition screen : content.screens().values()) {
+            for (LoaderViewRequestBinding binding : screen.requestBindings()) {
+                OptionalInt key = nativeKey(binding.key());
+                if (key.isEmpty() || resolved.putIfAbsent(key.getAsInt(), binding.view()) != null) {
+                    throw new IllegalArgumentException(
+                            "Loader view request key " + binding.key()
+                                    + " is not a unique native keyboard key of this client");
+                }
+            }
+        }
+        return Map.copyOf(resolved);
+    }
+
+    /**
+     * One admitted press of a native key: when it is an armed view-request key
+     * the declared screen is requested. Returns whether a request was issued.
+     */
+    static boolean requestKeyEdge(int key) {
+        LoaderViewKey view = requestKeys.get(key);
+        if (view == null) {
+            return false;
+        }
+        requester.accept(view);
+        return true;
     }
 
     /** {@code KeyboardHandler#keyPress} head: the focus this native key edge arrived with. */
@@ -81,6 +147,7 @@ public final class LoaderMinecraftInput {
                 // send a second gameplay intent through the Loader HUD.
                 return;
             }
+            requestKeyEdge(key);
         }
         LoaderMinecraftView.keyEdge(key, action == InputConstants.PRESS);
     }
@@ -102,6 +169,8 @@ public final class LoaderMinecraftInput {
 
     static void clear() {
         inputFocusedBefore = false;
+        requestKeys = Map.of();
+        requester = ignored -> { };
     }
 
     /** The client's own gameplay-input focus: in play, no GUI, no overlay, active window. */

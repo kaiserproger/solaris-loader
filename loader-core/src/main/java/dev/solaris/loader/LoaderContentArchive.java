@@ -42,10 +42,18 @@ final class LoaderContentArchive {
     private static final long MAX_ACTIVATED_ASSET_BYTES = 64L * 1024L * 1024L;
     private static final Set<String> INDEX_FIELDS = Set.of(
             "schema", "screens", "world_previews", "blocks", "items", "assets", "sounds");
-    private static final Set<String> SCREEN_FIELDS =
-            Set.of("id", "overlay", "title", "item_id", "block_id", "widgets", "input_bindings");
+    private static final Set<String> SCREEN_FIELDS = Set.of(
+            "id",
+            "overlay",
+            "title",
+            "item_id",
+            "block_id",
+            "widgets",
+            "input_bindings",
+            "view_request_bindings");
     private static final Set<String> INPUT_BINDING_FIELDS =
             Set.of("key", "press_action", "release_action");
+    private static final Set<String> VIEW_REQUEST_BINDING_FIELDS = Set.of("key", "view");
     private static final Set<String> PREVIEW_FIELDS = Set.of(
             "id",
             "blueprint_id",
@@ -187,7 +195,20 @@ final class LoaderContentArchive {
                         "Loader archive is missing indexed asset " + assetsByPath.keySet().iterator().next());
             }
 
+            Set<String> armedRequestKeys = new HashSet<>();
+            for (LoaderScreenDefinition armed : activatedScreens.values()) {
+                for (LoaderViewRequestBinding binding : armed.requestBindings()) {
+                    armedRequestKeys.add(binding.key());
+                }
+            }
             for (LoaderScreenDefinition screen : index.screens()) {
+                for (LoaderViewRequestBinding binding : screen.requestBindings()) {
+                    if (!armedRequestKeys.add(binding.key())) {
+                        throw new IllegalArgumentException(
+                                "Loader view request key " + binding.key()
+                                        + " is already armed by another screen");
+                    }
+                }
                 if (activatedScreens.putIfAbsent(screen.id().value(), screen) != null) {
                     throw new IllegalArgumentException(
                             "duplicate activated Loader screen " + screen.id());
@@ -271,8 +292,16 @@ final class LoaderContentArchive {
                 throw new IllegalArgumentException(
                         "Loader archive contains duplicate screen id " + id);
             }
+            List<LoaderInputBinding> inputBindings = inputBindings(screen, overlay);
             screens.add(new LoaderScreenDefinition(
-                    id, overlay, title, itemId, blockId, widgets(screen), inputBindings(screen, overlay)));
+                    id,
+                    overlay,
+                    title,
+                    itemId,
+                    blockId,
+                    widgets(screen),
+                    inputBindings,
+                    requestBindings(screen, overlay, inputBindings)));
         }
         return List.copyOf(screens);
     }
@@ -318,6 +347,57 @@ final class LoaderContentArchive {
                         "Loader screen repeats input binding action id");
             }
             bindings.add(new LoaderInputBinding(key, pressAction, releaseAction));
+        }
+        return List.copyOf(bindings);
+    }
+
+    /**
+     * The optional {@code view_request_bindings} of one overlay: native keys
+     * that ask the server to open a screen. They share the screen's eight
+     * binding bound and its key namespace with {@code input_bindings}, so a
+     * key never both reports a view action and requests a view; the target is
+     * checked against the bundle's declared screens during validation.
+     */
+    private static List<LoaderViewRequestBinding> requestBindings(
+            JsonObject screen,
+            boolean overlay,
+            List<LoaderInputBinding> inputBindings) {
+        List<JsonElement> entries = LoaderJson.optionalArray(
+                screen,
+                "view_request_bindings",
+                LoaderInputBinding.MAX_BINDINGS_PER_SCREEN,
+                "Loader screen view request bindings");
+        if (entries.isEmpty()) {
+            return List.of();
+        }
+        if (!overlay) {
+            throw new IllegalArgumentException(
+                    "Loader view request bindings require overlay presentation");
+        }
+        if (entries.size() + inputBindings.size() > LoaderInputBinding.MAX_BINDINGS_PER_SCREEN) {
+            throw new IllegalArgumentException(
+                    "Loader screen declares more than "
+                            + LoaderInputBinding.MAX_BINDINGS_PER_SCREEN
+                            + " key bindings");
+        }
+        Set<String> keys = new HashSet<>();
+        for (LoaderInputBinding binding : inputBindings) {
+            keys.add(binding.key());
+        }
+        List<LoaderViewRequestBinding> bindings = new ArrayList<>(entries.size());
+        for (JsonElement entry : entries) {
+            JsonObject binding = LoaderJson.object(entry, "Loader view request binding");
+            LoaderJson.rejectUnknown(
+                    binding, VIEW_REQUEST_BINDING_FIELDS, "Loader view request binding");
+            String key = bindingKey(binding);
+            if (!keys.add(key)) {
+                throw new IllegalArgumentException(
+                        "Loader screen repeats input binding key " + key);
+            }
+            bindings.add(new LoaderViewRequestBinding(
+                    key,
+                    new LoaderViewKey(LoaderJson.identifier(
+                            binding, "view", "Loader view request binding view"))));
         }
         return List.copyOf(bindings);
     }
@@ -783,6 +863,10 @@ final class LoaderContentArchive {
         for (LoaderWorldPreviewDefinition preview : index.worldPreviews()) {
             previewIds.add(preview.id());
         }
+        Set<String> declaredScreenIds = new HashSet<>();
+        for (LoaderScreenDefinition screen : index.screens()) {
+            declaredScreenIds.add(screen.id().value());
+        }
         for (LoaderScreenDefinition screen : index.screens()) {
             if (screen.itemId().isPresent()) {
                 String itemId = screen.itemId().orElseThrow();
@@ -809,7 +893,7 @@ final class LoaderContentArchive {
                                     + marker.previewId().orElseThrow());
                 }
             }
-            if (screen.inputBindings().isEmpty()) {
+            if (screen.inputBindings().isEmpty() && screen.requestBindings().isEmpty()) {
                 continue;
             }
             if (!declared(bundle, LoaderContentKind.VIEW_ACTIONS)
@@ -817,6 +901,13 @@ final class LoaderContentArchive {
                 throw new IllegalArgumentException(
                         "Loader input bindings require view_actions content and "
                                 + "send_view_actions permission");
+            }
+            for (LoaderViewRequestBinding binding : screen.requestBindings()) {
+                if (!declaredScreenIds.contains(binding.view().value())) {
+                    throw new IllegalArgumentException(
+                            "Loader view request binding targets an undeclared screen "
+                                    + binding.view());
+                }
             }
             for (LoaderInputBinding binding : screen.inputBindings()) {
                 requireOwnedIdentifier(

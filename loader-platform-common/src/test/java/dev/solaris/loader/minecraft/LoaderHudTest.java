@@ -253,7 +253,8 @@ final class LoaderHudTest {
                 Optional.empty(),
                 Optional.empty(),
                 List.of(),
-                inputBindings);
+                inputBindings,
+                List.of());
     }
 
     private static LoaderInputBinding binding(String key, String press, String release) {

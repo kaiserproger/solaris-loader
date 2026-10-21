@@ -69,6 +69,7 @@ public final class LoaderRuntimeResourcePack {
         }
         LoaderMinecraftItem.validate(content);
         LoaderMinecraftBlock.validate(content);
+        LoaderMinecraftInput.validate(content);
         long generation = generations.incrementAndGet();
         mounted.set(new Mount(
                 generation,

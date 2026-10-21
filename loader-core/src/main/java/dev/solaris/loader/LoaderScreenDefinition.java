@@ -5,7 +5,8 @@ import java.util.Optional;
 
 /**
  * One validated schema-2 plugin view. Overlay presentation is declarative and
- * independent of its opaque view key; only overlays host native input bindings.
+ * independent of its opaque view key; only overlays host native input bindings
+ * and the key bindings that request another declared screen.
  */
 public record LoaderScreenDefinition(
         LoaderViewKey id,
@@ -14,7 +15,8 @@ public record LoaderScreenDefinition(
         Optional<String> itemId,
         Optional<String> blockId,
         List<LoaderWidget> widgets,
-        List<LoaderInputBinding> inputBindings) {
+        List<LoaderInputBinding> inputBindings,
+        List<LoaderViewRequestBinding> requestBindings) {
     public static final int MAX_TITLE_BYTES = 128;
 
     public LoaderScreenDefinition {
@@ -22,6 +24,7 @@ public record LoaderScreenDefinition(
         blockId = blockId == null ? Optional.empty() : blockId;
         widgets = List.copyOf(widgets);
         inputBindings = List.copyOf(inputBindings);
+        requestBindings = List.copyOf(requestBindings);
     }
 
     public Optional<LoaderWidget> widget(String widgetId) {

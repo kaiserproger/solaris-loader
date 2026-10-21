@@ -42,8 +42,9 @@ and the strict no-post-furnace-trip case in `PlayableCombatStageTest`.
 Keep the Loader wire protocol **3** and client artifact index **schema 2**
 contract: `loader-core` owns every codec and validation (protocol 3 handshake
 with `views`/`view_actions`/`world_previews`/`world_selection` content kinds,
-the schema-2 `screens` index with its eight widget types and bounded
-`world_previews`, the `solaris:loader/view` and `solaris:loader/view_action`
+the schema-2 `screens` index with its eight widget types, overlay
+`input_bindings` and `view_request_bindings` (one shared eight-key bound), and
+bounded `world_previews`, the `solaris:loader/view` and `solaris:loader/view_action`
 wire-3 view messages and the protocol-3 sound channel), the three platform
 adapters supply platform identity, native payload registration and lifecycle
 only, and `loader-platform-common` owns rendering. Schema-1 indexes and the
