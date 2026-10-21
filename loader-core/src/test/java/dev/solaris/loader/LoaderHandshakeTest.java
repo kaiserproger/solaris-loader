@@ -240,6 +240,12 @@ final class LoaderHandshakeTest {
     }
 
     @Test
+    void optionalBundleProbeAndHelloChannelsAreDefined() {
+        assertEquals("solaris:loader/probe", LoaderHandshake.PROBE_CHANNEL);
+        assertEquals("solaris:loader/hello", LoaderHandshake.HELLO_CHANNEL);
+    }
+
+    @Test
     void wireThreeIsTheOnlyAcceptedProtocol() {
         assertEquals(3, LoaderHandshake.PROTOCOL_VERSION);
         LoaderEnvironment environment = environment(

@@ -44,6 +44,47 @@ final class FabricLoaderTransportTest {
     Path cacheDirectory;
 
     @Test
+    void probeCodecRoundTripAndHandlerSendsExactlyOneHello() {
+        assertEquals(
+                "solaris:loader/probe",
+                LoaderProbePayload.TYPE.id().toString());
+        assertEquals(
+                "solaris:loader/hello",
+                LoaderHelloPayload.TYPE.id().toString());
+
+        FriendlyByteBuf probeWire = new FriendlyByteBuf(Unpooled.buffer());
+        LoaderProbePayload.CODEC.encode(probeWire, new LoaderProbePayload());
+        assertEquals(0, probeWire.readableBytes());
+        LoaderProbePayload.CODEC.decode(probeWire);
+
+        FriendlyByteBuf helloWire = new FriendlyByteBuf(Unpooled.buffer());
+        LoaderHelloPayload.CODEC.encode(helloWire, new LoaderHelloPayload());
+        assertEquals(0, helloWire.readableBytes());
+        LoaderHelloPayload.CODEC.decode(helloWire);
+
+        FriendlyByteBuf trailing = new FriendlyByteBuf(Unpooled.buffer());
+        trailing.writeByte(1);
+        try {
+            LoaderProbePayload.CODEC.decode(trailing);
+            throw new AssertionError("probe with trailing bytes must be rejected");
+        } catch (IllegalArgumentException expected) {
+        }
+        FriendlyByteBuf helloTrailing = new FriendlyByteBuf(Unpooled.buffer());
+        helloTrailing.writeByte(1);
+        try {
+            LoaderHelloPayload.CODEC.decode(helloTrailing);
+            throw new AssertionError("hello with trailing bytes must be rejected");
+        } catch (IllegalArgumentException expected) {
+        }
+
+        RecordingSender sender = new RecordingSender();
+        SolarisFabricLoader.handleProbe(
+                new LoaderProbePayload(),
+                new ProbeContext(sender));
+        assertEquals(List.of("solaris:loader/hello"), sender.sentIds());
+    }
+
+    @Test
     void verifiedCacheProducesRawConfigurationAck() throws Exception {
         byte[] manifest = manifest("fabric");
         LoaderEnvironment environment = environment();
@@ -104,6 +145,8 @@ final class FabricLoaderTransportTest {
         assertEquals("solaris:loader/ack", LoaderAckPayload.TYPE.id().toString());
         assertEquals("solaris:loader/request", LoaderRequestPayload.TYPE.id().toString());
         assertEquals("solaris:loader/artifact", LoaderArtifactPayload.TYPE.id().toString());
+        assertEquals("solaris:loader/probe", LoaderProbePayload.TYPE.id().toString());
+        assertEquals("solaris:loader/hello", LoaderHelloPayload.TYPE.id().toString());
 
         FriendlyByteBuf requestWire = new FriendlyByteBuf(Unpooled.buffer());
         LoaderRequestPayload.CODEC.encode(
@@ -181,6 +224,61 @@ final class FabricLoaderTransportTest {
                     MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (Exception error) {
             throw new AssertionError(error);
+        }
+    }
+
+    private static final class RecordingSender implements net.fabricmc.fabric.api.networking.v1.PacketSender {
+        private final java.util.List<String> sentIds = new java.util.ArrayList<>();
+
+        List<String> sentIds() {
+            return List.copyOf(sentIds);
+        }
+
+        @Override
+        public net.minecraft.network.protocol.Packet<?> createPacket(
+                net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+            throw new UnsupportedOperationException("test sender records payloads directly");
+        }
+
+        @Override
+        public void sendPacket(net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+            sentIds.add(payload.type().id().toString());
+        }
+
+        @Override
+        public void sendPacket(
+                net.minecraft.network.protocol.Packet<?> packet,
+                io.netty.channel.ChannelFutureListener listener) {
+            throw new UnsupportedOperationException("test sender records payloads directly");
+        }
+
+        @Override
+        public void disconnect(net.minecraft.network.chat.Component reason) {
+            throw new UnsupportedOperationException("test sender records payloads directly");
+        }
+    }
+
+    private static final class ProbeContext
+            implements net.fabricmc.fabric.api.client.networking.v1.ClientConfigurationNetworking.Context {
+        private final net.fabricmc.fabric.api.networking.v1.PacketSender sender;
+
+        ProbeContext(net.fabricmc.fabric.api.networking.v1.PacketSender sender) {
+            this.sender = sender;
+        }
+
+        @Override
+        public net.minecraft.client.Minecraft client() {
+            throw new UnsupportedOperationException("probe hello needs no client");
+        }
+
+        @Override
+        public net.minecraft.client.multiplayer.ClientConfigurationPacketListenerImpl packetListener() {
+            throw new UnsupportedOperationException("probe hello needs no listener");
+        }
+
+        @Override
+        public net.fabricmc.fabric.api.networking.v1.PacketSender responseSender() {
+            return sender;
         }
     }
 }

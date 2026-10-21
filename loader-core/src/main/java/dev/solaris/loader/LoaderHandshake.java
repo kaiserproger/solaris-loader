@@ -14,6 +14,8 @@ import java.util.Map;
 import java.util.Set;
 
 public final class LoaderHandshake {
+    public static final String PROBE_CHANNEL = "solaris:loader/probe";
+    public static final String HELLO_CHANNEL = "solaris:loader/hello";
     public static final int PROTOCOL_VERSION = 3;
     public static final int MAX_MANIFEST_BYTES = 32_767;
     public static final int MAX_VIEW_MESSAGE_BYTES = 64 * 1024;

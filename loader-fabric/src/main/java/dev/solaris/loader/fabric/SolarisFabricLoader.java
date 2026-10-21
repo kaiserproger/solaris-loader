@@ -90,10 +90,14 @@ public final class SolarisFabricLoader implements ClientModInitializer {
                 .register(LoaderManifestPayload.TYPE, LoaderManifestPayload.CODEC);
         PayloadTypeRegistry.clientboundConfiguration()
                 .register(LoaderArtifactPayload.TYPE, LoaderArtifactPayload.CODEC);
+        PayloadTypeRegistry.clientboundConfiguration()
+                .register(LoaderProbePayload.TYPE, LoaderProbePayload.CODEC);
         PayloadTypeRegistry.serverboundConfiguration()
                 .register(LoaderAckPayload.TYPE, LoaderAckPayload.CODEC);
         PayloadTypeRegistry.serverboundConfiguration()
                 .register(LoaderRequestPayload.TYPE, LoaderRequestPayload.CODEC);
+        PayloadTypeRegistry.serverboundConfiguration()
+                .register(LoaderHelloPayload.TYPE, LoaderHelloPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay()
                 .register(LoaderViewPayload.TYPE, LoaderViewPayload.CODEC);
         PayloadTypeRegistry.clientboundPlay()
@@ -103,6 +107,10 @@ public final class SolarisFabricLoader implements ClientModInitializer {
         if (!ClientConfigurationNetworking.registerGlobalReceiver(
                 LoaderManifestPayload.TYPE, SolarisFabricLoader::handleManifest)) {
             throw new IllegalStateException("Solaris Loader manifest receiver is already registered");
+        }
+        if (!ClientConfigurationNetworking.registerGlobalReceiver(
+                LoaderProbePayload.TYPE, SolarisFabricLoader::handleProbe)) {
+            throw new IllegalStateException("Solaris Loader probe receiver is already registered");
         }
         if (!ClientConfigurationNetworking.registerGlobalReceiver(
                 LoaderArtifactPayload.TYPE, SolarisFabricLoader::handleArtifact)) {
@@ -184,6 +192,12 @@ public final class SolarisFabricLoader implements ClientModInitializer {
             disconnect(context.client(), error.getMessage());
         }
     }
+    static void handleProbe(
+            LoaderProbePayload probe,
+            ClientConfigurationNetworking.Context context) {
+        context.responseSender().sendPacket(new LoaderHelloPayload());
+    }
+
 
     private static void handleArtifact(
             LoaderArtifactPayload artifact,

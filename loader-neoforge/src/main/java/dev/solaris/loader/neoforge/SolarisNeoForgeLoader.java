@@ -190,6 +190,10 @@ public final class SolarisNeoForgeLoader {
                     }
                 });
         registrar.configurationToClient(
+                LoaderProbePayload.TYPE,
+                LoaderProbePayload.CODEC,
+                SolarisNeoForgeLoader::handleProbe);
+        registrar.configurationToClient(
                 LoaderArtifactPayload.TYPE,
                 LoaderArtifactPayload.CODEC,
                 (artifact, context) -> {
@@ -216,6 +220,17 @@ public final class SolarisNeoForgeLoader {
                 LoaderAckPayload.CODEC,
                 (payload, context) -> context.disconnect(
                         Component.literal("Solaris Loader acknowledgement is client-only")));
+        registrar.configurationToServer(
+                LoaderHelloPayload.TYPE,
+                LoaderHelloPayload.CODEC,
+                (payload, context) -> context.disconnect(
+                        Component.literal("Solaris Loader hello is client-only")));
+    }
+
+    static void handleProbe(
+            LoaderProbePayload probe,
+            net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        context.reply(new LoaderHelloPayload());
     }
 
     static CustomPacketPayload payload(LoaderOutgoing outgoing) {

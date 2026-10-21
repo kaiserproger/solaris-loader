@@ -207,6 +207,10 @@ public final class SolarisForgeLoader {
                     }
                     context.setPacketHandled(true);
                 });
+        flow.add(
+                LoaderProbePayload.TYPE,
+                LoaderProbePayload.CODEC,
+                SolarisForgeLoader::handleProbe);
         PayloadFlow<FriendlyByteBuf, CustomPacketPayload> serverbound = flow.serverbound();
         serverbound.add(
                 LoaderRequestPayload.TYPE,
@@ -226,7 +230,27 @@ public final class SolarisForgeLoader {
                                     "Solaris Loader acknowledgement is client-only"));
                     context.setPacketHandled(true);
                 });
+        serverbound.add(
+                LoaderHelloPayload.TYPE,
+                LoaderHelloPayload.CODEC,
+                (payload, context) -> {
+                    context.getConnection()
+                            .disconnect(Component.literal(
+                                    "Solaris Loader hello is client-only"));
+                    context.setPacketHandled(true);
+                });
         return flow.build();
+    }
+
+    static void handleProbe(
+            LoaderProbePayload probe,
+            net.minecraftforge.event.network.CustomPayloadEvent.Context context) {
+        sendHello(context.getConnection());
+        context.setPacketHandled(true);
+    }
+
+    static void sendHello(Connection connection) {
+        channel.send(new LoaderHelloPayload(), connection);
     }
 
     static CustomPacketPayload payload(LoaderOutgoing outgoing) {

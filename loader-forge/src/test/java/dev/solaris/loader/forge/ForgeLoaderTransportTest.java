@@ -67,6 +67,60 @@ final class ForgeLoaderTransportTest {
     }
 
     @Test
+    void probeCodecRoundTripAndHandlerSendsExactlyOneHello() throws Exception {
+        assertEquals(
+                "solaris:loader/probe",
+                LoaderProbePayload.TYPE.id().toString());
+        assertEquals(
+                "solaris:loader/hello",
+                LoaderHelloPayload.TYPE.id().toString());
+
+        FriendlyByteBuf probeWire = new FriendlyByteBuf(Unpooled.buffer());
+        LoaderProbePayload.CODEC.encode(probeWire, new LoaderProbePayload());
+        assertEquals(0, probeWire.readableBytes());
+        LoaderProbePayload.CODEC.decode(probeWire);
+
+        FriendlyByteBuf helloWire = new FriendlyByteBuf(Unpooled.buffer());
+        LoaderHelloPayload.CODEC.encode(helloWire, new LoaderHelloPayload());
+        assertEquals(0, helloWire.readableBytes());
+        LoaderHelloPayload.CODEC.decode(helloWire);
+
+        FriendlyByteBuf trailing = new FriendlyByteBuf(Unpooled.buffer());
+        trailing.writeByte(1);
+        try {
+            LoaderProbePayload.CODEC.decode(trailing);
+            throw new AssertionError("probe with trailing bytes must be rejected");
+        } catch (IllegalArgumentException expected) {
+        }
+        FriendlyByteBuf helloTrailing = new FriendlyByteBuf(Unpooled.buffer());
+        helloTrailing.writeByte(1);
+        try {
+            LoaderHelloPayload.CODEC.decode(helloTrailing);
+            throw new AssertionError("hello with trailing bytes must be rejected");
+        } catch (IllegalArgumentException expected) {
+        }
+
+        ensureLoaderChannelRegistered();
+        java.lang.reflect.Field channelField =
+                SolarisForgeLoader.class.getDeclaredField("channel");
+        channelField.setAccessible(true);
+        Object previous = channelField.get(null);
+        RecordingChannel recording = new RecordingChannel();
+        channelField.set(null, recording);
+        try {
+            net.minecraft.network.Connection connection = new net.minecraft.network.Connection(
+                    net.minecraft.network.protocol.PacketFlow.CLIENTBOUND);
+            net.minecraftforge.event.network.CustomPayloadEvent.Context context =
+                    new net.minecraftforge.event.network.CustomPayloadEvent.Context(connection);
+            SolarisForgeLoader.handleProbe(new LoaderProbePayload(), context);
+            assertTrue(context.getPacketHandled());
+        } finally {
+            channelField.set(null, previous);
+        }
+        assertEquals(List.of("solaris:loader/hello"), recording.sentIds());
+    }
+
+    @Test
     void verifiedCacheProducesRawConfigurationAck() throws Exception {
         byte[] manifest = manifest("forge");
         LoaderEnvironment environment = environment();
@@ -131,6 +185,8 @@ final class ForgeLoaderTransportTest {
         assertEquals("solaris:loader/ack", LoaderAckPayload.TYPE.id().toString());
         assertEquals("solaris:loader/request", LoaderRequestPayload.TYPE.id().toString());
         assertEquals("solaris:loader/artifact", LoaderArtifactPayload.TYPE.id().toString());
+        assertEquals("solaris:loader/probe", LoaderProbePayload.TYPE.id().toString());
+        assertEquals("solaris:loader/hello", LoaderHelloPayload.TYPE.id().toString());
 
         FriendlyByteBuf requestWire = new FriendlyByteBuf(Unpooled.buffer());
         LoaderRequestPayload.CODEC.encode(
@@ -178,6 +234,33 @@ final class ForgeLoaderTransportTest {
         }
     }
 
+    private static final class RecordingChannel
+            extends net.minecraftforge.network.Channel<
+                    net.minecraft.network.protocol.common.custom.CustomPacketPayload> {
+        private final java.util.List<String> sentIds = new java.util.ArrayList<>();
+
+        RecordingChannel() {
+            super(null);
+        }
+
+        List<String> sentIds() {
+            return List.copyOf(sentIds);
+        }
+
+        @Override
+        public void encode(
+                FriendlyByteBuf buffer,
+                net.minecraft.network.protocol.common.custom.CustomPacketPayload payload) {
+            throw new UnsupportedOperationException("test channel records sends directly");
+        }
+
+        @Override
+        public void send(
+                net.minecraft.network.protocol.common.custom.CustomPacketPayload payload,
+                net.minecraft.network.Connection connection) {
+            sentIds.add(payload.type().id().toString());
+        }
+    }
     private static LoaderEnvironment environment() {
         return new LoaderEnvironment() {
             @Override

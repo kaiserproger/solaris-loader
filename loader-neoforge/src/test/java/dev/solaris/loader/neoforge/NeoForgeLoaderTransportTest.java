@@ -40,6 +40,88 @@ final class NeoForgeLoaderTransportTest {
     Path cacheDirectory;
 
     @Test
+    void probeCodecRoundTripAndHandlerSendsExactlyOneHello() {
+        assertEquals(
+                "solaris:loader/probe",
+                LoaderProbePayload.TYPE.id().toString());
+        assertEquals(
+                "solaris:loader/hello",
+                LoaderHelloPayload.TYPE.id().toString());
+
+        FriendlyByteBuf probeWire = new FriendlyByteBuf(Unpooled.buffer());
+        LoaderProbePayload.CODEC.encode(probeWire, new LoaderProbePayload());
+        assertEquals(0, probeWire.readableBytes());
+        LoaderProbePayload.CODEC.decode(probeWire);
+
+        FriendlyByteBuf helloWire = new FriendlyByteBuf(Unpooled.buffer());
+        LoaderHelloPayload.CODEC.encode(helloWire, new LoaderHelloPayload());
+        assertEquals(0, helloWire.readableBytes());
+        LoaderHelloPayload.CODEC.decode(helloWire);
+
+        FriendlyByteBuf trailing = new FriendlyByteBuf(Unpooled.buffer());
+        trailing.writeByte(1);
+        try {
+            LoaderProbePayload.CODEC.decode(trailing);
+            throw new AssertionError("probe with trailing bytes must be rejected");
+        } catch (IllegalArgumentException expected) {
+        }
+        FriendlyByteBuf helloTrailing = new FriendlyByteBuf(Unpooled.buffer());
+        helloTrailing.writeByte(1);
+        try {
+            LoaderHelloPayload.CODEC.decode(helloTrailing);
+            throw new AssertionError("hello with trailing bytes must be rejected");
+        } catch (IllegalArgumentException expected) {
+        }
+
+        java.util.List<String> replied = new java.util.ArrayList<>();
+        Object listener = java.lang.reflect.Proxy.newProxyInstance(
+                NeoForgeLoaderTransportTest.class.getClassLoader(),
+                new Class<?>[] {
+                    net.neoforged.neoforge.common.extensions.ICommonPacketListener.class
+                },
+                (proxy, method, args) -> {
+                    if (method.getName().equals("send")
+                            && args != null
+                            && args.length == 1
+                            && args[0]
+                                    instanceof
+                                    net.minecraft.network.protocol.common.custom.CustomPacketPayload
+                                    payload) {
+                        replied.add(payload.type().id().toString());
+                        return null;
+                    }
+                    throw new UnsupportedOperationException(
+                            "probe hello needs no listener " + method.getName());
+                });
+        net.neoforged.neoforge.network.handling.IPayloadContext context =
+                (net.neoforged.neoforge.network.handling.IPayloadContext)
+                        java.lang.reflect.Proxy.newProxyInstance(
+                                NeoForgeLoaderTransportTest.class.getClassLoader(),
+                                new Class<?>[] {
+                                    net.neoforged.neoforge.network.handling.IPayloadContext.class
+                                },
+                                (proxy, method, args) -> {
+                                    if (method.getName().equals("listener")) {
+                                        return listener;
+                                    }
+                                    if (method.getName().equals("reply")
+                                            && args != null
+                                            && args.length == 1
+                                            && args[0]
+                                                    instanceof
+                                                    net.minecraft.network.protocol.common.custom.CustomPacketPayload
+                                                    payload) {
+                                        replied.add(payload.type().id().toString());
+                                        return null;
+                                    }
+                                    throw new UnsupportedOperationException(
+                                            "probe hello needs no context " + method.getName());
+                                });
+        SolarisNeoForgeLoader.handleProbe(new LoaderProbePayload(), context);
+        assertEquals(List.of("solaris:loader/hello"), List.copyOf(replied));
+    }
+
+    @Test
     void configurationServerIdentityFallsBackToRemoteAddress() {
         assertEquals(
                 "play.example.test:25565",
@@ -115,6 +197,8 @@ final class NeoForgeLoaderTransportTest {
         assertEquals("solaris:loader/ack", LoaderAckPayload.TYPE.id().toString());
         assertEquals("solaris:loader/request", LoaderRequestPayload.TYPE.id().toString());
         assertEquals("solaris:loader/artifact", LoaderArtifactPayload.TYPE.id().toString());
+        assertEquals("solaris:loader/probe", LoaderProbePayload.TYPE.id().toString());
+        assertEquals("solaris:loader/hello", LoaderHelloPayload.TYPE.id().toString());
 
         FriendlyByteBuf requestWire = new FriendlyByteBuf(Unpooled.buffer());
         LoaderRequestPayload.CODEC.encode(
