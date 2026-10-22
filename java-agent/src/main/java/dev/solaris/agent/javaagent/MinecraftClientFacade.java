@@ -20,7 +20,6 @@ import net.minecraft.client.input.InputWithModifiers;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ServerData;
-import net.minecraft.client.multiplayer.TransferState;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
@@ -37,7 +36,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
@@ -427,14 +425,17 @@ public final class MinecraftClientFacade implements ClientFacade {
             }
         }
         ServerData serverData = new ServerData("Solaris", address, ServerData.Type.OTHER);
-        TransferState transferState = new TransferState(Map.of(), Map.of(), false);
+        // Vanilla sends handshake intent TRANSFER whenever this is non-null
+        // (ConnectScreen: transferState != null). An ordinary join must send
+        // LOGIN, so pass null exactly like the vanilla multiplayer screen does;
+        // only a client following a Transfer packet carries state here.
         ConnectScreen.startConnecting(
             minecraft.screen,
             minecraft,
             ServerAddress.parseString(address),
             serverData,
             false,
-            transferState
+            null
         );
     }
 
@@ -1412,6 +1413,9 @@ public final class MinecraftClientFacade implements ClientFacade {
 
     @Override
     public ClientScenarioReport runScenario(String id, Path screenshotsDir) {
+        if (DistantHorizonsScenario.supports(id)) {
+            return new DistantHorizonsScenario().run(id, screenshotsDir);
+        }
         ScenarioClient client = new MinecraftScenarioClient(new MinecraftClientExecutor());
         if (VanillaUiSmokeScenario.supports(id)) {
             return new VanillaUiSmokeScenario(new MinecraftClientExecutor(), client, this, screenshotsDir).run(id);

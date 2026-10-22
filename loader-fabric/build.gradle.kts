@@ -52,6 +52,13 @@ sourceSets {
     }
 }
 
+tasks.processResources {
+    inputs.property("fabricLoaderVersion", fabricLoaderVersion)
+    filesMatching("fabric.mod.json") {
+        expand("fabricLoaderVersion" to fabricLoaderVersion.get())
+    }
+}
+
 tasks.named<JavaExec>("runClientMcp") {
     group = "verification"
     description = "Runs the Fabric Loader client with the embedded Solaris MCP server."

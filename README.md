@@ -348,6 +348,93 @@ SOLARIS_CLIENT_MCP_TOKEN="$SOLARIS_CLIENT_MCP_TOKEN" \
   ./gradlew --no-configuration-cache :fabric-agent:runClientMcp
 ```
 
+## Distant Horizons Java validation
+
+The `dh-protocol16` in-client scenario observes the installed, unmodified
+Distant Horizons mod through its runtime API. It fails closed when DH is absent
+or negotiation/registry resolution fails; it never injects LODs, cache rows or
+generation requests. The `configure`, `control`, `landmark`, `edit`, `render`,
+`render-update`, `state`, `debug` and `disconnect` phases are named `dh-protocol16-<phase>`.
+
+`tools/dh_scenario.py` is the Java-client driver used by the core harness's
+`dh-gate` profile. Set `SOLARIS_LOADER_ROOT` to this checkout and provide a
+worktree-built `SOLARIS_SERVER_BINARY`, publisher-verified `SOLARIS_DH_JAR`,
+Java 25 and Xvfb. Prepare `.analysis/prism-26.1.2/minecraft` here by copying
+the owner's Prism 26.1.2 instance as a **read-only template**, excluding saves,
+screenshots, logs, mods and `Distant_Horizons_server_data`. Install only the
+pinned DH jar in the private template's `minecraft/mods`; never edit the
+original instance. Each control/enabled/no-DH game directory is another
+isolated copy under this checkout's `.analysis/dh-runs`.
+
+The baseline pins are MC 26.1.2, DH 3.3.3/protocol 16, Fabric loader 0.18.5
+with Fabric API 0.149.1+26.1.2, or NeoForge 26.1.2.76.
+The Fabric mod metadata expands its minimum loader dependency from the selected
+`fabricLoaderVersion`, matching the artifact it was compiled against.
+The driver uses core's canonical server/Xvfb/MCP lifecycle and generates a fresh
+local MCP bearer token for each client; no external credential is needed or written.
+From the selected core checkout run `python3 -m tools.harness run dh-gate
+--platform fabric`, then `--platform neoforge`.
+
+The scenario compares independently clean server-DH-off/on caches at a fixed
+camera, with vanilla radius 4 and DH radius 128. Its asymmetric edited landmark
+is 1024 blocks away and is never approached by either test client. A separate
+disposable **no-DH** preparation process builds it through real server commands,
+waits on actual loaded-block/state packet events, then returns the saved player
+to the origin and exits. It has a different game directory and connects directly;
+the passive proxy covers only the independently clean control/enabled clients.
+No LOD/cache data is copied from preparation. The gate retains actual
+DH API column values, the unmodified server packet stream's vanilla chunk
+coordinates and DH sections, screenshots, warm reconnect, live edit,
+dimension/reset isolation and a separate no-DH vanilla join. Local receipts
+are `dh-scenario.json` and `dh-packet-evidence.json` inside the core harness
+artifact directory; a prepared copy or a unit-test pass is not graphical
+compatibility evidence.
+The clean-cache landmark wait is bounded to 30 minutes: the real client requests
+nearer leaves first within the negotiated two-requests-per-second limit. It waits
+on actual cache commits, never a blind delay or injected priority request.
+Each API column observation supplies and closes a fresh DH-provided soft cache,
+as required by the public terrain API, so committed live edits are not hidden by
+an earlier observation's cached source.
+The live edit extends the gold tower from Y=200 to Y=232 and replaces it with
+emerald, with daylight frozen by `gamerule advance_time false`. Geometry changes
+are intentional: upstream DH 3.3.3 can miss material-only swaps in parent LODs
+when compacted raw datapoint ids stay identical. This is an accepted client
+limitation, not evidence that unchanged-geometry material swaps render correctly.
+Private fixture options mark vanilla's movement tutorial complete so its persistent
+toast cannot obscure the distant landmark; DH warnings remain unchanged.
+Control/render phases hide the ordinary HUD (F1-equivalent) so command chat
+cannot cover the distant landmark; debug phases restore it for the F3 evidence.
+Play alone is not visual readiness: connection setup also waits for the observed
+resource-reload overlay to close. After decoded landmark data, the `render` phase
+waits on Minecraft tick events for an unmodified DH visible VBO container covering
+the landmark, with a nonzero number of uploaded/non-null vertex buffers and no vanilla landmark chunk.
+It retains the section, VBO count and container identity before screenshots.
+Before editing, the driver records the warm connection's uploaded geometry in
+`previous-render.json`. The `render-update` phase additionally requires a
+replacement uploaded container; the old warm-cache VBO is not evidence that
+an emerald edit has reached the renderer.
+Even a replacement can precede DH's asynchronous leaf-to-parent aggregation.
+The driver therefore uses Pillow to inspect the actual upper-pillar pixels at
+the pinned camera/FOV: sky-only control must contain no gold, the cold frame
+must contain gold, and the edited frame must contain emerald. It waits on
+canonical client-state producer events between actual captures, keeping only
+the latest frame for each label. Daylight is set and observed for these color
+predicates; nearby ground/greenery is outside their recorded crop.
+These checks do not replace reviewing the actual captured landmark and lighting.
+The configure phase also writes `client-runtime-manifest.json` with running JVM
+classpath/module-path files and DH/Minecraft/agent code-source SHA-256 hashes.
+Night/day captures wait on observed client clock changes, not command submission.
+The DH-specific disconnect phase invokes the ordinary game disconnect on the
+client thread and awaits its completion for up to two minutes while DH drains
+its request/mesh queues, then returns to the title screen for reconnect. The
+low-level facade's progress screen is not a completed return-to-menu flow;
+generic interactive-operation deadlines are unchanged.
+For this explicitly owner-authorized local fixture, the driver accepts Loader's
+`present_views`/`send_view_actions` prompt through its guarded exact-title MCP
+button API. It matches the current isolated loopback address and retains the
+prompt screenshot and decision. It neither prepopulates a trust whitelist nor
+accepts other confirmation screens, and never modifies the owner's instance.
+
 ## Codex
 
 Register the endpoint once. Start Codex from an environment containing the
