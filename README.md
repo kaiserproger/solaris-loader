@@ -80,6 +80,71 @@ Loader sounds are cleared on disconnect.
 Only approve servers you trust; a matching content hash establishes byte
 identity, not that a server is trustworthy.
 
+## Operator computer (Fabric, opt-in)
+
+The in-game computer is a plain-text terminal/chat bridge, separate from Loader
+wire 3. Enable the server's `[computer]` section and add
+`-Dsolaris.computer.enabled=true` to the **client JVM arguments**. Place an ordinary
+iron block, connect as an unlocked level-4 operator, and right-click it. Type a
+line and press **Send**; replies stream into bounded plain-text scrollback.
+**Older/Newer** navigate history; **Close/Escape** terminates the direct child
+process. Sneak-use bypasses the terminal. Breaking the carrier, leaving its
+six-block radius, dimension travel, logout, or permission loss ends the session.
+There is no special item to register and no new save format.
+
+Server defaults are disabled, loopback-only, and built-in echo (`command = []`).
+For an AI agent, the operator supplies an **absolute executable and literal argv**
+plus an absolute working directory for a persistent UTF-8 stdin/stdout adapter.
+The adapter receives one line per submission; output can arrive asynchronously.
+Run it inside an operator-managed sandbox/dedicated account. This is not a PTY:
+ANSI/curses interfaces and raw keystrokes are intentionally unsupported. Input
+is never turned into shell argv, stderr is hidden, and no transcript is saved.
+Never expose a privileged host shell. Remote opt-in still requires server-authenticated
+identity (online mode or authenticated Velocity) and level 4; an offline username
+is not authentication. See the server's ADR 0018 for the wire/security contract.
+
+Fabric implements the terminal; NeoForge/Forge integration and graphical
+real-client acceptance are not claimed. Java-only terminal code is intended to
+work on Windows, Linux and macOS but only the recorded build/test platform is
+validated. This feature neither captures nor controls the player's desktop.
+
+### Local desktop-capture spike
+
+The selected design is a small **local native helper → bounded RGBA8 frames →
+LWJGL texture**, kept entirely on the player's machine. The spike
+`X11ComputerCapture` explicitly invokes FFmpeg `x11grab` for one selected local
+X11 display/region; `ComputerCaptureTexture` owns/reuses/uploads the OpenGL
+texture on its creating render thread. Neither is wired to joining a server,
+block use, nor downloaded content. No automatic capture, frame upload to a
+server, or OS input forwarding exists.
+
+| Platform | Backend choice | Current implementation |
+| --- | --- | --- |
+| Linux X11 | Native helper; XShm/XComposite for production | FFmpeg x11grab single-frame spike and isolated capture→texture smoke |
+| Linux native Wayland | xdg-desktop-portal ScreenCast + PipeWire | Design only; no XWayland substitution or portal-consent bypass |
+| Windows | Windows Graphics Capture; DXGI where necessary | Design only; not compiled or tested |
+| macOS | ScreenCaptureKit, OS Screen Recording consent | Design only; not compiled or tested |
+
+Capture and input forwarding require independent local permission prompts in a
+future desktop UI; a server cannot grant them. This spike proves the frame/texture
+boundary, **not** an in-world screen renderer or desktop-control implementation.
+The gated `ComputerCaptureTest.linuxX11CaptureUploadsActualPixelsToTexture` paints
+synthetic pixels in its own GLFW window, captures them, uploads/reuses a texture,
+and checks OpenGL readback. This passed on Linux/Xvfb with `LIBGL_ALWAYS_SOFTWARE=1` on
+2026-10-23 (2 tests, zero failures/skips); it is not hardware-driver or Minecraft
+rendering evidence. Run only on an isolated display:
+
+```sh
+env -u WAYLAND_DISPLAY SOLARIS_CAPTURE_SMOKE_X11=1 LIBGL_ALWAYS_SOFTWARE=1 \
+  xvfb-run -a -s '-screen 0 128x128x24' \
+  ./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx2g --max-workers=2 \
+  :loader-fabric:test --tests '*ComputerCaptureTest'
+```
+
+The ordinary test run skips that explicit display-dependent method; it is not a
+capture pass. `:loader-core:test --tests '*ComputerProtocolTest'` tests codec
+vectors, limits, stale-session rejection and bounded transcript behavior.
+
 ## Troubleshooting
 
 - **“Loader required”**: verify the launched instance, `mods/` location, adapter,
