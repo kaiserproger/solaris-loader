@@ -2173,6 +2173,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 if (becameAir && !breakStopped) {
                     breakStopped = true;
                     finishBlockBreak(action);
+                    // The drop gets its own window from the removal instead of whatever is left
+                    // of the break budget, which a slow first break can use up entirely.
+                    deadlineNanos = Math.max(deadlineNanos, System.nanoTime() + timeout.toNanos());
                 }
                 if (becameAir && sawDrop) {
                     return new ScenarioBreakResult(true, true, true, false, selected);
