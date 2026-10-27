@@ -3892,7 +3892,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         minecraft.options.keyUp.setDown(false);
         minecraft.options.keyDown.setDown(false);
         minecraft.options.keySprint.setDown(false);
-        minecraft.options.keyJump.setDown(false);
+        // Stopping in water still holds jump: melee, retreat and eating would otherwise sink and drown.
+        // Cleanup after a disconnect runs without a player.
+        minecraft.options.keyJump.setDown(minecraft.player != null && minecraft.player.isInWater());
         minecraft.options.keyLeft.setDown(false);
         minecraft.options.keyRight.setDown(false);
     }

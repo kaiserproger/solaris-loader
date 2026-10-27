@@ -58,7 +58,9 @@ final class PlayableSurvivalStage {
         "minecraft:spider",
         // Run 20261016T095132: three slimes camped the respawn point and killed the player 15 times
         // while the stage ignored them; any hostile that damages the player is a target.
-        "minecraft:slime"
+        "minecraft:slime",
+        // Run 20261027T072917: a drowned killed the swimming player while the stage ignored it.
+        "minecraft:drowned"
     );
 
     /** Hunted on purpose; skeletons kite a wooden-sword player to death, so they are only answered under fire. */
@@ -248,9 +250,13 @@ final class PlayableSurvivalStage {
                 // Cave mobs far below are visible but unreachable; hunt at the player's level.
                 hostile = client.visibleEntityNearPlayerLevel(HUNTED_ENTITY_IDS, HUNT_MAX_VERTICAL_DISTANCE, unreachableHostiles);
             }
+            // Hunt hard (search, half health) only until the first kill; afterwards the soak keeps the
+            // original cautious defense, since every extra low-health fight risks another death.
+            float huntMinHealth = hostilesNeutralized == 0 ? HUNT_MIN_HEALTH : SURVIVAL_HOSTILE_DEFENSE_MIN_HEALTH;
             boolean canSearch = night
                 && !underFire
-                && health >= HUNT_MIN_HEALTH
+                && hostilesNeutralized == 0
+                && health >= huntMinHealth
                 && weapon.matches("minecraft:wooden_sword", 1);
             if (hostile == null && canSearch) {
                 // Nothing huntable in view: walk a fixed square around the soak start to find one.
@@ -271,7 +277,7 @@ final class PlayableSurvivalStage {
                     );
                 }
                 if (!hostileWithinReach) {
-                    boolean hunt = health >= HUNT_MIN_HEALTH
+                    boolean hunt = health >= huntMinHealth
                         && hostile.distanceSquared() <= HUNT_MAX_DISTANCE_SQUARED;
                     if (!hunt && !(underFire && hostile.distanceSquared() <= UNDER_FIRE_MAX_DISTANCE_SQUARED)) {
                         observations.add(
