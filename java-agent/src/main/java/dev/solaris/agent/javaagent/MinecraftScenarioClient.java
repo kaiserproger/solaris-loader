@@ -874,6 +874,44 @@ public final class MinecraftScenarioClient implements ScenarioClient {
     }
 
     @Override
+    public ScenarioEntityObservation visibleEntityNearPlayerLevel(
+        List<String> entityTypeIds,
+        double maxVerticalDistance,
+        java.util.Set<Integer> excludedEntityIds
+    ) throws Exception {
+        return executor.callOnClientThread(() -> {
+            Minecraft minecraft = requireInPlay();
+            Vec3 playerPosition = minecraft.player.position();
+            ScenarioEntityObservation nearest = null;
+            double nearestDistance = Double.MAX_VALUE;
+            for (Entity entity : minecraft.level.entitiesForRendering()) {
+                if (entity.isRemoved() || !entity.isAlive() || entity == minecraft.player || entity instanceof Creeper
+                    || excludedEntityIds.contains(entity.getId())) {
+                    continue;
+                }
+                if (!entityTypeIds.contains(BuiltInRegistries.ENTITY_TYPE.getKey(entity.getType()).toString())
+                    || Math.abs(entity.getY() - playerPosition.y) > maxVerticalDistance) {
+                    continue;
+                }
+                double distance = entity.distanceToSqr(playerPosition);
+                if (distance < nearestDistance) {
+                    nearestDistance = distance;
+                    nearest = entityObservation(entity, playerPosition, distance);
+                }
+            }
+            return nearest;
+        });
+    }
+
+    @Override
+    public int[] playerBlockXZ() throws Exception {
+        return executor.callOnClientThread(() -> {
+            BlockPos pos = requireInPlay().player.blockPosition();
+            return new int[] {pos.getX(), pos.getZ()};
+        });
+    }
+
+    @Override
     public ScenarioEntityInteractionResult interactEntity(ScenarioEntityInteraction interaction)
         throws Exception {
         return EntityInteractionDispatch.queue(
@@ -1142,7 +1180,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     );
                     minecraft.options.keySprint.setDown(true);
                     minecraft.options.keyUp.setDown(nextDetourDirection == 0);
-                    minecraft.options.keyJump.setDown(stepUp);
+                    minecraft.options.keyJump.setDown(stepUp || minecraft.player.isInWater());
                     minecraft.options.keyLeft.setDown(nextDetourDirection < 0);
                     minecraft.options.keyRight.setDown(nextDetourDirection > 0);
                     boolean inReach = ScenarioReach.WITHIN_SURVIVAL_REACH.includes(
@@ -1173,7 +1211,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     && (!(current instanceof Enemy) || (!combat.recovery.recovering()
                         && !(current instanceof Creeper)))
                     && ScenarioReach.WITHIN_SURVIVAL_REACH.includes(
-                        requireInPlay().player.position().distanceToSqr(current.position()));
+                        requireInPlay().player.position().distanceToSqr(current.position()))
+                    // A close hostile behind a wall or up a tree is not an arrival.
+                    && (!(current instanceof Enemy) || requireInPlay().player.hasLineOfSight(current));
             });
             outcome = closeEnough ? "in_reach_after_timeout" : "timeout";
             return closeEnough;
@@ -2390,7 +2430,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                         : playerPosition.distanceToSqr(target) > PICKUP_APPROACH_DISTANCE_SQUARED);
                     minecraft.options.keySprint.setDown(approaching);
                     minecraft.options.keyUp.setDown(approaching && nextDetourDirection == 0);
-                    minecraft.options.keyJump.setDown(approaching && stepUp);
+                    minecraft.options.keyJump.setDown(approaching && (stepUp || minecraft.player.isInWater()));
                     minecraft.options.keyLeft.setDown(approaching && nextDetourDirection < 0);
                     minecraft.options.keyRight.setDown(approaching && nextDetourDirection > 0);
                     boolean visible = dropPosition != null;
@@ -2691,7 +2731,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     );
                     minecraft.options.keySprint.setDown(true);
                     minecraft.options.keyUp.setDown(nextDetourDirection == 0);
-                    minecraft.options.keyJump.setDown(stepUp);
+                    minecraft.options.keyJump.setDown(stepUp || minecraft.player.isInWater());
                     minecraft.options.keyLeft.setDown(nextDetourDirection < 0);
                     minecraft.options.keyRight.setDown(nextDetourDirection > 0);
                     boolean targetInReach = breakableBlockTarget(
@@ -2800,7 +2840,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     );
                     minecraft.options.keySprint.setDown(!reachedPosition && distanceSquared >= 0.04);
                     minecraft.options.keyUp.setDown(!reachedPosition && nextDetourDirection == 0);
-                    minecraft.options.keyJump.setDown(!reachedPosition && stepUp);
+                    // Held jump keeps a swimming player at the surface instead of sinking to drown.
+                    minecraft.options.keyJump.setDown(!reachedPosition && (stepUp || minecraft.player.isInWater()));
                     minecraft.options.keyLeft.setDown(!reachedPosition && nextDetourDirection < 0);
                     minecraft.options.keyRight.setDown(!reachedPosition && nextDetourDirection > 0);
                     return new ApproachSample(
@@ -2993,8 +3034,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     minecraft.options.keyUp.setDown(!reached);
                     minecraft.options.keyLeft.setDown(false);
                     minecraft.options.keyRight.setDown(false);
-                    minecraft.options.keyJump.setDown(!reached && minecraft.player.horizontalCollision
-                        && MovementDetour.clearance(minecraft, target).raisedForward());
+                    minecraft.options.keyJump.setDown(!reached && (minecraft.player.isInWater()
+                        || minecraft.player.horizontalCollision && MovementDetour.clearance(minecraft, target).raisedForward()));
                     var box = minecraft.player.getBoundingBox();
                     Vec3 velocity = minecraft.player.getDeltaMovement();
                     return reached && groundedInsideColumn(box.minX, box.minZ, box.maxX, box.maxZ,
@@ -3275,7 +3316,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     );
                     minecraft.options.keySprint.setDown(!onTarget);
                     minecraft.options.keyUp.setDown(!onTarget && nextDetourDirection == 0);
-                    minecraft.options.keyJump.setDown(stepUp);
+                    minecraft.options.keyJump.setDown(stepUp || minecraft.player.isInWater());
                     minecraft.options.keyLeft.setDown(!onTarget && nextDetourDirection < 0);
                     minecraft.options.keyRight.setDown(!onTarget && nextDetourDirection > 0);
                     return new HazardStandSample(false, nextDetourDirection);
@@ -3755,7 +3796,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         double eyeBoxDistance = Math.sqrt(eyeToBoxDistanceSquared(minecraft, target));
         combat.minDistance = Math.min(combat.minDistance, eyeBoxDistance);
         combat.maxDistance = Math.max(combat.maxDistance, eyeBoxDistance);
-        boolean inMelee = !creeper && eyeBoxDistance <= 3.0;
+        boolean sight = minecraft.player.hasLineOfSight(target);
+        // Distance alone would stand still against a hostile behind a wall it cannot be hit through.
+        boolean inMelee = !creeper && eyeBoxDistance <= 3.0 && sight;
         boolean retreatToEat = combat.recovery.recovering() && !combat.recovery.ateOwnedFood() && !food.isEmpty();
         combat.crowdedSeen += crowded ? 1 : 0;
         if (inMelee) {
@@ -3778,7 +3821,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             // be stood against: after STUCK ticks without progress, run out of its fire for a while
             // and report the engagement as abandoned so the caller can re-evaluate.
             long now = minecraft.player.tickCount;
-            boolean wantsApproach = distanceSquared > 7.29;
+            boolean wantsApproach = distanceSquared > 7.29 || !sight;
             if (!wantsApproach) {
                 // Close enough that the next swing is only waiting on cooldown/knockback: not stuck.
                 combat.bestDistanceTick = -1L;
@@ -3796,7 +3839,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 combat.stuckRetreat++;
                 combat.gaveUp |= now >= combat.retreatUntilTick;
             } else {
-                int movement = CombatTactics.movement(distanceSquared, attackReady);
+                int movement = sight ? CombatTactics.movement(distanceSquared, attackReady) : 1;
                 if (movement < 0) {
                     retreatFromHostilesOnClientThread(minecraft);
                 } else if (movement > 0) {
@@ -3868,6 +3911,12 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES,
             new Vec3(target.x, minecraft.player.getEyeY(), target.z));
         MovementClearance clearance = MovementDetour.clearance(minecraft, target);
+        if (minecraft.player.isInWater()) {
+            // Footing checks reject every fluid cell, which would leave a swimming player sinking.
+            minecraft.options.keyUp.setDown(true);
+            minecraft.options.keyJump.setDown(true);
+            return true;
+        }
         boolean stepUp = minecraft.player.horizontalCollision && clearance.raisedForward();
         boolean direct = (clearance.direct() || stepUp) && safeCombatFooting(minecraft, dx, dz);
         boolean left = clearance.left() && safeCombatFooting(minecraft, dz, -dx);

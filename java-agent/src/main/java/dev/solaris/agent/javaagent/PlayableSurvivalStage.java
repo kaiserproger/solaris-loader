@@ -24,6 +24,11 @@ final class PlayableSurvivalStage {
     private PlayableSurvivalStage() {
     }
     private static final float SURVIVAL_HOSTILE_DEFENSE_MIN_HEALTH = 15.0F;
+    /**
+     * Hunting/searching floor: without food the player never regenerates above the first hit,
+     * and a wooden-sword player at half health still beats one zombie.
+     */
+    private static final float HUNT_MIN_HEALTH = 10.0F;
     /** Combat acceptance over the whole soak: at least this many hostiles must be killed ... */
     private static final int MIN_HOSTILES_NEUTRALIZED = 1;
     /** ... and the player may not die more often than this. */
@@ -33,6 +38,11 @@ final class PlayableSurvivalStage {
     private static final double UNDER_FIRE_MAX_DISTANCE_SQUARED = 20.0 * 20.0;
     /** A healthy night player walks up to a visible hostile this close instead of waiting for it forever. */
     private static final double HUNT_MAX_DISTANCE_SQUARED = 48.0 * 48.0;
+    /** Hostiles further above/below than this are in caves or on cliffs the bot cannot path to. */
+    private static final double HUNT_MAX_VERTICAL_DISTANCE = 6.0;
+    /** Night search square around the soak start, one corner per leg. */
+    private static final int[][] SEARCH_LEGS = {{32, 0}, {0, 32}, {-32, 0}, {0, -32}};
+    private static final Duration SEARCH_STEP_TIMEOUT = Duration.ofSeconds(20);
     private static final long DAY_LENGTH_TICKS = 24_000L;
 
     private static final List<String> PASSIVE_NATURAL_ENTITY_IDS = List.of(
@@ -48,6 +58,13 @@ final class PlayableSurvivalStage {
         "minecraft:spider",
         // Run 20261016T095132: three slimes camped the respawn point and killed the player 15 times
         // while the stage ignored them; any hostile that damages the player is a target.
+        "minecraft:slime"
+    );
+
+    /** Hunted on purpose; skeletons kite a wooden-sword player to death, so they are only answered under fire. */
+    private static final List<String> HUNTED_ENTITY_IDS = List.of(
+        "minecraft:zombie",
+        "minecraft:spider",
         "minecraft:slime"
     );
     private static final Duration SURVIVAL_SOAK_STEP_TIMEOUT = Duration.ofSeconds(30);
@@ -103,6 +120,10 @@ final class PlayableSurvivalStage {
         boolean sawNaturalHostile = false;
         List<ScenarioItemDropIdentity> pickaxeDropsBefore = client.visibleItemDropIdentities("minecraft:wooden_pickaxe");
         List<ScenarioItemDropIdentity> swordDropsBefore = client.visibleItemDropIdentities("minecraft:wooden_sword");
+        int[] searchOrigin = client.playerBlockXZ();
+        int searchLegs = 0;
+        // Hunt targets the bot failed to reach (cliffs, water, enclosed caves): never re-picked.
+        java.util.Set<Integer> unreachableHostiles = new java.util.HashSet<>();
         while (completedTicks < soakTicks) {
             long nextServerTime = client.waitForServerTimeAfter(
                 currentServerTime,
@@ -214,12 +235,31 @@ final class PlayableSurvivalStage {
                 HOSTILE_ENTITY_IDS,
                 ScenarioReach.WITHIN_SURVIVAL_REACH
             );
+            if (hostile != null && !underFire && unreachableHostiles.contains(hostile.entityId())) {
+                hostile = null;
+            }
             boolean hostileWithinReach = hostile != null;
-            if (hostile == null && (night || underFire)) {
+            if (hostile == null && underFire) {
                 hostile = client.visibleEntity(
                     HOSTILE_ENTITY_IDS,
                     ScenarioReach.OUTSIDE_SURVIVAL_REACH
                 );
+            } else if (hostile == null && night) {
+                // Cave mobs far below are visible but unreachable; hunt at the player's level.
+                hostile = client.visibleEntityNearPlayerLevel(HUNTED_ENTITY_IDS, HUNT_MAX_VERTICAL_DISTANCE, unreachableHostiles);
+            }
+            boolean canSearch = night
+                && !underFire
+                && health >= HUNT_MIN_HEALTH
+                && weapon.matches("minecraft:wooden_sword", 1);
+            if (hostile == null && canSearch) {
+                // Nothing huntable in view: walk a fixed square around the soak start to find one.
+                int[] leg = SEARCH_LEGS[searchLegs++ % SEARCH_LEGS.length];
+                int x = searchOrigin[0] + leg[0];
+                int z = searchOrigin[1] + leg[1];
+                boolean walked = client.approachPosition(x, z, SEARCH_STEP_TIMEOUT);
+                observations.add("survival hostile search: walked=" + walked + " target=" + x + "," + z);
+                continue;
             }
             if (hostile != null) {
                 if (!sawNaturalHostile) {
@@ -231,7 +271,7 @@ final class PlayableSurvivalStage {
                     );
                 }
                 if (!hostileWithinReach) {
-                    boolean hunt = health >= SURVIVAL_HOSTILE_DEFENSE_MIN_HEALTH
+                    boolean hunt = health >= HUNT_MIN_HEALTH
                         && hostile.distanceSquared() <= HUNT_MAX_DISTANCE_SQUARED;
                     if (!hunt && !(underFire && hostile.distanceSquared() <= UNDER_FIRE_MAX_DISTANCE_SQUARED)) {
                         observations.add(
@@ -241,6 +281,17 @@ final class PlayableSurvivalStage {
                                 + " distance=" + String.format(java.util.Locale.ROOT, "%.1f", Math.sqrt(hostile.distanceSquared()))
                                 + " health=" + health
                         );
+                        if (canSearch) {
+                            // Huntable level but too far: close the distance, then re-scan.
+                            boolean walked = client.approachPosition(
+                                (int) Math.floor(hostile.x()),
+                                (int) Math.floor(hostile.z()),
+                                SEARCH_STEP_TIMEOUT
+                            );
+                            observations.add(
+                                "survival hostile search: walked=" + walked + " toward entity_id=" + hostile.entityId()
+                            );
+                        }
                         continue;
                     }
                     observations.add(
@@ -264,6 +315,10 @@ final class PlayableSurvivalStage {
                 // while healing and otherwise fights in place instead of idling under attack.
                 boolean approached = (hostileWithinReach && injured) || client.approachEntity(hostile, APPROACH_TIMEOUT);
                 boolean gone = approached && client.attackEntityUntilRemoved(hostile, ENTITY_ATTACK_TIMEOUT);
+                if (!approached && !underFire) {
+                    // Could not reach it with a clear swing (cliff, water, behind a wall): pick another target.
+                    unreachableHostiles.add(hostile.entityId());
+                }
                 float healthAfterCombat = client.playerHealth();
                 engagements++;
                 for (ScenarioCombatRecord record : client.drainCombatTelemetry()) {
@@ -475,6 +530,8 @@ final class PlayableSurvivalStage {
             return false;
         }
 
+        // A hunt can die far from the respawn point, outside the drops' view range.
+        int[] deathXZ = client.playerBlockXZ();
         boolean respawned = client.performRespawn(RESPAWN_TIMEOUT);
         observations.add("survival death respawn: " + (respawned ? "passed" : "failed"));
         if (!respawned) {
@@ -487,10 +544,17 @@ final class PlayableSurvivalStage {
             return false;
         }
         ScenarioBlockTarget anchor = readMarker(markerPath, "survival-death-recovery");
+        if (client.inventoryCount("minecraft:wooden_pickaxe") == 0
+            || (swordDrop != null && client.inventoryCount("minecraft:wooden_sword") == 0)) {
+            boolean returned = client.approachPosition(deathXZ[0], deathXZ[1], APPROACH_TIMEOUT);
+            observations.add(
+                "survival death return: walked=" + returned + " target=" + deathXZ[0] + "," + deathXZ[1]
+            );
+        }
+        // Counted after the return walk, which may already have picked the drops up.
         int pickaxeCountAfterRespawn = client.inventoryCount("minecraft:wooden_pickaxe");
         int swordCountAfterRespawn = client.inventoryCount("minecraft:wooden_sword");
-        // Death empties the inventory, so a pickaxe held right after respawn is the drop,
-        // collected on arrival when the respawn point lies next to the death drops.
+        // Death empties the inventory, so a pickaxe held now is the drop, collected on arrival.
         boolean pickaxeAutoRecovered = pickaxeCountAfterRespawn > 0;
         boolean pickaxeRecovered = pickaxeAutoRecovered;
         if (!pickaxeAutoRecovered) {

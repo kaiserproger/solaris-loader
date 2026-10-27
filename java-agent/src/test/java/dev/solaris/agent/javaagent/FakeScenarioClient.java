@@ -1140,6 +1140,21 @@ final class FakeScenarioClient implements ScenarioClient {
         }
 
         @Override
+        public ScenarioEntityObservation visibleEntityNearPlayerLevel(
+            List<String> entityTypeIds,
+            double maxVerticalDistance,
+            java.util.Set<Integer> excludedEntityIds
+        ) {
+            // The fake world is flat: every hostile is at the player's level.
+            return visibleEntity(entityTypeIds, ScenarioReach.OUTSIDE_SURVIVAL_REACH);
+        }
+
+        @Override
+        public int[] playerBlockXZ() {
+            return new int[] {0, 0};
+        }
+
+        @Override
         public ScenarioEntityObservation visibleEntity(List<String> entityTypeIds, ScenarioReach reach) {
             operations.add("visibleEntity:" + String.join("|", entityTypeIds) + ":" + reach.label());
             if (visiblePassiveDuringSoak && entityTypeIds.contains("minecraft:cow")) {

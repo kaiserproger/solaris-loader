@@ -181,7 +181,7 @@ final class PlayableSurvivalStageTest {
 
         assertEquals("failed", report.result(), () -> String.join("\n", report.observations()));
         assertTrue(
-            client.operations.contains("visibleEntity:minecraft:zombie|minecraft:skeleton|minecraft:spider|minecraft:slime:outside-survival-reach"),
+            client.operations.contains("visibleEntity:minecraft:zombie|minecraft:spider|minecraft:slime:outside-survival-reach"),
             "the long survival gate must scan beyond melee reach once night begins"
         );
         assertFalse(

@@ -269,6 +269,23 @@ interface ScenarioClient {
         throw new UnsupportedOperationException("scenario client does not support current entity scans");
     }
 
+    /**
+     * Nearest live entity of these types, not in {@code excludedEntityIds}, whose feet are within
+     * {@code maxVerticalDistance} of the player's.
+     */
+    default ScenarioEntityObservation visibleEntityNearPlayerLevel(
+        List<String> entityTypeIds,
+        double maxVerticalDistance,
+        java.util.Set<Integer> excludedEntityIds
+    ) throws Exception {
+        throw new UnsupportedOperationException("scenario client does not support level-filtered entity scans");
+    }
+
+    /** The local player's block x and z. */
+    default int[] playerBlockXZ() throws Exception {
+        throw new UnsupportedOperationException("scenario client does not support player position reads");
+    }
+
     default ScenarioEntityMotionObservation waitForEntityMotion(
         ScenarioEntityObservation entity,
         double minimumHorizontalDistance,
