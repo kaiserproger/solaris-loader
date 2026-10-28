@@ -371,10 +371,10 @@ public final class SolarisNeoForgeLoader {
                 .map(permission -> permission.wireName())
                 .collect(Collectors.joining(", "));
         client.execute(() -> {
-            Screen parent = client.screen;
-            client.setScreen(new ConfirmScreen(
+            Screen parent = client.gui.screen();
+            client.gui.setScreen(new ConfirmScreen(
                     allowed -> {
-                        client.setScreen(parent);
+                        client.gui.setScreen(parent);
                         publishMcpState();
                         decision.accept(allowed);
                     },

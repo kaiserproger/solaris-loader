@@ -189,7 +189,7 @@ tasks.named("runClientAgent") {
 
 tasks.named("runClientMcp") {
     group = "verification"
-    description = "Runs Minecraft 26.1.2 with the reusable in-client Streamable HTTP MCP server."
+    description = "Runs Minecraft 26.3 with the reusable in-client Streamable HTTP MCP server."
     dependsOn(tasks.named("validateClientMcpRunProperties"))
     notCompatibleWithConfigurationCache(clientMcpConfigurationCacheReason)
 }

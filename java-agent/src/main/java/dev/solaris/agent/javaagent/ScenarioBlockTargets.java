@@ -5,6 +5,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -363,7 +364,7 @@ final class ScenarioBlockTargets {
         }
         minecraft.gameMode.startDestroyBlock(obstacle, Direction.UP);
         minecraft.gameMode.continueDestroyBlock(obstacle, Direction.UP);
-        minecraft.player.swing(InteractionHand.MAIN_HAND);
+        minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
         return true;
     }
 
@@ -444,7 +445,7 @@ final class ScenarioBlockTargets {
             return false;
         }
         BlockState state = minecraft.level.getBlockState(neighbour);
-        return state.isAir() || !state.blocksMotion();
+        return state.isAir() || state.getCollisionShape(minecraft.level, neighbour).isEmpty();
     }
 
     private static ScenarioBlockPair firstSolidNeighbourPair(
@@ -586,7 +587,8 @@ final class ScenarioBlockTargets {
             return false;
         }
         BlockState state = minecraft.level.getBlockState(pos);
-        return (state.isAir() || !state.blocksMotion()) && minecraft.level.getFluidState(pos).isEmpty();
+        return (state.isAir() || state.getCollisionShape(minecraft.level, pos).isEmpty())
+            && minecraft.level.getFluidState(pos).isEmpty();
     }
 
     private static boolean dropsAsDirt(String blockId) {
@@ -609,7 +611,7 @@ final class ScenarioBlockTargets {
             return false;
         }
         BlockState state = minecraft.level.getBlockState(pos);
-        return !state.isAir() && state.blocksMotion();
+        return !state.isAir() && !state.getCollisionShape(minecraft.level, pos).isEmpty();
     }
 
     private static boolean isNonAirLoaded(BlockPos pos) {

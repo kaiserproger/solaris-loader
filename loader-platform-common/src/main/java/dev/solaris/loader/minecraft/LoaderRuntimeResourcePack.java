@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Stream;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -21,6 +22,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.packs.PackLocationInfo;
+import net.minecraft.server.packs.PackMetadataResources;
 import net.minecraft.server.packs.PackResources;
 import net.minecraft.server.packs.PackSelectionConfig;
 import net.minecraft.server.packs.PackType;
@@ -286,15 +288,15 @@ public final class LoaderRuntimeResourcePack {
     private static Pack pack(Map<Identifier, byte[]> resources) {
         Pack.ResourcesSupplier supplier = new Pack.ResourcesSupplier() {
             @Override
-            public PackResources openPrimary(PackLocationInfo location) {
+            public PackMetadataResources openMetadata(PackLocationInfo location) {
                 return new MemoryPackResources(location, resources);
             }
 
             @Override
-            public PackResources openFull(
+            public Stream<PackResources> openResources(
                     PackLocationInfo location,
                     Pack.Metadata metadata) {
-                return new MemoryPackResources(location, resources);
+                return Stream.of(new MemoryPackResources(location, resources));
             }
         };
         Pack.Metadata metadata = new Pack.Metadata(
@@ -319,7 +321,7 @@ public final class LoaderRuntimeResourcePack {
         }
     }
 
-    private static final class MemoryPackResources implements PackResources {
+    private static final class MemoryPackResources implements PackResources, PackMetadataResources {
         private final PackLocationInfo location;
         private final Map<Identifier, byte[]> resources;
         private final Map<String, List<Identifier>> namespaces;

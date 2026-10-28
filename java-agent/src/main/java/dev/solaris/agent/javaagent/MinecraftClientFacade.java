@@ -28,6 +28,7 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.phys.Vec3;
 
 import java.lang.reflect.Method;
@@ -66,7 +67,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         String dimension = minecraft.level == null
             ? ""
             : minecraft.level.dimension().identifier().toString();
-        String screen = minecraft.screen == null ? "none" : minecraft.screen.getClass().getName();
+        String screen = minecraft.gui.screen() == null ? "none" : minecraft.gui.screen().getClass().getName();
         return new ClientSnapshot(
             inPlay,
             dimension,
@@ -430,7 +431,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         // LOGIN, so pass null exactly like the vanilla multiplayer screen does;
         // only a client following a Transfer packet carries state here.
         ConnectScreen.startConnecting(
-            minecraft.screen,
+            minecraft.gui.screen(),
             minecraft,
             ServerAddress.parseString(address),
             serverData,
@@ -652,7 +653,7 @@ public final class MinecraftClientFacade implements ClientFacade {
                 )
             );
             minecraft.gameMode.attack(minecraft.player, entity);
-            minecraft.player.swing(InteractionHand.MAIN_HAND);
+            minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
             return new EntityAttackDispatch(
                 minecraft.level,
                 healthBefore,
@@ -803,9 +804,9 @@ public final class MinecraftClientFacade implements ClientFacade {
                 null
             );
         }
-        if (minecraft.screen != null) {
+        if (minecraft.gui.screen() != null) {
             minecraft.player.closeContainer();
-            minecraft.setScreen(null);
+            minecraft.gui.setScreen(null);
         }
         boolean collisionFree = minecraft.level.noCollision(
             minecraft.player,
@@ -1084,7 +1085,7 @@ public final class MinecraftClientFacade implements ClientFacade {
     @Override
     public void clickConfirmationButton(String expectedTitle, String buttonLabel) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (!(minecraft.screen instanceof ConfirmScreen screen)) {
+        if (!(minecraft.gui.screen() instanceof ConfirmScreen screen)) {
             throw new IllegalStateException("current screen is not a confirmation screen");
         }
         String actualTitle = screen.getTitle().getString();
@@ -1135,7 +1136,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         }
         screen.setFocused(matched);
         matched.setValue(value);
-        if (minecraft.screen != screen || !screen.children().contains(matched)) {
+        if (minecraft.gui.screen() != screen || !screen.children().contains(matched)) {
             throw new IllegalStateException("screen input became stale during the edit");
         }
         if (!matched.getValue().equals(value)) {
@@ -1167,7 +1168,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         String expectedScreenClass,
         String expectedTitle
     ) {
-        Screen screen = minecraft.screen;
+        Screen screen = minecraft.gui.screen();
         if (screen == null) {
             throw new IllegalStateException("no client screen is open");
         }
@@ -1207,7 +1208,7 @@ public final class MinecraftClientFacade implements ClientFacade {
     @Override
     public void openInventory() {
         Minecraft minecraft = requireInPlay();
-        minecraft.setScreen(new InventoryScreen(minecraft.player));
+        minecraft.gui.setScreen(new InventoryScreen(minecraft.player));
     }
 
     @Override
@@ -1375,7 +1376,7 @@ public final class MinecraftClientFacade implements ClientFacade {
             Screenshot.grab(
                 directory.toFile(),
                 path.getFileName().toString(),
-                minecraft.getMainRenderTarget(),
+                minecraft.gameRenderer.mainRenderTarget(),
                 1,
                 message -> completion.complete(message.getString())
             );
@@ -1503,7 +1504,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         for (String input : inputs) {
             if (input.startsWith("key.keyboard.")) {
                 InputConstants.Key key = InputConstants.getKey(input);
-                if (key.getType() != InputConstants.Type.KEYSYM || key.getValue() < 0
+                if (key.getType() != InputConstants.Type.KEYBOARD || key.getValue() < 0
                         || !key.getName().equals(input)) {
                     throw new IllegalArgumentException("unsupported keyboard key: " + input);
                 }
@@ -1521,7 +1522,7 @@ public final class MinecraftClientFacade implements ClientFacade {
             throws ReflectiveOperationException {
         if (input.startsWith("key.keyboard.")) {
             InputConstants.Key key = InputConstants.getKey(input);
-            if (key.getType() != InputConstants.Type.KEYSYM || key.getValue() < 0) {
+            if (key.getType() != InputConstants.Type.KEYBOARD || key.getValue() < 0) {
                 throw new IllegalArgumentException("unsupported keyboard key: " + input);
             }
             Method callback = KeyboardHandler.class.getDeclaredMethod(

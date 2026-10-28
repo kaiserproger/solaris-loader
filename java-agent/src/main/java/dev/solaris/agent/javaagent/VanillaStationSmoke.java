@@ -88,7 +88,7 @@ final class VanillaStationSmoke {
         require(client.moveSelectedItemToContainerSlot(0, TOOL, 1, TIMEOUT), "anvil tool transfer failed");
         int renameState = smoke.read(() -> minecraft().player.containerMenu.getStateId());
         smoke.read(() -> {
-            VanillaUiSmokeScenario.field(minecraft().screen, "name", EditBox.class).setValue(NAME);
+            VanillaUiSmokeScenario.field(minecraft().gui.screen(), "name", EditBox.class).setValue(NAME);
             return null;
         });
         boolean renamed = smoke.await(() -> minecraft().player.containerMenu.getStateId() != renameState

@@ -4,7 +4,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.nio.ByteBuffer;
 import org.junit.jupiter.api.Test;
-import org.lwjgl.glfw.GLFW;
+import static org.lwjgl.sdl.SDLHints.SDL_HINT_VIDEO_DRIVER;
+import static org.lwjgl.sdl.SDLHints.SDL_SetHint;
+import static org.lwjgl.sdl.SDLInit.SDL_INIT_VIDEO;
+import static org.lwjgl.sdl.SDLInit.SDL_Init;
+import static org.lwjgl.sdl.SDLInit.SDL_Quit;
+import static org.lwjgl.sdl.SDLVideo.*;
 import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 
@@ -18,22 +23,23 @@ class ComputerCaptureTest {
     }
     @Test void linuxX11CaptureUploadsActualPixelsToTexture() throws Exception {
         assumeTrue("1".equals(System.getenv("SOLARIS_CAPTURE_SMOKE_X11")), "Explicit isolated Xvfb smoke only");
-        // Never let inherited WAYLAND_DISPLAY redirect this isolated X11 smoke.
-        GLFW.glfwInitHint(GLFW.GLFW_PLATFORM, GLFW.GLFW_PLATFORM_X11);
-        assertTrue(GLFW.glfwInit(), "GLFW must initialize on the isolated display");
+        // Minecraft 26.3 uses SDL3 rather than GLFW. Pin this opt-in smoke to X11.
+        assertTrue(SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "x11"));
+        assertTrue(SDL_Init(SDL_INIT_VIDEO), "SDL must initialize on the isolated display");
         long window = 0;
+        long context = 0;
         try {
-            GLFW.glfwWindowHint(GLFW.GLFW_DECORATED, GLFW.GLFW_FALSE);
-            GLFW.glfwWindowHint(GLFW.GLFW_DOUBLEBUFFER, GLFW.GLFW_FALSE);
-            window = GLFW.glfwCreateWindow(64, 64, "Solaris capture smoke (synthetic pixels)", 0, 0);
+            window = SDL_CreateWindow(
+                    "Solaris capture smoke (synthetic pixels)", 64, 64, SDL_WINDOW_BORDERLESS | SDL_WINDOW_OPENGL);
             assertNotEquals(0, window);
-            GLFW.glfwSetWindowPos(window, 0, 0);
-            GLFW.glfwMakeContextCurrent(window);
+            assertTrue(SDL_SetWindowPosition(window, 0, 0));
+            context = SDL_GL_CreateContext(window);
+            assertNotEquals(0, context);
+            assertTrue(SDL_GL_MakeCurrent(window, context));
             GL.createCapabilities();
             GL11.glClearColor(32f / 255, 128f / 255, 224f / 255, 1);
             GL11.glClear(GL11.GL_COLOR_BUFFER_BIT);
             GL11.glFinish();
-            GLFW.glfwPollEvents();
             var frame = X11ComputerCapture.capture("/usr/bin/ffmpeg", System.getenv("DISPLAY"), 64, 64);
             int center = (32 * 64 + 32) * 4;
             assertPixel(frame.rgba(), center);
@@ -47,8 +53,9 @@ class ComputerCaptureTest {
                 assertPixel(readback, center);
             }
         } finally {
-            if (window != 0) GLFW.glfwDestroyWindow(window);
-            GLFW.glfwTerminate();
+            if (context != 0) SDL_GL_DestroyContext(context);
+            if (window != 0) SDL_DestroyWindow(window);
+            SDL_Quit();
         }
     }
     private static void assertPixel(ByteBuffer pixels, int offset) {

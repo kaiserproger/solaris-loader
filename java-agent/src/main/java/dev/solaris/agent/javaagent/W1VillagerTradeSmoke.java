@@ -103,7 +103,7 @@ final class W1VillagerTradeSmoke {
             + smoke.read(() -> menu().getOffers().size()) + " chosen_index=" + offerIndex);
         OfferSnapshot chosen = smoke.read(() -> snapshot(offerIndex));
         selectOffer(offerIndex);
-        smoke.check(smoke.read(() -> VanillaUiSmokeScenario.field(minecraft().screen, "shopItem", Integer.class)
+        smoke.check(smoke.read(() -> VanillaUiSmokeScenario.field(minecraft().gui.screen(), "shopItem", Integer.class)
                 == offerIndex && slot(0).isEmpty() && slot(1).isEmpty() && menu().getCarried().isEmpty()),
             "villager-native-offer-selection", "selected received offer=" + chosen);
 
@@ -191,14 +191,14 @@ final class W1VillagerTradeSmoke {
                 new EntityHitResult(target, target.getEyePosition()), InteractionHand.MAIN_HAND);
             return null;
         });
-        smoke.check(smoke.await(() -> minecraft().screen instanceof MerchantScreen
+        smoke.check(smoke.await(() -> minecraft().gui.screen() instanceof MerchantScreen
                 && minecraft().player.containerMenu instanceof MerchantMenu merchant && !merchant.getOffers().isEmpty()),
             step, "native entity interaction; same villager_uuid=" + id + " received MerchantScreen and MerchantOffers");
     }
 
     private void selectOffer(int index) throws Exception {
         smoke.read(() -> {
-            MerchantScreen screen = (MerchantScreen) minecraft().screen;
+            MerchantScreen screen = (MerchantScreen) minecraft().gui.screen();
             Button[] buttons = VanillaUiSmokeScenario.field(screen, "tradeOfferButtons", Button[].class);
             int scroll = VanillaUiSmokeScenario.field(screen, "scrollOff", Integer.class);
             if (index >= buttons.length) {

@@ -30,7 +30,7 @@ abstract class KeyboardHandlerMixin {
     private void solaris$keyEdge(long window, int action, KeyEvent event, CallbackInfo callback) {
         if (window == Minecraft.getInstance().getWindow().handle()) {
             LoaderMinecraftInput.afterKeyPress(
-                    action, event.key(), event.scancode(), event.modifiers());
+                    action, event.key(), event.keycode(), event.modifiers());
         }
     }
 }

@@ -6,6 +6,7 @@ import net.minecraft.core.Direction;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.item.PrimedTnt;
 import net.minecraft.world.item.BucketItem;
+import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.LightLayer;
 import net.minecraft.world.level.block.Blocks;
@@ -204,7 +205,7 @@ final class W1TntFireLightSmoke {
             var result = minecraft().player.getMainHandItem().getItem() instanceof BucketItem
                 ? minecraft().gameMode.useItem(minecraft().player, InteractionHand.MAIN_HAND)
                 : minecraft().gameMode.useItemOn(minecraft().player, InteractionHand.MAIN_HAND, hit);
-            minecraft().player.swing(InteractionHand.MAIN_HAND);
+            minecraft().player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
             return new ScenarioUseResult(result.toString(), ackBefore);
         });
     }

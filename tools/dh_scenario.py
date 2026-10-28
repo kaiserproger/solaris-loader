@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Real MC 26.1.2 + DH protocol-16 scenario, using core's canonical lifecycle.
+"""Real MC 26.3 + DH protocol-16 scenario, using core's canonical lifecycle.
 
 The copied Prism template is local-only. This driver never modifies the owner's
 instance, sends a seed, injects DH cache data, or substitutes a protocol bot.
@@ -150,8 +150,8 @@ def run(args: argparse.Namespace) -> int:
     # System project properties override the normal Loader defaults for this
     # independently pinned DH cell; no owner Gradle file is changed.
     os.environ["GRADLE_OPTS"] = os.environ.get("GRADLE_OPTS", "") + (
-        " -Dorg.gradle.project.fabricLoaderVersion=0.18.5"
-        " -Dorg.gradle.project.fabricApiVersion=0.149.1+26.1.2"
+        " -Dorg.gradle.project.fabricLoaderVersion=0.19.5"
+        " -Dorg.gradle.project.fabricApiVersion=0.163.0+26.3"
         " -Dorg.gradle.jvmargs=-Xmx768m -Dorg.gradle.workers.max=2"
     )
     sys.path.insert(0, str(repo))
@@ -162,9 +162,9 @@ def run(args: argparse.Namespace) -> int:
     from tools.harness.backends.light_wire import LightWireProxy
     import subprocess
 
-    template = loader / ".analysis/prism-26.1.2/minecraft"
+    template = loader / ".analysis/prism-26.3/minecraft"
     games = loader / ".analysis/dh-runs" / artifact.name
-    report = {"passed": False, "minecraft": "26.1.2", "dh": "3.3.3", "protocol": 16,
+    report = {"passed": False, "minecraft": "26.3", "dh": "3.3.3", "protocol": 16,
               "platform": args.platform, "camera": [0, 200, 0, -90, 4.5],
               "landmark": [1024, 80, 0, 1031, 200, 7], "dh_radius_chunks": 128,
               "edited_landmark": [1024, 80, 0, 1031, 232, 7],

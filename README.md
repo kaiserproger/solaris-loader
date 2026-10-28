@@ -17,9 +17,9 @@ JAR from its Assets, not GitHub's source-code archive:
 
 | Minecraft | Platform baseline | Download |
 | --- | --- | --- |
-| 26.1.2 | Fabric Loader 0.19.3 + Fabric API 0.155.2+26.1.2 | `loader-fabric-0.1.0.jar` |
-| 26.1.2 | NeoForge 26.1.2.76 | `loader-neoforge-0.1.0.jar` |
-| 26.1.2 | Forge 26.1.2-64.1.0 | `loader-forge-0.1.0.jar` |
+| 26.3 | Fabric Loader 0.19.5 + Fabric API 0.163.0+26.3 | `loader-fabric-0.1.0.jar` |
+| 26.3 | NeoForge 26.3.0.83 | `loader-neoforge-0.1.0.jar` |
+| 26.3 | Forge 26.3-66.1.0 | `loader-forge-0.1.0.jar` |
 
 Use **Java 25**. The same platform JAR works across operating systems; the
 launcher, Java runtime, Minecraft version, and mod loader must match. Do not
@@ -40,7 +40,7 @@ survival-readiness claims.
 ## Install in your launcher
 
 1. Close the Minecraft instance.
-2. Select Minecraft **26.1.2**, Java **25**, and one platform from the table.
+2. Select Minecraft **26.3**, Java **25**, and one platform from the table.
 3. Open the **game directory of that instance** and its `mods/` folder.
 4. Copy the matching Solaris Loader JAR there. For Fabric, also install the
    matching Fabric API JAR. Remove an older Solaris Loader JAR from that same
@@ -186,7 +186,7 @@ Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
 `loader-core` contains the wire-3 manifest/ack and view codecs and validates
 platform, permissions, and exact cache identities. `loader-fabric`, `loader-neoforge`,
 and `loader-forge` register the same Configuration-state manifest and
-acknowledgement payloads through their native 26.1.2 networking APIs.
+acknowledgement payloads through their native 26.3 networking APIs.
 
 Bundle `loaders` metadata recognizes the shared supported-platform values
 `native`, `fabric`, `neoforge`, and `forge`. The `native` value is preserved for
@@ -268,7 +268,7 @@ for undeclared model actions, fields or tabs. Declared actions and inputs absent
 from the live model are hidden, not enabled no-op buttons or placeholder fields;
 live disabled actions remain disabled. Both modes open with the authoritative
 model the `open_view` carried. Referenced items render
-through a local vanilla stack with Minecraft 26.1.2's owner-namespaced
+through a local vanilla stack with Minecraft 26.3's owner-namespaced
 `ITEM_MODEL`; no late registry mutation is used. `open_view` carries
 `view_instance_id`, `revision`, `view_id`, `title` and the model;
 `present_view` replaces the model and resets the action sequence; `close_view`
@@ -371,7 +371,7 @@ The Solaris core harness locates this workspace through `SOLARIS_LOADER_ROOT`
 core checkout; normal player installations do not.
 
 The development client agent embeds an authenticated Streamable HTTP MCP
-server in the real Minecraft Java 26.1.2 client. MCP hosts can inspect the
+server in the real Minecraft Java 26.3 client. MCP hosts can inspect the
 client-visible world and drive ordinary client inputs without using screenshots
 as state assertions or an external command-string launcher.
 
@@ -424,15 +424,15 @@ generation requests. The `configure`, `control`, `landmark`, `edit`, `render`,
 `tools/dh_scenario.py` is the Java-client driver used by the core harness's
 `dh-gate` profile. Set `SOLARIS_LOADER_ROOT` to this checkout and provide a
 worktree-built `SOLARIS_SERVER_BINARY`, publisher-verified `SOLARIS_DH_JAR`,
-Java 25 and Xvfb. Prepare `.analysis/prism-26.1.2/minecraft` here by copying
-the owner's Prism 26.1.2 instance as a **read-only template**, excluding saves,
+Java 25 and Xvfb. Prepare `.analysis/prism-26.3/minecraft` here by copying
+the owner's Prism 26.3 instance as a **read-only template**, excluding saves,
 screenshots, logs, mods and `Distant_Horizons_server_data`. Install only the
 pinned DH jar in the private template's `minecraft/mods`; never edit the
 original instance. Each control/enabled/no-DH game directory is another
 isolated copy under this checkout's `.analysis/dh-runs`.
 
-The baseline pins are MC 26.1.2, DH 3.3.3/protocol 16, Fabric loader 0.18.5
-with Fabric API 0.149.1+26.1.2, or NeoForge 26.1.2.76.
+The baseline pins are MC 26.3, DH 3.3.3/protocol 16, Fabric loader 0.19.5
+with Fabric API 0.163.0+26.3, or NeoForge 26.3.0.83.
 The Fabric mod metadata expands its minimum loader dependency from the selected
 `fabricLoaderVersion`, matching the artifact it was compiled against.
 The driver uses core's canonical server/Xvfb/MCP lifecycle and generates a fresh
@@ -523,7 +523,7 @@ catalog, and calls `minecraft_observe`:
 (cd ../solaris && python3 -m tools.harness mcp)
 ```
 
-The Java smoke sources compile against the vanilla 26.1.2 client JAR, not
+The Java smoke sources compile against the vanilla 26.3 client JAR, not
 NeoForge-only extensions. Filled-shulker custody checks inspect all nonempty
 container templates and slot zero (`copyOne()`), retaining the exact three-diamond
 assertion. Bucket diagnostics use the vanilla outline/no-fluid POV ray and

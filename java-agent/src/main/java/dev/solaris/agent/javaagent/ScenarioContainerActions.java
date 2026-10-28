@@ -79,11 +79,11 @@ final class ScenarioContainerActions {
 
     static boolean closeCurrentScreenOnClientThread(Minecraft minecraft) {
         minecraft.options.pauseOnLostFocus = false;
-        if (minecraft.screen != null) {
+        if (minecraft.gui.screen() != null) {
             minecraft.player.closeContainer();
-            minecraft.setScreen(null);
+            minecraft.gui.setScreen(null);
         }
-        return minecraft.screen == null;
+        return minecraft.gui.screen() == null;
     }
 
     static int activeContainerIdOnClientThread() {
@@ -101,8 +101,8 @@ final class ScenarioContainerActions {
             long observedVersion = ClientStateEvents.version();
             finalSample = executor.callOnClientThread(() -> {
                 Minecraft minecraft = requireInPlay();
-                return minecraft.screen != null
-                    && Objects.equals(minecraft.screen.getClass().getName(), className);
+                return minecraft.gui.screen() != null
+                    && Objects.equals(minecraft.gui.screen().getClass().getName(), className);
             });
             if (finalSample || !awaitClientStateChange(observedVersion, deadlineNanos)) {
                 break;
@@ -480,7 +480,7 @@ final class ScenarioContainerActions {
         ContainerClickCheckpoint checkpoint = executor.callOnClientThread(() -> {
             Minecraft minecraft = requireInPlay();
             AbstractContainerMenu menu = minecraft.player.containerMenu;
-            if (!(minecraft.screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen)
+            if (!(minecraft.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen)
                 || screen.getMenu() != menu) {
                 throw new IllegalStateException("no visible container menu is open");
             }

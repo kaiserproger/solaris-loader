@@ -61,7 +61,7 @@ public final class LoaderMinecraftView {
                         send,
                         false);
                 active = screen;
-                client.setScreen(screen);
+                client.gui.setScreen(screen);
             }
             case LoaderViewMessage.Present present -> {
                 if (HUDS.present(present.viewInstanceId(), present.revision(), present.model())
@@ -115,7 +115,7 @@ public final class LoaderMinecraftView {
             return;
         }
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.player == null || client.options.hideGui) {
+        if (client == null || client.player == null || client.gui.hud.isHidden()) {
             return;
         }
         int y = 8;
@@ -162,8 +162,8 @@ public final class LoaderMinecraftView {
         if (screen == null) {
             return;
         }
-        if (client.screen == screen) {
-            client.setScreen(null);
+        if (client.gui.screen() == screen) {
+            client.gui.setScreen(null);
         }
     }
 }

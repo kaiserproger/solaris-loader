@@ -4,7 +4,7 @@ plugins {
 
 val clientJarPath = providers.environmentVariable("SOLARIS_CLIENT_JAR")
     .orElse(providers.gradleProperty("solaris.clientJar"))
-    .orElse(rootProject.file("../solaris/.analysis/client-automation/versions/26.1.2/client.jar").absolutePath)
+    .orElse(rootProject.file("../solaris/.analysis/client-automation/versions/26.3/client.jar").absolutePath)
 val clientJar = file(clientJarPath.get())
 
 dependencies {

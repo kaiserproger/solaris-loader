@@ -25,7 +25,7 @@ final class ComputerClient {
             context.client().execute(() -> {
                 var listener = context.client().getConnection();
                 if (listener != null && listener.getConnection() == origin && origin.isConnected()
-                        && context.client().screen instanceof ComputerScreen screen) screen.receive(reply);
+                        && context.client().gui.screen() instanceof ComputerScreen screen) screen.receive(reply);
             });
         });
         if (!Boolean.getBoolean("solaris.computer.enabled")) return;
@@ -40,7 +40,7 @@ final class ComputerClient {
                 if (client.getConnection() != null && client.getConnection().getConnection() == origin
                         && origin.isConnected()) ClientPlayNetworking.send(new ComputerPayload(bytes));
             });
-            client.setScreen(screen);
+            client.gui.setScreen(screen);
             var pos = hit.getBlockPos();
             ClientPlayNetworking.send(new ComputerPayload(ComputerProtocol.open(session, pos.getX(), pos.getY(), pos.getZ())));
             return InteractionResult.SUCCESS;

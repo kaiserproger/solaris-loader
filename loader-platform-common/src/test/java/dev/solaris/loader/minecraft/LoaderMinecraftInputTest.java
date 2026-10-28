@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.mojang.blaze3d.platform.InputConstants;
 import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderScreenDefinition;
 import dev.solaris.loader.LoaderViewKey;
@@ -21,8 +22,8 @@ import org.junit.jupiter.api.Test;
  * send the exact declared screen only for an armed key, and disarm on clear.
  */
 final class LoaderMinecraftInputTest {
-    private static final int C = 67;
-    private static final int V = 86;
+    private static final int C = InputConstants.getKey("key.keyboard.c").getValue();
+    private static final int V = InputConstants.getKey("key.keyboard.v").getValue();
 
     @AfterEach
     void disarm() {

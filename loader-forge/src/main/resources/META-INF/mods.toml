@@ -1,5 +1,5 @@
 modLoader="javafml"
-loaderVersion="[64,)"
+loaderVersion="[66,)"
 license="All Rights Reserved"
 clientSideOnly=true
 
@@ -12,13 +12,13 @@ description='''Solaris client-bundle configuration transport.'''
 [[dependencies.solaris_loader]]
 modId="forge"
 mandatory=true
-versionRange="[64,)"
+versionRange="[66,)"
 ordering="NONE"
 side="CLIENT"
 
 [[dependencies.solaris_loader]]
 modId="minecraft"
 mandatory=true
-versionRange="[26.1.2]"
+versionRange="[26.3]"
 ordering="NONE"
 side="CLIENT"

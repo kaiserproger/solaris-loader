@@ -68,7 +68,7 @@ public final class ReceivedEntityQa {
             field.setAccessible(true);
             return ((EntityDataAccessor<?>) field.get(null)).id();
         } catch (ReflectiveOperationException error) {
-            throw new IllegalStateException("26.1.2 age-lock metadata accessor missing", error);
+            throw new IllegalStateException("26.3 age-lock metadata accessor missing", error);
         }
     }
 }

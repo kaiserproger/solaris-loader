@@ -45,20 +45,22 @@ final class LoaderRuntimeResourcePackTest {
 
         assertEquals(1, packs.size());
         assertEquals(LoaderRuntimeResourcePack.PACK_ID, packs.getFirst().getId());
-        try (PackResources resources = packs.getFirst().open()) {
-            Identifier location = Identifier.parse("example:textures/gui/logo.bin");
-            try (InputStream stream = resources
-                    .getResource(PackType.CLIENT_RESOURCES, location)
-                    .get()) {
-                assertArrayEquals(logo, stream.readAllBytes());
+        try (var openedResources = packs.getFirst().open()) {
+            try (PackResources resources = openedResources.findFirst().orElseThrow()) {
+                Identifier location = Identifier.parse("example:textures/gui/logo.bin");
+                try (InputStream stream = resources
+                        .getResource(PackType.CLIENT_RESOURCES, location)
+                        .get()) {
+                    assertArrayEquals(logo, stream.readAllBytes());
+                }
+                List<Identifier> listed = new ArrayList<>();
+                resources.listResources(
+                        PackType.CLIENT_RESOURCES,
+                        "example",
+                        "textures/gui",
+                        (id, supplier) -> listed.add(id));
+                assertEquals(List.of(location), listed);
             }
-            List<Identifier> listed = new ArrayList<>();
-            resources.listResources(
-                    PackType.CLIENT_RESOURCES,
-                    "example",
-                    "textures/gui",
-                    (id, supplier) -> listed.add(id));
-            assertEquals(List.of(location), listed);
         }
 
         assertFalse(runtime.clear(new Object()));

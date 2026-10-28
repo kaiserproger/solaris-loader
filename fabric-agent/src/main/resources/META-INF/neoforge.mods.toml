@@ -14,13 +14,13 @@ config="solaris-client-agent.mixins.json"
 [[dependencies.solaris_client_agent]]
 modId="neoforge"
 type="required"
-versionRange="[26.1.2.76,)"
+versionRange="[26.3.0.83,)"
 ordering="NONE"
 side="CLIENT"
 
 [[dependencies.solaris_client_agent]]
 modId="minecraft"
 type="required"
-versionRange="[26.1.2]"
+versionRange="[26.3]"
 ordering="NONE"
 side="CLIENT"

@@ -13,7 +13,7 @@ Developed independently from the Solaris core repository.
   - `SOLARIS_REPO_ROOT` env or `-Psolaris.repoRoot` for `loader-core` tests
     (default `../solaris`; resolves `examples/loader-live-gate` fixtures).
   - `SOLARIS_CLIENT_JAR` env or `-Psolaris.clientJar` for `java-agent`
-    (default `../solaris/.analysis/client-automation/versions/26.1.2/client.jar`).
+    (default `../solaris/.analysis/client-automation/versions/26.3/client.jar`).
   - Core launches this workspace via `SOLARIS_LOADER_ROOT` (default
     `../solaris-loader`); see the core harness docs.
 - Local-only caches stay under `.analysis/` (game dirs, client jars) and are

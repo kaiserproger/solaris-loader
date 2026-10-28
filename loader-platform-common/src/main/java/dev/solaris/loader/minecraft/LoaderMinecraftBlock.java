@@ -48,7 +48,7 @@ public final class LoaderMinecraftBlock {
             throw new IllegalStateException("Solaris Loader block carrier capacity exceeded");
         }
         // Runtime block-state ids are platform-owned. Fabric/NeoForge use the vanilla
-        // state registry, while Forge 26.1.2 binds custom states through GameData's
+        // state registry, while Forge 26.3 binds custom states through GameData's
         // block-state id map. The platform-specific ACK supplier performs the exact
         // state-id round-trip check after resource activation.
     }
