@@ -1,7 +1,7 @@
 # Solaris Loader
 
 Optional **client-side mod** for [Solaris](https://github.com/kaiserproger/solaris)
-servers whose plugins — WebAssembly components of the `solaris:plugin` `0.7.0`
+servers whose plugins — WebAssembly components of the `solaris:plugin` `0.8.0`
 contract — provide custom views, HUDs, assets, sounds,
 items and blocks. If the server uses only server-side plugins, an ordinary
 vanilla client is enough.
@@ -17,9 +17,9 @@ JAR from its Assets, not GitHub's source-code archive:
 
 | Minecraft | Platform baseline | Download |
 | --- | --- | --- |
-| 26.3 | Fabric Loader 0.19.5 + Fabric API 0.163.0+26.3 | `loader-fabric-0.1.0.jar` |
-| 26.3 | NeoForge 26.3.0.83 | `loader-neoforge-0.1.0.jar` |
-| 26.3 | Forge 26.3-66.1.0 | `loader-forge-0.1.0.jar` |
+| 26.3 | Fabric Loader 0.19.5 + Fabric API 0.163.0+26.3 | `loader-fabric-1.0.0-rc.2.jar` |
+| 26.3 | NeoForge 26.3.0.83 | `loader-neoforge-1.0.0-rc.2.jar` |
+| 26.3 | Forge 26.3-66.1.0 | `loader-forge-1.0.0-rc.2.jar` |
 
 Use **Java 25**. The same platform JAR works across operating systems; the
 launcher, Java runtime, Minecraft version, and mod loader must match. Do not
@@ -29,7 +29,7 @@ allows verification with `sha256sum -c SHA256SUMS --ignore-missing` on Linux;
 on Windows, compare `Get-FileHash FILE.jar -Algorithm SHA256` with that file.
 
 Current Loader protocol is **3** with client artifact index **schema 2**. The
-server plugin frontend is the WebAssembly component API **0.7.0** only; the
+server plugin frontend is the WebAssembly component API **0.8.0** only; the
 Luau `0.6.0` frontend is retired, and the plugin API version does not change
 the client wire protocol or artifact schema. These are alpha contracts:
 match the server's declared compatibility, not just similar version numbers.

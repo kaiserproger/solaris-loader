@@ -7,7 +7,7 @@ plugins {
 
 allprojects {
     group = "dev.solaris"
-    version = "0.1.0"
+    version = "1.0.0-rc.2"
 }
 
 val loaderClientMcpToken = providers.environmentVariable("SOLARIS_CLIENT_MCP_TOKEN")

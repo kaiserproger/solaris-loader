@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "id": "solaris_loader",
-  "version": "0.1.0",
+  "version": "1.0.0-rc.2",
   "name": "Solaris Loader",
   "description": "Solaris client-bundle configuration transport.",
   "environment": "client",
