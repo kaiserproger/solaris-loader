@@ -15,15 +15,12 @@ import dev.solaris.loader.minecraft.LoaderMinecraftInput;
 import dev.solaris.loader.minecraft.LoaderMinecraftSound;
 import dev.solaris.loader.minecraft.LoaderRuntimeResourcePack;
 import dev.solaris.loader.minecraft.LoaderMinecraftView;
-import dev.solaris.loader.minecraft.LoaderBlockCarrier;
-import dev.solaris.loader.minecraft.LoaderMinecraftBlock;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.IntStream;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -45,34 +42,10 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
-import net.neoforged.neoforge.registries.DeferredBlock;
-import net.neoforged.neoforge.registries.DeferredItem;
-import net.neoforged.neoforge.registries.DeferredRegister;
-import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.level.block.Block;
 
 @Mod(SolarisNeoForgeLoader.MOD_ID)
 public final class SolarisNeoForgeLoader {
     public static final String MOD_ID = "solaris_loader";
-    private static final DeferredRegister.Blocks BLOCKS =
-            DeferredRegister.createBlocks(MOD_ID);
-    private static final DeferredRegister.Items ITEMS =
-            DeferredRegister.createItems(MOD_ID);
-    private static final List<DeferredBlock<Block>> LOADER_BLOCKS =
-            IntStream.range(0, LoaderBlockCarrier.MAX_CARRIERS)
-                    .mapToObj(index -> BLOCKS.register(
-                            LoaderBlockCarrier.path(index),
-                            () -> LoaderBlockCarrier.createBlock(index)))
-                    .toList();
-    @SuppressWarnings("unused")
-    private static final List<DeferredItem<BlockItem>> LOADER_BLOCK_ITEMS =
-            IntStream.range(0, LoaderBlockCarrier.MAX_CARRIERS)
-                    .mapToObj(index -> ITEMS.register(
-                            LoaderBlockCarrier.path(index),
-                            () -> LoaderBlockCarrier.createItem(
-                                    index,
-                                    LOADER_BLOCKS.get(index).get())))
-                    .toList();
     private static final Map<Connection, LoaderPermissionController> CONTROLLERS =
             Collections.synchronizedMap(new WeakHashMap<>());
     private static final AtomicReference<LoaderActivatedContent> ACTIVE_CONTENT =
@@ -85,8 +58,6 @@ public final class SolarisNeoForgeLoader {
             LoaderNeoForgeMcpRuntime.createIfEnabled();
 
     public SolarisNeoForgeLoader(IEventBus modBus) {
-        BLOCKS.register(modBus);
-        ITEMS.register(modBus);
         modBus.addListener(SolarisNeoForgeLoader::registerPayloads);
         modBus.addListener(SolarisNeoForgeLoader::registerGuiLayers);
         NeoForge.EVENT_BUS.addListener(SolarisNeoForgeLoader::onClientTickPre);
@@ -171,8 +142,9 @@ public final class SolarisNeoForgeLoader {
                         Connection connection = context.connection();
                         Minecraft client = Minecraft.getInstance();
                         ensureResourcePackRegistered(client);
-                        watchConnection(client, connection);
-                        controller(connection).acceptManifest(
+                        LoaderPermissionController permissionController = controller(connection);
+                        watchConnection(client, connection, permissionController);
+                        permissionController.acceptManifest(
                                 manifest.bytes(),
                                 LoaderPlatform.NEOFORGE,
                                 LoaderRuntimeSettings.LOADER_VERSION,
@@ -293,9 +265,12 @@ public final class SolarisNeoForgeLoader {
 
     private static void watchConnection(
             Minecraft client,
-            Connection connection) {
-        connection.channel().closeFuture().addListener(
-                ignored -> unmount(client, connection));
+            Connection connection,
+            LoaderPermissionController permissionController) {
+        connection.channel().closeFuture().addListener(ignored -> {
+            permissionController.close();
+            unmount(client, connection);
+        });
     }
 
     private static void ensureResourcePackRegistered(Minecraft client) {
@@ -358,8 +333,7 @@ public final class SolarisNeoForgeLoader {
             return CONTROLLERS.computeIfAbsent(
                     connection,
                     ignored -> new LoaderPermissionController(
-                            LoaderRuntimeSettings.permissionDecisionsFile(),
-                            LoaderMinecraftBlock::carrierStateIds));
+                            LoaderRuntimeSettings.permissionDecisionsFile()));
         }
     }
 

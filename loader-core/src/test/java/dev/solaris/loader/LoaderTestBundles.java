@@ -73,11 +73,6 @@ final class LoaderTestBundles {
             public Set<LoaderPermission> grantedPermissions() {
                 return Set.of(permissions);
             }
-
-            @Override
-            public List<Integer> carrierBlockStateIds() {
-                return List.of(321, 654);
-            }
         };
     }
 }

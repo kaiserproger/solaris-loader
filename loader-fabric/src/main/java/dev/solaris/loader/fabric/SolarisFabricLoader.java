@@ -16,7 +16,6 @@ import dev.solaris.loader.fabric.mixin.ClientCommonPacketListenerAccessor;
 import dev.solaris.loader.fabric.mixin.PackRepositoryAccessor;
 import dev.solaris.loader.minecraft.LoaderRuntimeResourcePack;
 import dev.solaris.loader.minecraft.LoaderMinecraftView;
-import dev.solaris.loader.minecraft.LoaderMinecraftBlock;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -119,6 +118,10 @@ public final class SolarisFabricLoader implements ClientModInitializer {
         }
         ClientConfigurationConnectionEvents.DISCONNECT.register(
                 (handler, disconnectingClient) -> {
+                    LoaderPermissionController controller = CONTROLLERS.get(handler);
+                    if (controller != null) {
+                        controller.close();
+                    }
                     unmount(disconnectingClient, handler);
                     if (mcpRuntime != null) {
                         mcpRuntime.publishState();
@@ -128,6 +131,10 @@ public final class SolarisFabricLoader implements ClientModInitializer {
                 (handler, disconnectingClient) -> {
                     Object origin = ACTIVE_ORIGIN.get();
                     if (origin != null) {
+                        LoaderPermissionController controller = CONTROLLERS.get(origin);
+                        if (controller != null) {
+                            controller.close();
+                        }
                         unmount(disconnectingClient, origin);
                     }
                     if (mcpRuntime != null) {
@@ -174,7 +181,8 @@ public final class SolarisFabricLoader implements ClientModInitializer {
             ACTIVE_CONTENT.set(LoaderActivatedContent.empty());
             PacketSender sender = context.responseSender();
             Object origin = context.packetListener();
-            controller(context.packetListener()).acceptManifest(
+            LoaderPermissionController permissionController = controller(origin);
+            permissionController.acceptManifest(
                     manifest.bytes(),
                     LoaderPlatform.FABRIC,
                     LoaderRuntimeSettings.LOADER_VERSION,
@@ -349,8 +357,7 @@ public final class SolarisFabricLoader implements ClientModInitializer {
             return CONTROLLERS.computeIfAbsent(
                     connection,
                     ignored -> new LoaderPermissionController(
-                            LoaderRuntimeSettings.permissionDecisionsFile(),
-                            LoaderMinecraftBlock::carrierStateIds));
+                            LoaderRuntimeSettings.permissionDecisionsFile()));
         }
     }
 

@@ -75,30 +75,56 @@ final class LoaderTestArchive {
 
     /** One screen referencing one owned block and its exact owner model. */
     static byte[] screenAndBlock() {
+        return screenAndBlock("minecraft:pink_glazed_terracotta");
+    }
+
+    static byte[] screenAndBlock(String carrier) {
+        return screenAndBlockFields("\"carrier\":\"" + carrier + "\","
+                + "\"drop_item\":\"example:ruby_block\"", "example:ruby_block", carrier);
+    }
+
+    static byte[] screenAndBlockFields(String fields) {
+        return screenAndBlockFields(fields, "example:ruby_block");
+    }
+
+    static byte[] screenAndBlockFields(String fields, String screenBlockId) {
+        return screenAndBlockFields(fields, screenBlockId, "minecraft:pink_glazed_terracotta");
+    }
+
+    private static byte[] screenAndBlockFields(String fields, String screenBlockId, String baseItem) {
         byte[] model = """
                 {
                   "parent":"minecraft:block/cube_all",
                   "textures":{"all":"minecraft:block/redstone_block"}
                 }
                 """.getBytes(StandardCharsets.UTF_8);
+        byte[] item = "{\"model\":{\"type\":\"minecraft:model\",\"model\":\"example:block/ruby_block\"}}"
+                .getBytes(StandardCharsets.UTF_8);
         return archive(
                 """
                 {"schema":2,"screens":[{
                   "id":"example:catalog","title":"Catalog",
-                  "block_id":"example:ruby_block",
+                  "block_id":"%s",
                   "widgets":[{
                     "type":"action_button","action_id":"confirm","label":"Confirm"
                   }]
                 }],"blocks":[{
                   "id":"example:ruby_block","model":"example:block/ruby_block",
-                  "name":"Ruby Block"
-                }],"items":[],"assets":[{
+                  "name":"Ruby Block"%s
+                }],"items":[{"id":"example:ruby_block","base_item":"%s",
+                  "name":"Ruby Block"}],"assets":[{
                   "id":"example:ruby_block_model",
                   "path":"assets/example/models/block/ruby_block.json",
                   "sha256":"%s","size_bytes":%d
+                },{
+                  "id":"example:ruby_block_item",
+                  "path":"assets/example/items/ruby_block.json",
+                  "sha256":"%s","size_bytes":%d
                 }]}
-                """.formatted(sha256(model), model.length),
-                Map.of("assets/example/models/block/ruby_block.json", model));
+                """.formatted(screenBlockId, fields.isEmpty() ? "" : "," + fields, baseItem,
+                        sha256(model), model.length, sha256(item), item.length),
+                Map.of("assets/example/models/block/ruby_block.json", model,
+                        "assets/example/items/ruby_block.json", item));
     }
 
     /** One screen declaring every implemented widget type. */

@@ -76,7 +76,8 @@ A different server address or permission set prompts again.
 
 Decisions and verified content are cached under `~/.solaris/loader-cache/`.
 Active content, the open modal, every HUD instance with its held bindings, and
-Loader sounds are cleared on disconnect.
+Loader sounds are cleared on disconnect. An interrupted download's temporary
+file is removed when its connection closes, including during Configuration.
 Only approve servers you trust; a matching content hash establishes byte
 identity, not that a server is trustworthy.
 
@@ -313,19 +314,16 @@ connection. Declared
 `assets/<namespace>/<path>` bytes now form one
 transient required Minecraft client resource pack. The acknowledgement waits
 for an exact-byte resource reload, and the pack is removed and reloaded out
-when its originating connection closes. The block path pre-registers eight
-bounded carriers before freeze on each platform. After verified pack reload it
-sorts up to eight owner block ids, maps each blockstate/item definition to the
-corresponding carrier, and sends the exact owner-id-to-runtime-state map as
-`carrier_block_state_ids`. Solaris cross-checks that closed map against the
-hash-verified artifacts and retains it only in the acknowledged Play session.
-Server grants, placement, projection, break drops, persistence, and pickup
-preserve the exact owner identity through that mapping; no client runtime id
-enters canonical world or inventory state.
-Installing or enabling a Loader adapter needs a client restart before those
-native carriers exist; joining a new server with an already installed adapter
-only activates verified per-connection content and reloads its resource pack,
-not the frozen block registry.
+when its originating connection closes. Schema-2 block declarations require
+`id`, `model`, `name`, `carrier`, and `drop_item`. The drop item is
+owner-qualified; the server validates its installed custom item and carrier. The
+reserved carriers are gray (monitor), pink (Ruby), and blue (Sapphire) glazed
+terracotta; each can be used by only one activated block. Black and red glazed
+terracotta are not admitted. The runtime pack maps each declared vanilla
+carrier's four facing states to the owner's block model and generates a preview
+item model from that same block model. The server determines the actual block states;
+the client neither registers custom carrier blocks nor sends state IDs in its
+acknowledgement. The runtime pack is removed on disconnect.
 
 `solaris:loader/sound` resolves only an activated sound on its originating
 connection. The shared native presenter supports personal or fixed-position

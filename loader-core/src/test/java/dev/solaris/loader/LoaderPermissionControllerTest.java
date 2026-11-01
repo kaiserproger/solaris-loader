@@ -77,6 +77,61 @@ final class LoaderPermissionControllerTest {
     }
 
     @Test
+    void denialCanWaitForConnectionCloseWithoutLockingTheController() {
+        LoaderPermissionController controller =
+                new LoaderPermissionController(cacheDirectory.resolve("permissions.properties"));
+        AtomicReference<Consumer<Boolean>> answer = new AtomicReference<>();
+        AtomicBoolean rejected = new AtomicBoolean();
+        controller.acceptManifest(
+                manifest("present_views", "views"),
+                LoaderPlatform.NEOFORGE,
+                "0.1.0",
+                "denial.example:25565",
+                cacheDirectory,
+                () -> true,
+                (request, decision) -> answer.set(decision),
+                outgoing -> { throw new AssertionError("denied transfer requested an artifact"); },
+                reason -> {
+                    try {
+                        java.util.concurrent.CompletableFuture.runAsync(controller::close)
+                                .get(3, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (Exception error) {
+                        throw new AssertionError("close blocked by the denial callback", error);
+                    }
+                    rejected.set(true);
+                });
+        assertNotNull(answer.get());
+        answer.get().accept(false);
+        assertTrue(rejected.get());
+    }
+
+    @Test
+    void synchronousApprovalCanWaitForConnectionCloseWhileSendingRequest() {
+        LoaderPermissionController controller =
+                new LoaderPermissionController(cacheDirectory.resolve("permissions.properties"));
+        AtomicBoolean sent = new AtomicBoolean();
+        controller.acceptManifest(
+                manifest("present_views", "views"),
+                LoaderPlatform.NEOFORGE,
+                "0.1.0",
+                "approval.example:25565",
+                cacheDirectory,
+                () -> true,
+                (request, decision) -> decision.accept(true),
+                outgoing -> {
+                    try {
+                        java.util.concurrent.CompletableFuture.runAsync(controller::close)
+                                .get(3, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (Exception error) {
+                        throw new AssertionError("close blocked by the outgoing callback", error);
+                    }
+                    sent.set(true);
+                },
+                reason -> { throw new AssertionError(reason); });
+        assertTrue(sent.get());
+    }
+
+    @Test
     void approvalIsReusedOnlyForTheSameServerAndPermissionSet() throws Exception {
         Path decisions = cacheDirectory.resolve("permissions.properties");
         Path cached = cacheDirectory.resolve("example/screen/1/" + HASH + ".bundle");
@@ -192,6 +247,77 @@ final class LoaderPermissionControllerTest {
                 });
         assertNotNull(promptedAgain.get());
         assertTrue(outgoing.isEmpty());
+    }
+
+    @Test
+    void disconnectRemovesOnlyItsOwnInterruptedDownload() throws Exception {
+        Path decisions = cacheDirectory.resolve("permissions.properties");
+        LoaderPermissionController first = new LoaderPermissionController(decisions);
+        LoaderPermissionController second = new LoaderPermissionController(decisions);
+        List<LoaderOutgoing> outgoing = new ArrayList<>();
+        for (LoaderPermissionController controller : List.of(first, second)) {
+            controller.acceptManifest(
+                    manifest("present_views", "views"),
+                    LoaderPlatform.NEOFORGE,
+                    "0.1.0",
+                    "transfer.example:25565",
+                    cacheDirectory,
+                    () -> true,
+                    (request, decision) -> decision.accept(true),
+                    outgoing::add,
+                    reason -> { throw new AssertionError(reason); });
+        }
+        assertEquals(2, outgoing.size());
+        byte[] partial = chunk(CACHE_KEY, java.util.Arrays.copyOf(ARCHIVE, ARCHIVE.length / 2));
+        partial[2 + 2 + CACHE_KEY.getBytes(StandardCharsets.UTF_8).length + 8] = 0;
+        assertTrue(first.acceptArtifact(partial, () -> true).isEmpty());
+        assertTrue(second.acceptArtifact(partial, () -> true).isEmpty());
+        Path stagingDirectory = cacheDirectory.resolve("example/screen/1");
+        List<Path> staged;
+        try (var files = Files.list(stagingDirectory)) {
+            staged = files.filter(path -> path.toString().endsWith(".part")).toList();
+        }
+        assertEquals(2, staged.size());
+        assertTrue(Files.size(staged.get(0)) > 0);
+        assertTrue(Files.size(staged.get(1)) > 0);
+
+        first.close();
+        try (var files = Files.list(stagingDirectory)) {
+            assertEquals(1, files.filter(path -> path.toString().endsWith(".part")).count());
+        }
+        byte[] rest = chunk(CACHE_KEY,
+                java.util.Arrays.copyOfRange(ARCHIVE, ARCHIVE.length / 2, ARCHIVE.length));
+        ByteBuffer.wrap(rest).order(ByteOrder.BIG_ENDIAN)
+                .putLong(2 + 2 + CACHE_KEY.getBytes(StandardCharsets.UTF_8).length, ARCHIVE.length / 2);
+        assertEquals(LoaderOutgoing.Kind.ACKNOWLEDGEMENT,
+                second.acceptArtifact(rest, () -> true).orElseThrow().kind());
+        assertArrayEquals(ARCHIVE,
+                Files.readAllBytes(stagingDirectory.resolve(HASH + ".bundle")));
+        second.close();
+    }
+
+    @Test
+    void disconnectInvalidatesPendingPermissionEvenIfConnectionStillAppearsActive() {
+        Path decisions = cacheDirectory.resolve("permissions.properties");
+        LoaderPermissionController controller = new LoaderPermissionController(decisions);
+        AtomicReference<Consumer<Boolean>> answer = new AtomicReference<>();
+        List<LoaderOutgoing> outgoing = new ArrayList<>();
+        controller.acceptManifest(
+                manifest("present_views", "views"),
+                LoaderPlatform.FABRIC,
+                "0.1.0",
+                "pending.example:25565",
+                cacheDirectory,
+                () -> true,
+                (request, decision) -> answer.set(decision),
+                outgoing::add,
+                reason -> { throw new AssertionError(reason); });
+        assertNotNull(answer.get());
+        controller.close();
+        answer.get().accept(true);
+        assertTrue(outgoing.isEmpty());
+        assertFalse(Files.exists(decisions));
+        assertFalse(Files.exists(cacheDirectory.resolve("example")));
     }
 
     @Test

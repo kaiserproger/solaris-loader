@@ -64,7 +64,6 @@ public final class SolarisForgeLoader {
     private static Channel<CustomPacketPayload> channel;
 
     public SolarisForgeLoader(FMLJavaModLoadingContext context) {
-        SolarisForgeContent.register(context);
         FMLClientSetupEvent.getBus(context.getModBusGroup())
                 .addListener(SolarisForgeLoader::onClientSetup);
         ClientTickEvent.Pre.BUS.addListener(SolarisForgeLoader::onClientTickPre);
@@ -170,8 +169,9 @@ public final class SolarisForgeLoader {
                         Connection networkConnection = context.getConnection();
                         Minecraft client = Minecraft.getInstance();
                         ensureResourcePackRegistered(client);
-                        watchConnection(client, networkConnection);
-                        controller(networkConnection).acceptManifest(
+                        LoaderPermissionController permissionController = controller(networkConnection);
+                        watchConnection(client, networkConnection, permissionController);
+                        permissionController.acceptManifest(
                                         manifest.bytes(),
                                         LoaderPlatform.FORGE,
                                         LoaderRuntimeSettings.LOADER_VERSION,
@@ -313,9 +313,12 @@ public final class SolarisForgeLoader {
 
     private static void watchConnection(
             Minecraft client,
-            Connection connection) {
-        connection.channel().closeFuture().addListener(
-                ignored -> unmount(client, connection));
+            Connection connection,
+            LoaderPermissionController permissionController) {
+        connection.channel().closeFuture().addListener(ignored -> {
+            permissionController.close();
+            unmount(client, connection);
+        });
     }
 
     private static void ensureResourcePackRegistered(Minecraft client) {
@@ -377,8 +380,7 @@ public final class SolarisForgeLoader {
             return CONTROLLERS.computeIfAbsent(
                     connection,
                     ignored -> new LoaderPermissionController(
-                            LoaderRuntimeSettings.permissionDecisionsFile(),
-                            SolarisForgeContent::carrierStateIds));
+                            LoaderRuntimeSettings.permissionDecisionsFile()));
         }
     }
 
