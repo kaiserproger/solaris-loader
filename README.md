@@ -175,6 +175,9 @@ cd solaris-loader
 ./gradlew --no-configuration-cache :loader-fabric:jar :loader-neoforge:jar :loader-forge:jar
 ```
 
+The build uses ModDevGradle 2.0.148 for Minecraft 26.3 source transformation;
+older ModDevGradle releases can fail to recompile `HolderSet`.
+
 On Windows use `gradlew.bat`. JARs appear in each adapter's `build/libs/`.
 Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
 `fabric-agent`, `java-agent`, and `bridge-core` are development tooling.

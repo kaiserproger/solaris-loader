@@ -1,7 +1,7 @@
 plugins {
     java
     id("net.fabricmc.fabric-loom") version "1.17.11" apply false
-    id("net.neoforged.moddev") version "2.0.141" apply false
+    id("net.neoforged.moddev") version "2.0.148" apply false
     id("net.minecraftforge.gradle") version "7.0.17" apply false
 }
 
