@@ -177,6 +177,10 @@ cd solaris-loader
 On Windows use `gradlew.bat`. JARs appear in each adapter's `build/libs/`.
 Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
 `fabric-agent`, `java-agent`, and `bridge-core` are development tooling.
+The plain-vanilla `java-agent` instruments the pinned client at premain to
+publish tick, lifecycle and applied-packet events to its automation bridge.
+Fabric and other platform agents use their own runtime hooks instead; the
+vanilla transformer is not installed by `startFromRuntime`.
 
 <details>
 <summary>Developer reference: Loader protocol and content activation</summary>
