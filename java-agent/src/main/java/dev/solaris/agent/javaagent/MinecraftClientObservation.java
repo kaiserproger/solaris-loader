@@ -256,6 +256,7 @@ final class MinecraftClientObservation {
 
     private static JsonObject player(Minecraft minecraft) {
         JsonObject player = entity(minecraft.player, 0.0, minecraft.player);
+        player.addProperty("eye_y", minecraft.player.getEyeY());
         player.addProperty("health", minecraft.player.getHealth());
         player.addProperty("max_health", minecraft.player.getMaxHealth());
         player.addProperty("food", minecraft.player.getFoodData().getFoodLevel());

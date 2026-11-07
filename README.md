@@ -546,8 +546,8 @@ To test a real connection and structured world reads against Solaris:
 
 Read-only tools:
 
-- `minecraft_observe`: player, health/food, pose, inventory, active container,
-  screen, target, clocks, and recent chat.
+- `minecraft_observe`: player, health/food, pose, actual `eye_y`, inventory,
+  active container, screen, target, clocks, and recent chat.
 - `minecraft_read_block`: one loaded block with state, fluid, sky-light, and block-light values.
 - `minecraft_wait_for_loaded_block`: wait for an applied packet event that makes
   one block's chunk client-loaded, then return that block.
