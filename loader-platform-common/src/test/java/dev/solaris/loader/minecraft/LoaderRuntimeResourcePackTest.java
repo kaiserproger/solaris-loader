@@ -45,7 +45,7 @@ final class LoaderRuntimeResourcePackTest {
 
         assertEquals(1, packs.size());
         assertEquals(LoaderRuntimeResourcePack.PACK_ID, packs.getFirst().getId());
-        try (var openedResources = packs.getFirst().open()) {
+        try (var openedResources = ClientVersionApi.openPack(packs.getFirst())) {
             try (PackResources resources = openedResources.findFirst().orElseThrow()) {
                 Identifier location = Identifier.parse("example:textures/gui/logo.bin");
                 try (InputStream stream = resources

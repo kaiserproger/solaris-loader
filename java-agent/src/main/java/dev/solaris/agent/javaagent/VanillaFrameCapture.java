@@ -53,7 +53,7 @@ public final class VanillaFrameCapture {
         }
         try {
             Screenshot.grab(request.directory().toFile(), request.path().getFileName().toString(),
-                minecraft.gameRenderer.mainRenderTarget(), 1, message -> request.completion().complete(gait));
+                ClientVersionApi.renderTarget(minecraft), 1, message -> request.completion().complete(gait));
         } catch (RuntimeException error) {
             request.completion().completeExceptionally(error);
         }

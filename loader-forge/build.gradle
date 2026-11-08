@@ -39,8 +39,10 @@ dependencies {
 
 sourceSets {
     main.java.srcDir rootProject.file('loader-platform-common/src/main/java')
+    main.java.srcDir rootProject.file("loader-platform-common/src/minecraft-${minecraftVersion.get()}/java")
     main.resources.srcDir rootProject.file('loader-platform-common/src/main/resources')
     main.java.srcDir rootProject.file('java-agent/src/main/java')
+    main.java.srcDir rootProject.file("java-agent/src/minecraft-${minecraftVersion.get()}/java")
     main.output.resourcesDir = layout.buildDirectory.dir('classes/java/main').get().asFile
     test.java.srcDir rootProject.file('loader-platform-common/src/test/java')
 }

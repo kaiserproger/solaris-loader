@@ -45,6 +45,7 @@ dependencies {
 sourceSets {
     named("main") {
         java.srcDir(rootProject.file("loader-platform-common/src/main/java"))
+        java.srcDir(rootProject.file("loader-platform-common/src/minecraft-${minecraftVersion.get()}/java"))
         resources.srcDir(rootProject.file("loader-platform-common/src/main/resources"))
     }
     named("test") {
@@ -54,8 +55,9 @@ sourceSets {
 
 tasks.processResources {
     inputs.property("fabricLoaderVersion", fabricLoaderVersion)
+    inputs.property("minecraftVersion", minecraftVersion)
     filesMatching("fabric.mod.json") {
-        expand("fabricLoaderVersion" to fabricLoaderVersion.get())
+        expand("fabricLoaderVersion" to fabricLoaderVersion.get(), "minecraftVersion" to minecraftVersion.get())
     }
 }
 

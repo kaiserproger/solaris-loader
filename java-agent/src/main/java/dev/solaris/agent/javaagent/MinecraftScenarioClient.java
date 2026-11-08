@@ -134,7 +134,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             if (minecraft.player == null || minecraft.level == null || minecraft.gameMode == null) {
                 return;
             }
-            if (minecraft.gui.screen() != null) {
+            if (ClientVersionApi.screen(minecraft) != null) {
                 return;
             }
             BlockHitResult hit = hitResult(action.target);
@@ -393,7 +393,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             long observedVersion = ClientStateEvents.version();
             finalSample = executor.callOnClientThread(() -> {
                 Minecraft minecraft = requireInPlay();
-                return minecraft.gui.screen() instanceof SignEditScreen
+                return ClientVersionApi.screen(minecraft) instanceof SignEditScreen
                     && minecraft.level.getBlockEntity(pos(target)) instanceof SignBlockEntity;
             });
             if (finalSample || !awaitClientStateChange(observedVersion, deadlineNanos)) {
@@ -1135,9 +1135,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 int currentPreferredDirection = preferredDetourDirection;
                 EntityApproachSample sample = executor.callOnClientThread(() -> {
                     Minecraft minecraft = requireInPlay();
-                    if (minecraft.gui.screen() != null) {
+                    if (ClientVersionApi.screen(minecraft) != null) {
                         minecraft.player.closeContainer();
-                        minecraft.gui.setScreen(null);
+                        ClientVersionApi.setScreen(minecraft, null);
                     }
                     Entity current = entityByIdOnClientThread(entity.entityId());
                     if (current == null) {
@@ -1667,9 +1667,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             }
             executor.callOnClientThread(() -> {
                 Minecraft minecraft = requireInPlay();
-                if (minecraft.gui.screen() != null) {
+                if (ClientVersionApi.screen(minecraft) != null) {
                     minecraft.player.closeContainer();
-                    minecraft.gui.setScreen(null);
+                    ClientVersionApi.setScreen(minecraft, null);
                 }
                 AbstractContainerMenu menu = minecraft.player.containerMenu;
                 if (
@@ -1812,7 +1812,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             long observedVersion = ClientStateEvents.version();
             finalSample = executor.callOnClientThread(() -> {
                 Minecraft minecraft = requireInPlay();
-                return minecraft.gui.screen() instanceof DeathScreen;
+                return ClientVersionApi.screen(minecraft) instanceof DeathScreen;
             });
             if (finalSample) {
                 return true;
@@ -1828,7 +1828,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
     public boolean performRespawn(Duration duration) throws Exception {
         long observedHealthVersion = executor.callOnClientThread(() -> {
             Minecraft minecraft = requireInPlay();
-            if (minecraft.player.getHealth() > 0.0F && !(minecraft.gui.screen() instanceof DeathScreen)) {
+            if (minecraft.player.getHealth() > 0.0F && !(ClientVersionApi.screen(minecraft) instanceof DeathScreen)) {
                 throw new IllegalStateException("client player is not dead");
             }
             long healthVersion = ClientStateEvents.healthVersion();
@@ -1859,7 +1859,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     Minecraft minecraft = Minecraft.getInstance();
                     return minecraft.player != null
                         && minecraft.level != null
-                        && minecraft.gui.screen() == null
+                        && ClientVersionApi.screen(minecraft) == null
                         && minecraft.player.getHealth() > 0.0F;
                 });
             }
@@ -2701,9 +2701,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 int currentPreferredDirection = preferredDetourDirection;
                 ApproachSample sample = executor.callOnClientThread(() -> {
                     Minecraft minecraft = requireInPlay();
-                    if (minecraft.gui.screen() != null) {
+                    if (ClientVersionApi.screen(minecraft) != null) {
                         minecraft.player.closeContainer();
-                        minecraft.gui.setScreen(null);
+                        ClientVersionApi.setScreen(minecraft, null);
                     }
                     Vec3 center = Vec3.atLowerCornerWithOffset(pos(target), 0.5, 0.5, 0.5);
                     minecraft.player.lookAt(EntityAnchorArgument.Anchor.EYES, center);
@@ -2806,9 +2806,9 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 int currentPreferredDirection = preferredDetourDirection;
                 ApproachSample sample = executor.callOnClientThread(() -> {
                     Minecraft minecraft = requireInPlay();
-                    if (minecraft.gui.screen() != null) {
+                    if (ClientVersionApi.screen(minecraft) != null) {
                         minecraft.player.closeContainer();
-                        minecraft.gui.setScreen(null);
+                        ClientVersionApi.setScreen(minecraft, null);
                     }
                     Vec3 playerPosition = minecraft.player.position();
                     Vec3 horizontalTarget = new Vec3(target.x, playerPosition.y, target.z);
@@ -3277,12 +3277,12 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 int currentPreferredDirection = preferredDetourDirection;
                 HazardStandSample sample = executor.callOnClientThread(() -> {
                     Minecraft minecraft = requireInPlay();
-                    if (minecraft.gui.screen() instanceof DeathScreen) {
+                    if (ClientVersionApi.screen(minecraft) instanceof DeathScreen) {
                         return new HazardStandSample(true, 0);
                     }
-                    if (minecraft.gui.screen() != null) {
+                    if (ClientVersionApi.screen(minecraft) != null) {
                         minecraft.player.closeContainer();
-                        minecraft.gui.setScreen(null);
+                        ClientVersionApi.setScreen(minecraft, null);
                     }
                     BlockPos targetPos = pos(target);
                     Vec3 topCenter = Vec3.atLowerCornerWithOffset(targetPos, 0.5, 1.0, 0.5);
@@ -3322,7 +3322,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                     break;
                 }
             } while (true);
-            return executor.callOnClientThread(() -> Minecraft.getInstance().gui.screen() instanceof DeathScreen);
+            return executor.callOnClientThread(() -> ClientVersionApi.screen(Minecraft.getInstance()) instanceof DeathScreen);
         } finally {
             executor.callOnClientThread(() -> {
                 Minecraft minecraft = Minecraft.getInstance();
@@ -4456,7 +4456,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
 
     private static boolean chatHistoryContainsOnClientThread(String expectedText) {
         Minecraft minecraft = requireInPlay();
-        for (String text : chatMessageTexts(minecraft.gui.hud.getChat())) {
+        for (String text : chatMessageTexts(ClientVersionApi.chat(minecraft))) {
             if (expectedText.equals(text) || text.contains(expectedText)) {
                 return true;
             }

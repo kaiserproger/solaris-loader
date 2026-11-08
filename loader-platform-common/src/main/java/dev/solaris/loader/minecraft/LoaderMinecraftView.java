@@ -61,7 +61,7 @@ public final class LoaderMinecraftView {
                         send,
                         false);
                 active = screen;
-                client.gui.setScreen(screen);
+                dev.solaris.loader.minecraft.ClientVersionApi.setScreen(client, screen);
             }
             case LoaderViewMessage.Present present -> {
                 if (HUDS.present(present.viewInstanceId(), present.revision(), present.model())
@@ -115,7 +115,7 @@ public final class LoaderMinecraftView {
             return;
         }
         Minecraft client = Minecraft.getInstance();
-        if (client == null || client.player == null || client.gui.hud.isHidden()) {
+        if (client == null || client.player == null || dev.solaris.loader.minecraft.ClientVersionApi.hudHidden(client)) {
             return;
         }
         int y = 8;
@@ -162,8 +162,8 @@ public final class LoaderMinecraftView {
         if (screen == null) {
             return;
         }
-        if (client.gui.screen() == screen) {
-            client.gui.setScreen(null);
+        if (dev.solaris.loader.minecraft.ClientVersionApi.screen(client) == screen) {
+            dev.solaris.loader.minecraft.ClientVersionApi.setScreen(client, null);
         }
     }
 }

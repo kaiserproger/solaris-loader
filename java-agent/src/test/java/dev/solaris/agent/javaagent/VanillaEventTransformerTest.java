@@ -40,9 +40,11 @@ final class VanillaEventTransformerTest {
     @Test
     void instrumentsRealClientTickLifecycleAndPacketCompletion() throws Exception {
         Map<String, Integer> minecraft = hooks("net/minecraft/client/Minecraft");
-        assertTrue(minecraft.getOrDefault("setScreen:publishState", 0) > 0);
-        assertTrue(minecraft.getOrDefault("setOverlay:publishState", 0) > 0);
+        Map<String, Integer> gui = hooks("net/minecraft/client/gui/Gui");
+        assertTrue(minecraft.getOrDefault("setScreen:publishState", 0) + gui.getOrDefault("setScreen:publishState", 0) > 0);
+        assertTrue(minecraft.getOrDefault("setOverlay:publishState", 0) + gui.getOrDefault("setOverlay:publishState", 0) > 0);
         assertTrue(minecraft.getOrDefault("tick:publishTick", 0) > 0);
+        assertEquals(0, gui.getOrDefault("tick:publishTick", 0));
         assertTrue(minecraft.getOrDefault("setLevel:publishState", 0) > 0);
         assertTrue(minecraft.getOrDefault("clearClientLevel:publishState", 0) > 0);
         assertTrue(hooks("net/minecraft/network/PacketProcessor$ListenerAndPacket")
@@ -52,6 +54,20 @@ final class VanillaEventTransformerTest {
         assertTrue(packets.getOrDefault("handleTakeItemEntity:afterPacket", 0) > 0);
         assertTrue(packets.getOrDefault("handleContainerContent:afterPacket", 0) > 0);
         assertTrue(packets.getOrDefault("handleBlockChangedAck:afterPacket", 0) > 0);
+    }
+
+    @Test
+    void frameAwareTickTransformerOwnsTickPublicationWhenEnabled() throws Exception {
+        String previous = System.getProperty("solaris.client.vanillaEvents");
+        try {
+            System.setProperty("solaris.client.vanillaEvents", "true");
+            assertEquals(0, hooks("net/minecraft/client/Minecraft").getOrDefault("tick:publishTick", 0));
+            assertTrue(hooks("net/minecraft/client/multiplayer/ClientPacketListener")
+                .getOrDefault("handleContainerContent:afterPacket", 0) > 0);
+        } finally {
+            if (previous == null) System.clearProperty("solaris.client.vanillaEvents");
+            else System.setProperty("solaris.client.vanillaEvents", previous);
+        }
     }
 
     @Test

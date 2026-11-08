@@ -31,6 +31,13 @@ final class LoaderMinecraftInputTest {
     }
 
     @Test
+    void versionShimPreservesKeyboardIdentityAndNativeCode() {
+        assertEquals(ClientVersionApi.keyboardType(), InputConstants.getKey("key.keyboard.c").getType());
+        assertFalse(ClientVersionApi.keyboardType() == InputConstants.getKey("key.mouse.left").getType());
+        assertEquals(22, ClientVersionApi.keycode(new net.minecraft.client.input.KeyEvent(11, 22, 33)));
+    }
+
+    @Test
     void anArmedKeyRequestsItsExactDeclaredScreenAndNothingElse() {
         List<LoaderViewKey> requested = new ArrayList<>();
         LoaderMinecraftInput.armRequestKeys(

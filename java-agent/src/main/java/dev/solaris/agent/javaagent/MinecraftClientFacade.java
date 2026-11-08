@@ -67,7 +67,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         String dimension = minecraft.level == null
             ? ""
             : minecraft.level.dimension().identifier().toString();
-        String screen = minecraft.gui.screen() == null ? "none" : minecraft.gui.screen().getClass().getName();
+        String screen = ClientVersionApi.screen(minecraft) == null ? "none" : ClientVersionApi.screen(minecraft).getClass().getName();
         return new ClientSnapshot(
             inPlay,
             dimension,
@@ -431,7 +431,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         // LOGIN, so pass null exactly like the vanilla multiplayer screen does;
         // only a client following a Transfer packet carries state here.
         ConnectScreen.startConnecting(
-            minecraft.gui.screen(),
+            ClientVersionApi.screen(minecraft),
             minecraft,
             ServerAddress.parseString(address),
             serverData,
@@ -804,9 +804,9 @@ public final class MinecraftClientFacade implements ClientFacade {
                 null
             );
         }
-        if (minecraft.gui.screen() != null) {
+        if (ClientVersionApi.screen(minecraft) != null) {
             minecraft.player.closeContainer();
-            minecraft.gui.setScreen(null);
+            ClientVersionApi.setScreen(minecraft, null);
         }
         boolean collisionFree = minecraft.level.noCollision(
             minecraft.player,
@@ -1085,7 +1085,7 @@ public final class MinecraftClientFacade implements ClientFacade {
     @Override
     public void clickConfirmationButton(String expectedTitle, String buttonLabel) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (!(minecraft.gui.screen() instanceof ConfirmScreen screen)) {
+        if (!(ClientVersionApi.screen(minecraft) instanceof ConfirmScreen screen)) {
             throw new IllegalStateException("current screen is not a confirmation screen");
         }
         String actualTitle = screen.getTitle().getString();
@@ -1136,7 +1136,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         }
         screen.setFocused(matched);
         matched.setValue(value);
-        if (minecraft.gui.screen() != screen || !screen.children().contains(matched)) {
+        if (ClientVersionApi.screen(minecraft) != screen || !screen.children().contains(matched)) {
             throw new IllegalStateException("screen input became stale during the edit");
         }
         if (!matched.getValue().equals(value)) {
@@ -1168,7 +1168,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         String expectedScreenClass,
         String expectedTitle
     ) {
-        Screen screen = minecraft.gui.screen();
+        Screen screen = ClientVersionApi.screen(minecraft);
         if (screen == null) {
             throw new IllegalStateException("no client screen is open");
         }
@@ -1208,7 +1208,7 @@ public final class MinecraftClientFacade implements ClientFacade {
     @Override
     public void openInventory() {
         Minecraft minecraft = requireInPlay();
-        minecraft.gui.setScreen(new InventoryScreen(minecraft.player));
+        ClientVersionApi.setScreen(minecraft, new InventoryScreen(minecraft.player));
     }
 
     @Override
@@ -1379,7 +1379,7 @@ public final class MinecraftClientFacade implements ClientFacade {
             new MinecraftClientExecutor().callOnClientThread(() -> {
                 Minecraft minecraft = Minecraft.getInstance();
                 Screenshot.grab(directory.toFile(), path.getFileName().toString(),
-                    minecraft.gameRenderer.mainRenderTarget(), 1,
+                    ClientVersionApi.renderTarget(minecraft), 1,
                     message -> completion.complete(new JsonArray()));
                 return null;
             });
@@ -1408,7 +1408,7 @@ public final class MinecraftClientFacade implements ClientFacade {
 
     static JsonArray renderedGait(Minecraft minecraft) {
         JsonArray result = new JsonArray();
-        for (var state : minecraft.gameRenderer.gameRenderState().levelRenderState.entityRenderStates) {
+        for (var state : ClientVersionApi.renderState(minecraft).levelRenderState.entityRenderStates) {
             if (state instanceof LivingEntityRenderState living) {
                 JsonObject item = new JsonObject();
                 item.addProperty("entity_type", BuiltInRegistries.ENTITY_TYPE.getKey(living.entityType).toString());

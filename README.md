@@ -177,6 +177,23 @@ cd solaris-loader
 On Windows use `gradlew.bat`. JARs appear in each adapter's `build/libs/`.
 Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
 `fabric-agent`, `java-agent`, and `bridge-core` are development tooling.
+
+The source line also builds exact 26.1.2 and 26.2 targets. Select
+`-PminecraftVersion` consistently for the automation and player adapters;
+Minecraft API differences live only in per-version `ClientVersionApi` source sets.
+Use the matching local vanilla `SOLARIS_CLIENT_JAR` for `java-agent`:
+
+| Target | Additional Gradle properties | Player adapter |
+| --- | --- | --- |
+| 26.1.2 | `-PminecraftVersion=26.1.2 -PneoVersion=26.1.2.76 -PfabricLoaderVersion=0.19.3 -PfabricApiVersion=0.155.2+26.1.2` | Fabric or NeoForge |
+| 26.2 | `-PminecraftVersion=26.2 -PneoVersion=26.2.0.93` | NeoForge |
+| 26.3 | defaults | Fabric, NeoForge or Forge |
+
+Build each target separately: the output JAR is specific to that exact Minecraft
+version, not a cross-version binary. The Fabric mixin configuration does not
+redirect `SoundBufferLibrary.getStream`, avoiding Fabric Sound API's required
+injection conflict on Fabric API 0.155.2.
+
 The plain-vanilla `java-agent` instruments the pinned client at premain to
 publish tick, lifecycle and applied-packet events to its automation bridge.
 Fabric and other platform agents use their own runtime hooks instead; the
@@ -379,13 +396,11 @@ server in the real Minecraft Java 26.3 client. MCP hosts can inspect the
 client-visible world and drive ordinary client inputs without using screenshots
 as state assertions or an external command-string launcher.
 
-The automation agent supports 26.3 by default and 26.2 with
-`-PsolarisClientVersion=26.2 -PneoVersion=26.2.0.93`. Build `:java-agent:jar`
-against the matching verified vanilla jar using `SOLARIS_CLIENT_JAR`; for the
-NeoForge graphical harness use the same two Gradle properties (or
-`ORG_GRADLE_PROJECT_solarisClientVersion` and `ORG_GRADLE_PROJECT_neoVersion`
-environment variables) with `SOLARIS_LOADER_ROOT` pointing at this checkout.
-These are development automation targets, not player Loader releases.
+The automation agent uses the same exact Minecraft target and source-set
+selection as the player adapters above. For the core harness, set
+`SOLARIS_JAVA_VERSION` and `SOLARIS_JAVA_PLATFORM` (`fabric` or `neoforge`)
+alongside `SOLARIS_LOADER_ROOT`. Unsupported combinations fail closed rather
+than launching a neighboring Minecraft version.
 
 ## Start
 

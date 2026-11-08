@@ -17,6 +17,42 @@ import java.util.List;
 final class ClientVersionApi {
     private ClientVersionApi() {}
 
+    static net.minecraft.client.gui.screens.Screen screen(net.minecraft.client.Minecraft client) {
+        return client.gui.screen();
+    }
+
+    static void setScreen(net.minecraft.client.Minecraft client, net.minecraft.client.gui.screens.Screen screen) {
+        client.gui.setScreen(screen);
+    }
+
+    static net.minecraft.client.gui.screens.Overlay overlay(net.minecraft.client.Minecraft client) {
+        return client.gui.overlay();
+    }
+
+    static net.minecraft.client.gui.components.ChatComponent chat(net.minecraft.client.Minecraft client) {
+        return client.gui.hud.getChat();
+    }
+
+    static com.mojang.blaze3d.pipeline.RenderTarget renderTarget(net.minecraft.client.Minecraft client) {
+        return client.gameRenderer.mainRenderTarget();
+    }
+
+    static net.minecraft.client.renderer.state.GameRenderState renderState(net.minecraft.client.Minecraft client) {
+        return client.gameRenderer.gameRenderState();
+    }
+
+    static boolean hudHidden(net.minecraft.client.Minecraft client) {
+        return client.gui.hud.isHidden();
+    }
+
+    static void toggleHud(net.minecraft.client.Minecraft client) {
+        client.gui.hud.toggle();
+    }
+
+    static boolean redTeam(net.minecraft.world.scores.PlayerTeam team) {
+        return team.getColor().orElse(null) == net.minecraft.world.scores.TeamColor.RED;
+    }
+
     static boolean isKeyboard(InputConstants.Key key) {
         return key.getType() == InputConstants.Type.KEYBOARD;
     }

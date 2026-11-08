@@ -37,12 +37,12 @@ dependencies {
 sourceSets.main {
     java {
         srcDir(project(":java-agent").layout.projectDirectory.dir("src/main/java"))
-        srcDir(project(":java-agent").layout.projectDirectory.dir("src/minecraft-${providers.gradleProperty("solarisClientVersion").orElse("26.3").get()}/java"))
+        srcDir(project(":java-agent").layout.projectDirectory.dir("src/minecraft-${providers.gradleProperty("minecraftVersion").get()}/java"))
     }
 }
 
 tasks.processResources {
-    val minecraftVersion = providers.gradleProperty("solarisClientVersion").orElse("26.3")
+    val minecraftVersion = providers.gradleProperty("minecraftVersion")
     inputs.property("minecraftVersion", minecraftVersion)
     inputs.property("neoVersion", neoVersion)
     filesMatching("META-INF/neoforge.mods.toml") {

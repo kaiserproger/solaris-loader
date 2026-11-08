@@ -25,6 +25,7 @@ final class VanillaEventTransformer implements ClassFileTransformer {
                             ProtectionDomain domain, byte[] bytes) {
         if (!"net/minecraft/network/PacketProcessor$ListenerAndPacket".equals(name)
             && !"net/minecraft/client/Minecraft".equals(name)
+            && !"net/minecraft/client/gui/Gui".equals(name)
             && !"net/minecraft/client/multiplayer/ClientPacketListener".equals(name)) {
             return null;
         }
@@ -40,8 +41,8 @@ final class VanillaEventTransformer implements ClassFileTransformer {
                 String event = null;
                 if (name.endsWith("/PacketProcessor$ListenerAndPacket") && method.equals("handle") && desc.equals("()V")) {
                     event = "publishState";
-                } else if (name.equals("net/minecraft/client/Minecraft")) {
-                    if (method.equals("tick") && desc.equals("()V")
+                } else if (name.equals("net/minecraft/client/Minecraft") || name.equals("net/minecraft/client/gui/Gui")) {
+                    if (name.equals("net/minecraft/client/Minecraft") && method.equals("tick") && desc.equals("()V")
                             && !Boolean.getBoolean("solaris.client.vanillaEvents")) event = "publishTick";
                     if ((method.equals("setLevel") || method.equals("clearClientLevel")
                         || method.equals("setScreen") || method.equals("setOverlay"))

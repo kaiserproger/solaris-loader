@@ -362,10 +362,10 @@ public final class SolarisFabricLoader implements ClientModInitializer {
                 .map(permission -> permission.wireName())
                 .collect(Collectors.joining(", "));
         client.execute(() -> {
-            Screen parent = client.gui.screen();
-            client.gui.setScreen(new ConfirmScreen(
+            Screen parent = dev.solaris.loader.minecraft.ClientVersionApi.screen(client);
+            dev.solaris.loader.minecraft.ClientVersionApi.setScreen(client, new ConfirmScreen(
                     allowed -> {
-                        client.gui.setScreen(parent);
+                        dev.solaris.loader.minecraft.ClientVersionApi.setScreen(client, parent);
                         publishMcpState();
                         decision.accept(allowed);
                     },
