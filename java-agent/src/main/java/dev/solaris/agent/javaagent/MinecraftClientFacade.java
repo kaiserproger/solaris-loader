@@ -21,6 +21,7 @@ import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
+import net.minecraft.client.renderer.entity.state.LivingEntityRenderState;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -1369,33 +1370,57 @@ public final class MinecraftClientFacade implements ClientFacade {
     public Path screenshot(Path path) throws Exception {
         Path directory = screenshotBaseDirectory(path);
         Files.createDirectories(directory.resolve("screenshots"));
-        CompletableFuture<String> completion = new CompletableFuture<>();
-        new MinecraftClientExecutor().callOnClientThread(() -> {
-            Minecraft minecraft = Minecraft.getInstance();
-            Screenshot.grab(
-                directory.toFile(),
-                path.getFileName().toString(),
-                minecraft.gameRenderer.mainRenderTarget(),
-                1,
-                message -> completion.complete(message.getString())
-            );
-            return null;
-        });
-        final String resultMessage;
+        CompletableFuture<JsonArray> completion;
+        boolean vanillaFrame = Boolean.getBoolean("solaris.client.vanillaEvents");
+        if (vanillaFrame) {
+            completion = VanillaFrameCapture.request(directory, path);
+        } else {
+            completion = new CompletableFuture<>();
+            new MinecraftClientExecutor().callOnClientThread(() -> {
+                Minecraft minecraft = Minecraft.getInstance();
+                Screenshot.grab(directory.toFile(), path.getFileName().toString(),
+                    minecraft.gameRenderer.mainRenderTarget(), 1,
+                    message -> completion.complete(new JsonArray()));
+                return null;
+            });
+        }
+        final JsonArray renderedGait;
         try {
-            resultMessage = completion.get(30, TimeUnit.SECONDS);
+            renderedGait = completion.get(30, TimeUnit.SECONDS);
         } catch (InterruptedException error) {
+            completion.cancel(false);
             Thread.currentThread().interrupt();
             throw error;
         } catch (ExecutionException error) {
             throw new IllegalStateException("screenshot write failed", error.getCause());
         } catch (TimeoutException error) {
+            completion.cancel(false);
             throw new IllegalStateException("screenshot did not finish within 30 seconds", error);
         }
         if (!Files.isRegularFile(path)) {
-            throw new IllegalStateException("screenshot was not written: " + resultMessage);
+            throw new IllegalStateException("screenshot was not written: " + path);
+        }
+        if (vanillaFrame) {
+            Files.writeString(path.resolveSibling(path.getFileName() + ".gait.json"), renderedGait.toString());
         }
         return path;
+    }
+
+    static JsonArray renderedGait(Minecraft minecraft) {
+        JsonArray result = new JsonArray();
+        for (var state : minecraft.gameRenderer.gameRenderState().levelRenderState.entityRenderStates) {
+            if (state instanceof LivingEntityRenderState living) {
+                JsonObject item = new JsonObject();
+                item.addProperty("entity_type", BuiltInRegistries.ENTITY_TYPE.getKey(living.entityType).toString());
+                item.addProperty("x", living.x);
+                item.addProperty("y", living.y);
+                item.addProperty("z", living.z);
+                item.addProperty("walk_position", living.walkAnimationPos);
+                item.addProperty("walk_speed", living.walkAnimationSpeed);
+                result.add(item);
+            }
+        }
+        return result;
     }
 
     static Path screenshotBaseDirectory(Path path) {

@@ -21,6 +21,11 @@ public final class SolarisClientAgent {
 
     public static void premain(String agentArgs, Instrumentation instrumentation) {
         instrumentation.addTransformer(new VanillaEventTransformer());
+        if (Boolean.getBoolean("solaris.client.vanillaEvents")
+                && (AgentConfig.from(System.getProperties(), agentArgs).enabled()
+                || ClientMcpConfig.from(System.getProperties(), agentArgs).enabled())) {
+            instrumentation.addTransformer(new VanillaTickTransformer());
+        }
         start(agentArgs);
     }
 

@@ -541,6 +541,15 @@ container templates and slot zero (`copyOne()`), retaining the exact three-diamo
 assertion. Bucket diagnostics use the vanilla outline/no-fluid POV ray and
 interaction range; actual bucket use still follows the native `Item.use` path.
 
+When started as a Java agent on a plain client with
+`-Dsolaris.client.vanillaEvents=true`, the automation bridge instruments
+`Minecraft.tick()` to publish completed-tick events and state changes; the
+NeoForge automation mod uses its existing event bus instead. The Java agent is
+test tooling and does not provide Loader platform features.
+Plain-client screenshots additionally retain a `.png.gait.json` sidecar:
+the agent samples living-entity render inputs after extraction and captures the
+image after rendering that same frame. These inputs are not server authority.
+
 To test a real connection and structured world reads against Solaris:
 
 ```sh
@@ -563,6 +572,7 @@ Read-only tools:
   state properties, rechecking only after applied client state events.
 - `minecraft_scan_blocks`: an inclusive loaded box with the same fields, capped at 4096 cells.
 - `minecraft_list_entities`: visible entities within 128 blocks, capped at 512.
+  Living entities include their observed walk position and speed for gait comparisons.
 - `minecraft_read_recipe_book`: bounded recipe display IDs accepted into the
   real client's recipe book.
 - `minecraft_wait_for_visible_entity`: wait for an entity type within a bounded radius.
