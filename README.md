@@ -529,6 +529,15 @@ container templates and slot zero (`copyOne()`), retaining the exact three-diamo
 assertion. Bucket diagnostics use the vanilla outline/no-fluid POV ray and
 interaction range; actual bucket use still follows the native `Item.use` path.
 
+When started as a Java agent on a plain client with
+`-Dsolaris.client.vanillaEvents=true`, the automation bridge instruments
+`Minecraft.tick()` to publish completed-tick events and state changes; the
+NeoForge automation mod uses its existing event bus instead. The Java agent is
+test tooling and does not provide Loader platform features.
+Screenshots additionally retain a `.png.gait.json` sidecar sampled on the
+client thread from the last rendered living-entity states alongside the image.
+These are render inputs, not a server-authoritative movement observation.
+
 To test a real connection and structured world reads against Solaris:
 
 ```sh
