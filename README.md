@@ -199,6 +199,9 @@ requiring graphics; pixel capture still requires the explicit Xvfb smoke flag.
 GUI focus hooks select their owning Minecraft/Gui class through the version
 shim. Window focus hooks read the owning window's resulting focus state instead
 of depending on the native callback's version-specific parameter list.
+Fabric's MCP run compiles the same agent sources as NeoForge instead of adding
+the standalone shaded Java-agent JAR to Fabric Loader's classpath; the platform
+provides its own ASM runtime without duplicate bundled classes.
 
 The plain-vanilla `java-agent` instruments the pinned client at premain to
 publish tick, lifecycle and applied-packet events to its automation bridge.
