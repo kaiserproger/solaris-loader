@@ -12,13 +12,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(Window.class)
 abstract class WindowMixin {
     @Inject(method = "onFocus", at = @At("RETURN"))
-    private void solaris$windowFocus(long window, boolean focused, CallbackInfo callback) {
-        if (focused) {
-            return;
-        }
+    private void solaris$windowFocus(CallbackInfo callback) {
         Minecraft client = Minecraft.getInstance();
-        Window gameWindow = client == null ? null : client.getWindow();
-        if (gameWindow != null && gameWindow.handle() == window) {
+        if (client != null && client.getWindow() == (Object) this && !client.isWindowActive()) {
             LoaderMinecraftInput.focusLost();
         }
     }

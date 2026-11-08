@@ -196,6 +196,9 @@ injection conflict on Fabric API 0.155.2.
 The isolated capture test also selects a test-only `ClientVersionApi`: GLFW on
 26.1.2/26.2 and SDL3 on 26.3. Ordinary builds compile the matching test without
 requiring graphics; pixel capture still requires the explicit Xvfb smoke flag.
+GUI focus hooks select their owning Minecraft/Gui class through the version
+shim. Window focus hooks read the owning window's resulting focus state instead
+of depending on the native callback's version-specific parameter list.
 
 The plain-vanilla `java-agent` instruments the pinned client at premain to
 publish tick, lifecycle and applied-packet events to its automation bridge.

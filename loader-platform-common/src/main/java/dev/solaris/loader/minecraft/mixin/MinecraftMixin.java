@@ -1,7 +1,7 @@
 package dev.solaris.loader.minecraft.mixin;
 
 import dev.solaris.loader.minecraft.LoaderMinecraftInput;
-import net.minecraft.client.Minecraft;
+import dev.solaris.loader.minecraft.ClientVersionApi;
 import net.minecraft.client.gui.screens.Overlay;
 import net.minecraft.client.gui.screens.Screen;
 import org.spongepowered.asm.mixin.Mixin;
@@ -14,7 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
  * every held Loader binding before the new GUI takes focus, so no held edge
  * outlives the key-up that the GUI may never deliver.
  */
-@Mixin(Minecraft.class)
+@Mixin(targets = ClientVersionApi.GUI_FOCUS_OWNER)
 abstract class MinecraftMixin {
     @Inject(method = "setScreen", at = @At("HEAD"))
     private void solaris$screenFocus(Screen screen, CallbackInfo callback) {

@@ -13,6 +13,7 @@ import java.util.function.Function;
 /** Version-specific Minecraft signatures; common Loader code owns the behavior. */
 public final class ClientVersionApi {
     private ClientVersionApi() {}
+    public static final String GUI_FOCUS_OWNER = "net.minecraft.client.Minecraft";
     public static Screen screen(Minecraft client) { return client.screen; }
     public static void setScreen(Minecraft client, Screen screen) { client.setScreen(screen); }
     public static Overlay overlay(Minecraft client) { return client.getOverlay(); }
