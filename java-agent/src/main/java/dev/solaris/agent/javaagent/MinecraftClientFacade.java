@@ -1371,33 +1371,39 @@ public final class MinecraftClientFacade implements ClientFacade {
     public Path screenshot(Path path) throws Exception {
         Path directory = screenshotBaseDirectory(path);
         Files.createDirectories(directory.resolve("screenshots"));
-        CompletableFuture<String> completion = new CompletableFuture<>();
-        JsonArray renderedGait = new MinecraftClientExecutor().callOnClientThread(() -> {
-            Minecraft minecraft = Minecraft.getInstance();
-            Screenshot.grab(
-                directory.toFile(),
-                path.getFileName().toString(),
-                minecraft.gameRenderer.mainRenderTarget(),
-                1,
-                message -> completion.complete(message.getString())
-            );
-            return renderedGait(minecraft);
-        });
-        final String resultMessage;
+        CompletableFuture<JsonArray> completion;
+        boolean vanillaFrame = Boolean.getBoolean("solaris.client.vanillaEvents");
+        if (vanillaFrame) {
+            completion = VanillaFrameCapture.request(directory, path);
+        } else {
+            completion = new CompletableFuture<>();
+            new MinecraftClientExecutor().callOnClientThread(() -> {
+                Minecraft minecraft = Minecraft.getInstance();
+                Screenshot.grab(directory.toFile(), path.getFileName().toString(),
+                    minecraft.gameRenderer.mainRenderTarget(), 1,
+                    message -> completion.complete(new JsonArray()));
+                return null;
+            });
+        }
+        final JsonArray renderedGait;
         try {
-            resultMessage = completion.get(30, TimeUnit.SECONDS);
+            renderedGait = completion.get(30, TimeUnit.SECONDS);
         } catch (InterruptedException error) {
+            completion.cancel(false);
             Thread.currentThread().interrupt();
             throw error;
         } catch (ExecutionException error) {
             throw new IllegalStateException("screenshot write failed", error.getCause());
         } catch (TimeoutException error) {
+            completion.cancel(false);
             throw new IllegalStateException("screenshot did not finish within 30 seconds", error);
         }
         if (!Files.isRegularFile(path)) {
-            throw new IllegalStateException("screenshot was not written: " + resultMessage);
+            throw new IllegalStateException("screenshot was not written: " + path);
         }
-        Files.writeString(path.resolveSibling(path.getFileName() + ".gait.json"), renderedGait.toString());
+        if (vanillaFrame) {
+            Files.writeString(path.resolveSibling(path.getFileName() + ".gait.json"), renderedGait.toString());
+        }
         return path;
     }
 

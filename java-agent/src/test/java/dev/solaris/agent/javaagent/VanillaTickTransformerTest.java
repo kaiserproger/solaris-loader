@@ -21,6 +21,19 @@ final class VanillaTickTransformerTest {
         method.visitInsn(Opcodes.RETURN);
         method.visitMaxs(0, 1);
         method.visitEnd();
+        method = writer.visitMethod(Opcodes.ACC_PUBLIC, "renderFrame", "(Z)V", null, null);
+        method.visitCode();
+        method.visitInsn(Opcodes.ACONST_NULL);
+        method.visitInsn(Opcodes.ACONST_NULL);
+        method.visitInsn(Opcodes.ICONST_0);
+        method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "net/minecraft/client/renderer/GameRenderer",
+            "extract", "(Lnet/minecraft/client/DeltaTracker;Z)V", false);
+        method.visitInsn(Opcodes.ACONST_NULL);
+        method.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "net/minecraft/client/renderer/GameRenderer",
+            "render", "()V", false);
+        method.visitInsn(Opcodes.RETURN);
+        method.visitMaxs(3, 2);
+        method.visitEnd();
         writer.visitEnd();
         return writer.toByteArray();
     }
@@ -33,7 +46,7 @@ final class VanillaTickTransformerTest {
         assertThrows(IllegalStateException.class, () -> transformer.transform(null, null,
             "net/minecraft/client/Minecraft", null, null, minecraft(false)));
         byte[] transformed = transformer.transform(null, null, "net/minecraft/client/Minecraft", null, null, original);
-        int[] calls = {0};
+        int[] calls = {0, 0, 0};
         new ClassReader(transformed).accept(new ClassVisitor(Opcodes.ASM9) {
             @Override
             public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
@@ -45,10 +58,27 @@ final class VanillaTickTransformerTest {
                                 && method.equals("afterTick")) {
                             calls[0]++;
                         }
+                        if (name.equals("renderFrame") && opcode == Opcodes.INVOKESTATIC
+                                && owner.equals("dev/solaris/agent/javaagent/VanillaFrameCapture")) {
+                            if (method.equals("afterExtract")) calls[1]++;
+                            if (method.equals("afterRender")) calls[2]++;
+                        }
                     }
                 };
             }
         }, 0);
         assertEquals(1, calls[0]);
+        assertEquals(1, calls[1]);
+        assertEquals(1, calls[2]);
+    }
+
+    @Test
+    void timedOutCaptureReleasesItsPendingSlot() {
+        var path = java.nio.file.Path.of("screenshots", "capture.png");
+        var first = VanillaFrameCapture.request(path.getParent(), path);
+        assertThrows(IllegalStateException.class, () -> VanillaFrameCapture.request(path.getParent(), path));
+        first.cancel(false);
+        var next = VanillaFrameCapture.request(path.getParent(), path);
+        next.cancel(false);
     }
 }

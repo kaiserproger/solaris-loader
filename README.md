@@ -534,9 +534,9 @@ When started as a Java agent on a plain client with
 `Minecraft.tick()` to publish completed-tick events and state changes; the
 NeoForge automation mod uses its existing event bus instead. The Java agent is
 test tooling and does not provide Loader platform features.
-Screenshots additionally retain a `.png.gait.json` sidecar sampled on the
-client thread from the last rendered living-entity states alongside the image.
-These are render inputs, not a server-authoritative movement observation.
+Plain-client screenshots additionally retain a `.png.gait.json` sidecar:
+the agent samples living-entity render inputs after extraction and captures the
+image after rendering that same frame. These inputs are not server authority.
 
 To test a real connection and structured world reads against Solaris:
 
