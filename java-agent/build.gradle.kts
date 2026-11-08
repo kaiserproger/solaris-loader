@@ -7,6 +7,11 @@ val clientJarPath = providers.environmentVariable("SOLARIS_CLIENT_JAR")
     .orElse(rootProject.file("../solaris/.analysis/client-automation/versions/26.3/client.jar").absolutePath)
 val clientJar = file(clientJarPath.get())
 
+val clientVersion = providers.gradleProperty("solarisClientVersion").orElse("26.3")
+sourceSets.main {
+    java.srcDir("src/minecraft-${clientVersion.get()}/java")
+}
+
 dependencies {
     implementation(project(":bridge-core"))
     compileOnly(files(clientJar))

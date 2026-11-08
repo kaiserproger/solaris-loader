@@ -375,6 +375,14 @@ server in the real Minecraft Java 26.3 client. MCP hosts can inspect the
 client-visible world and drive ordinary client inputs without using screenshots
 as state assertions or an external command-string launcher.
 
+The automation agent supports 26.3 by default and 26.2 with
+`-PsolarisClientVersion=26.2 -PneoVersion=26.2.0.93`. Build `:java-agent:jar`
+against the matching verified vanilla jar using `SOLARIS_CLIENT_JAR`; for the
+NeoForge graphical harness use the same two Gradle properties (or
+`ORG_GRADLE_PROJECT_solarisClientVersion` and `ORG_GRADLE_PROJECT_neoVersion`
+environment variables) with `SOLARIS_LOADER_ROOT` pointing at this checkout.
+These are development automation targets, not player Loader releases.
+
 ## Start
 
 Use Java 25 and choose a fresh bearer token:

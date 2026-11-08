@@ -20,7 +20,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket;
-import net.minecraft.network.protocol.game.ServerboundSignUpdatePacket;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
@@ -38,7 +37,6 @@ import net.minecraft.world.inventory.ContainerData;
 import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.DyeColor;
-import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.item.crafting.display.ShapedCraftingRecipeDisplay;
 import net.minecraft.world.item.crafting.display.SlotDisplayContext;
 import net.minecraft.world.level.LightLayer;
@@ -46,14 +44,11 @@ import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.SignBlockEntity;
-import net.minecraft.world.level.block.entity.SignText;
-import net.minecraft.world.level.block.entity.SignTextSlot;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.Vec3;
-import net.minecraft.util.Prediction;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -149,13 +144,13 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             if (!action.startSent) {
                 action.startSent = true;
                 minecraft.gameMode.startDestroyBlock(pos(action.target), action.face);
-                minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+                ClientVersionApi.swing(minecraft.player, InteractionHand.MAIN_HAND);
                 action.started.complete(null);
             } else {
                 action.continueCalls++;
                 if (minecraft.gameMode.continueDestroyBlock(pos(action.target), action.face)) {
                     action.continueAccepted++;
-                    minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+                    ClientVersionApi.swing(minecraft.player, InteractionHand.MAIN_HAND);
                 }
             }
         } catch (RuntimeException error) {
@@ -257,7 +252,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 InteractionHand.MAIN_HAND,
                 hit
             );
-            minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+            ClientVersionApi.swing(minecraft.player, InteractionHand.MAIN_HAND);
             return new ScenarioUseResult(result.toString(), ackVersion);
         });
     }
@@ -282,7 +277,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 InteractionHand.MAIN_HAND,
                 hit
             );
-            minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+            ClientVersionApi.swing(minecraft.player, InteractionHand.MAIN_HAND);
             return new ScenarioUseResult(result.toString(), ackVersion);
         });
     }
@@ -413,11 +408,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         requireFourSignLines(lines);
         executor.callOnClientThread(() -> {
             Minecraft minecraft = requireInPlay();
-            minecraft.getConnection().send(new ServerboundSignUpdatePacket(
-                pos(target),
-                List.copyOf(lines),
-                SignTextSlot.FRONT
-            ));
+            minecraft.getConnection().send(ClientVersionApi.signUpdate(pos(target), lines));
             return null;
         });
     }
@@ -1280,7 +1271,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                             recordCombatAttack(minecraft, current, entity.entityType(), currentTick);
                             combat.sent++;
                             minecraft.gameMode.attack(minecraft.player, current);
-                            minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+                            ClientVersionApi.swing(minecraft.player, InteractionHand.MAIN_HAND);
                         }
                         return new EntityAttackSample(
                             mayAttack,
@@ -1427,7 +1418,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                         recordCombatAttack(minecraft, current, entity.entityType(), currentTick);
                         combat.sent++;
                         minecraft.gameMode.attack(minecraft.player, current);
-                        minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+                        ClientVersionApi.swing(minecraft.player, InteractionHand.MAIN_HAND);
                     }
                     return new EntityRemovalAttackSample(mayAttack, false, currentTick);
                 });
@@ -3441,12 +3432,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
                 );
             }
             BlockPos origin = minecraft.player.blockPosition();
-            boolean dropped = minecraft.player.drop(
-                minecraft.player.getMainHandItem(),
-                false,
-                Prediction.PREDICTED
-            ) != null;
-            minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+            boolean dropped = ClientVersionApi.dropSelected(minecraft.player);
+            ClientVersionApi.swing(minecraft.player, InteractionHand.MAIN_HAND);
             if (!dropped) {
                 throw new IllegalStateException("client refused selected item drop for " + itemId);
             }
@@ -3583,7 +3570,7 @@ public final class MinecraftScenarioClient implements ScenarioClient {
             hand,
             hit
         );
-        minecraft.player.swing(hand, SwingAnimation.DEFAULT, true);
+        ClientVersionApi.swing(minecraft.player, hand);
         return new ScenarioUseResult(result.toString());
     }
 
@@ -4545,9 +4532,8 @@ public final class MinecraftScenarioClient implements ScenarioClient {
         if (!(blockEntity instanceof SignBlockEntity sign)) {
             return false;
         }
-        SignText frontText = sign.getText(SignTextSlot.FRONT);
         for (int index = 0; index < lines.size(); index++) {
-            if (!Objects.equals(frontText.getMessages(false).get(index).getString(), lines.get(index))) {
+            if (!Objects.equals(ClientVersionApi.signLine(sign, index), lines.get(index))) {
                 return false;
             }
         }

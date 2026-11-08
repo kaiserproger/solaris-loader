@@ -28,7 +28,6 @@ import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.phys.Vec3;
 
 import java.lang.reflect.Method;
@@ -653,7 +652,7 @@ public final class MinecraftClientFacade implements ClientFacade {
                 )
             );
             minecraft.gameMode.attack(minecraft.player, entity);
-            minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+            ClientVersionApi.swing(minecraft.player, InteractionHand.MAIN_HAND);
             return new EntityAttackDispatch(
                 minecraft.level,
                 healthBefore,
@@ -1504,7 +1503,7 @@ public final class MinecraftClientFacade implements ClientFacade {
         for (String input : inputs) {
             if (input.startsWith("key.keyboard.")) {
                 InputConstants.Key key = InputConstants.getKey(input);
-                if (key.getType() != InputConstants.Type.KEYBOARD || key.getValue() < 0
+                if (!ClientVersionApi.isKeyboard(key) || key.getValue() < 0
                         || !key.getName().equals(input)) {
                     throw new IllegalArgumentException("unsupported keyboard key: " + input);
                 }
@@ -1522,7 +1521,7 @@ public final class MinecraftClientFacade implements ClientFacade {
             throws ReflectiveOperationException {
         if (input.startsWith("key.keyboard.")) {
             InputConstants.Key key = InputConstants.getKey(input);
-            if (key.getType() != InputConstants.Type.KEYBOARD || key.getValue() < 0) {
+            if (!ClientVersionApi.isKeyboard(key) || key.getValue() < 0) {
                 throw new IllegalArgumentException("unsupported keyboard key: " + input);
             }
             Method callback = KeyboardHandler.class.getDeclaredMethod(
