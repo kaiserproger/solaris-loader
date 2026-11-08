@@ -14,6 +14,7 @@ sourceSets.main {
 
 dependencies {
     implementation(project(":bridge-core"))
+    implementation("org.ow2.asm:asm:9.9")
     compileOnly(files(clientJar))
     compileOnly("com.mojang:brigadier:1.3.10")
     compileOnly("com.mojang:datafixerupper:9.0.19")

@@ -177,6 +177,10 @@ cd solaris-loader
 On Windows use `gradlew.bat`. JARs appear in each adapter's `build/libs/`.
 Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
 `fabric-agent`, `java-agent`, and `bridge-core` are development tooling.
+The plain-vanilla `java-agent` instruments the pinned client at premain to
+publish tick, lifecycle and applied-packet events to its automation bridge.
+Fabric and other platform agents use their own runtime hooks instead; the
+vanilla transformer is not installed by `startFromRuntime`.
 
 <details>
 <summary>Developer reference: Loader protocol and content activation</summary>
@@ -550,8 +554,8 @@ To test a real connection and structured world reads against Solaris:
 
 Read-only tools:
 
-- `minecraft_observe`: player, health/food, pose, inventory, active container,
-  screen, target, clocks, and recent chat.
+- `minecraft_observe`: player, health/food, pose, actual `eye_y`, inventory,
+  active container, screen, target, clocks, and recent chat.
 - `minecraft_read_block`: one loaded block with state, fluid, sky-light, and block-light values.
 - `minecraft_wait_for_loaded_block`: wait for an applied packet event that makes
   one block's chunk client-loaded, then return that block.
