@@ -50,6 +50,7 @@ sourceSets {
     }
     named("test") {
         java.srcDir(rootProject.file("loader-platform-common/src/test/java"))
+        java.srcDir("src/minecraft-${minecraftVersion.get()}/test/java")
     }
 }
 
