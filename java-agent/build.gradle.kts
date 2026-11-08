@@ -24,6 +24,7 @@ dependencies {
     testRuntimeOnly(files(clientJar))
     testCompileOnly(files(clientJar))
     testImplementation("com.google.code.gson:gson:2.11.0")
+    testRuntimeOnly("com.mojang:logging:1.7.12")
     testRuntimeOnly("com.mojang:authlib:7.0.63")
     testRuntimeOnly("com.mojang:brigadier:1.3.10")
     testRuntimeOnly("com.mojang:datafixerupper:9.0.19")
