@@ -645,6 +645,21 @@ final class ClientCommandsTest {
     }
 
     @Test
+    void entityIdParserAcceptsIntBoundariesAndRejectsOverflow() throws Exception {
+        FakeClient client = new FakeClient();
+        BridgeCommand approach = ClientCommands.create(new ImmediateExecutor(), client)
+            .find("approach_entity").orElseThrow();
+        for (int id : new int[] {Integer.MIN_VALUE, -1, Integer.MAX_VALUE}) {
+            approach.execute(request("approach_entity", "{\"entity_id\":" + id + "}"));
+            assertEquals(id, client.approachedEntityId);
+        }
+        for (String id : List.of("-2147483649", "2147483648", "999999999999999999999")) {
+            assertThrows(IllegalArgumentException.class, () ->
+                approach.execute(request("approach_entity", "{\"entity_id\":" + id + "}")));
+        }
+    }
+
+    @Test
     void waitInventoryUsesFacadeEventWaitAndValidatesPayload() throws Exception {
         ImmediateExecutor executor = new ImmediateExecutor();
         FakeClient client = new FakeClient();

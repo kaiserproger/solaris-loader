@@ -16,6 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ScenarioEntityWaitsTest {
     @Test
+    void negativeIdentityCanBeConstructedIndependentlyOfObservation() {
+        UUID uuid = UUID.fromString("01234567-89ab-cdef-0123-456789abcdef");
+        ScenarioEntityIdentity identity = new ScenarioEntityIdentity(-1, uuid, "minecraft:text_display");
+        assertTrue(identity.matches(-1, uuid, "minecraft:text_display"));
+        assertFalse(identity.matches(-1, uuid, "minecraft:armor_stand"));
+    }
+
+    @Test
     void negativePresentationIdsRemainObservableAndIdentityFenced() {
         UUID uuid = UUID.fromString("01234567-89ab-cdef-0123-456789abcdef");
         for (String type : new String[] {"minecraft:text_display", "minecraft:armor_stand"}) {
