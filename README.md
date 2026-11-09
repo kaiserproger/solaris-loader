@@ -551,7 +551,7 @@ Read-only tools:
 - `minecraft_wait_for_block_state`: wait for an exact block ID and optional
   state properties, rechecking only after applied client state events.
 - `minecraft_scan_blocks`: an inclusive loaded box with the same fields, capped at 4096 cells.
-- `minecraft_list_entities`: visible entities within 128 blocks, capped at 512.
+- `minecraft_list_entities`: visible entities within 128 blocks, capped at 512. Entity IDs are signed 32-bit values, including server-sent presentation entities with negative IDs.
 - `minecraft_read_recipe_book`: bounded recipe display IDs accepted into the
   real client's recipe book.
 - `minecraft_wait_for_visible_entity`: wait for an entity type within a bounded radius.

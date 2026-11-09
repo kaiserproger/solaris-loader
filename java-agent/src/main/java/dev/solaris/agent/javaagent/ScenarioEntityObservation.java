@@ -17,9 +17,6 @@ record ScenarioEntityObservation(
         if (entityType == null || entityType.isBlank()) {
             throw new IllegalArgumentException("entity type must not be blank");
         }
-        if (entityId < 0) {
-            throw new IllegalArgumentException("entity id must not be negative");
-        }
         Objects.requireNonNull(entityUuid, "entity uuid");
     }
 

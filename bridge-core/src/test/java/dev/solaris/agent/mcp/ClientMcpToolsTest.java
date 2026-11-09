@@ -10,6 +10,21 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ClientMcpToolsTest {
+    @Test
+    void entityIdSchemasAcceptTheFullSignedWireRange() {
+        for (String name : List.of(
+            "minecraft_wait_for_entity_motion",
+            "minecraft_wait_for_entity_removed",
+            "minecraft_approach_entity",
+            "minecraft_interact_entity",
+            "minecraft_attack_entity_once",
+            "minecraft_attack_entity_until_drop_collected"
+        )) {
+            JsonObject id = properties(find(ClientMcpTools.definitions(), name)).getAsJsonObject("entity_id");
+            assertEquals(Integer.MIN_VALUE, id.get("minimum").getAsInt(), name);
+            assertEquals(Integer.MAX_VALUE, id.get("maximum").getAsInt(), name);
+        }
+    }
 
     @Test
     void publishesBoundsNeededToKeepClientQueriesFinite() {

@@ -16,6 +16,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ScenarioEntityWaitsTest {
     @Test
+    void negativePresentationIdsRemainObservableAndIdentityFenced() {
+        UUID uuid = UUID.fromString("01234567-89ab-cdef-0123-456789abcdef");
+        for (String type : new String[] {"minecraft:text_display", "minecraft:armor_stand"}) {
+            ScenarioEntityObservation observation =
+                new ScenarioEntityObservation(type, -1, uuid, 1, 2, 3, 4, null);
+            ScenarioEntityIdentity identity = observation.identity();
+            assertEquals(-1, identity.entityId());
+            assertTrue(identity.matches(-1, uuid, type));
+            assertFalse(identity.matches(-2, uuid, type));
+            assertFalse(identity.matches(-1, UUID.randomUUID(), type));
+        }
+    }
+
+    @Test
     void entityIdentityFenceRejectsEntityIdReuse() {
         UUID expectedUuid = UUID.fromString("01234567-89ab-cdef-0123-456789abcdef");
         ScenarioEntityIdentity identity = new ScenarioEntityIdentity(

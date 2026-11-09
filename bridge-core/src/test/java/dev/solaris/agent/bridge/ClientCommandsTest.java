@@ -322,20 +322,20 @@ final class ClientCommandsTest {
 
         JsonObject motion = registry.find("wait_entity_motion").orElseThrow().execute(request(
             "wait_entity_motion",
-            "{\"entity_id\":42,\"entity_uuid\":\"" + uuid + "\","
+            "{\"entity_id\":-1,\"entity_uuid\":\"" + uuid + "\","
                 + "\"entity_type\":\"minecraft:cow\","
                 + "\"minimum_horizontal_distance\":1.5,\"minimum_vertical_rise\":0.25,"
                 + "\"timeout_seconds\":12.0}"
         ));
         JsonObject removed = registry.find("wait_entity_removed").orElseThrow().execute(request(
             "wait_entity_removed",
-            "{\"entity_id\":42,\"entity_uuid\":\"" + uuid + "\","
+            "{\"entity_id\":-1,\"entity_uuid\":\"" + uuid + "\","
                 + "\"entity_type\":\"minecraft:cow\",\"timeout_seconds\":20.0}"
         ));
 
         assertTrue(motion.get("matched").getAsBoolean());
         assertTrue(removed.get("removed").getAsBoolean());
-        assertEquals(42, client.waitedIdentityEntityId);
+        assertEquals(-1, client.waitedIdentityEntityId);
         assertEquals(UUID.fromString(uuid), client.waitedIdentityUuid);
         assertEquals("minecraft:cow", client.waitedIdentityType);
         assertEquals(1.5, client.minimumHorizontalDistance);
@@ -369,13 +369,13 @@ final class ClientCommandsTest {
 
         JsonObject result = registry.find("interact_entity").orElseThrow().execute(request(
             "interact_entity",
-            "{\"entity_id\":42,\"entity_uuid\":\"" + uuid + "\","
+            "{\"entity_id\":-1,\"entity_uuid\":\"" + uuid + "\","
                 + "\"entity_type\":\"minecraft:cow\",\"hand\":\"off_hand\"}"
         ));
 
         assertTrue(result.get("dispatched").getAsBoolean());
         assertEquals("pass", result.get("result").getAsString());
-        assertEquals(42, client.interactedEntityId);
+        assertEquals(-1, client.interactedEntityId);
         assertEquals(UUID.fromString(uuid), client.interactedEntityUuid);
         assertEquals("minecraft:cow", client.interactedEntityType);
         assertEquals("off_hand", client.interactedHand);
@@ -615,31 +615,29 @@ final class ClientCommandsTest {
         UUID entityUuid = UUID.fromString("00000000-0000-0000-0000-000000000042");
         JsonObject attackOnceResult = attackOnce.execute(request(
             "attack_entity_once",
-            "{\"entity_id\":42,\"entity_uuid\":\"" + entityUuid
+            "{\"entity_id\":-2,\"entity_uuid\":\"" + entityUuid
                 + "\",\"entity_type\":\"minecraft:zombie\",\"timeout_seconds\":5.0}"
         ));
         assertTrue(attackOnceResult.get("dispatched").getAsBoolean());
-        assertEquals(42, client.attackedOnceEntityId);
+        assertEquals(-2, client.attackedOnceEntityId);
         assertEquals(entityUuid, client.attackedOnceEntityUuid);
         assertEquals("minecraft:zombie", client.attackedOnceEntityType);
         assertEquals(Duration.ofSeconds(5), client.attackOnceTimeout);
 
         JsonObject attackResult = attack.execute(request(
             "attack_entity_until_drop_collected",
-            "{\"entity_id\":42,\"expected_drop_item_id\":\"minecraft:rotten_flesh\","
+            "{\"entity_id\":-3,\"expected_drop_item_id\":\"minecraft:rotten_flesh\","
                 + "\"expected_drop_count\":1,\"timeout_seconds\":20.0}"
         ));
         assertTrue(attackResult.get("pickup_restored").getAsBoolean());
-        assertEquals(42, client.attackedEntityId);
+        assertEquals(-3, client.attackedEntityId);
         assertEquals("minecraft:rotten_flesh", client.expectedDropItemId);
         assertEquals(1, client.expectedDropCount);
         assertEquals(Duration.ofSeconds(20), client.attackEntityTimeout);
         assertEquals(0, executor.calls, "facade owns movement, attack, and event waits");
 
-        assertThrows(IllegalArgumentException.class, () -> approach.execute(request(
-            "approach_entity",
-            "{\"entity_id\":-1}"
-        )));
+        approach.execute(request("approach_entity", "{\"entity_id\":-1}"));
+        assertEquals(-1, client.approachedEntityId);
         assertThrows(IllegalArgumentException.class, () -> attack.execute(request(
             "attack_entity_until_drop_collected",
             "{\"entity_id\":42,\"expected_drop_item_id\":\"\",\"expected_drop_count\":1}"
