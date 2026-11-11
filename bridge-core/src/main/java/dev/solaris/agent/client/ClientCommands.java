@@ -35,6 +35,17 @@ public final class ClientCommands {
             payload.addProperty("agent", "solaris-client-agent");
             return payload;
         });
+        registry.register("submit_input_batch", request -> {
+            JsonObject payload = request.payload();
+            if (!payload.has("actions") || !payload.get("actions").isJsonArray()) {
+                throw new IllegalArgumentException("actions must be an array");
+            }
+            JsonArray actions = payload.getAsJsonArray("actions");
+            if (actions.isEmpty() || actions.size() > 16) {
+                throw new IllegalArgumentException("actions must contain 1..16 entries");
+            }
+            return executor.callOnClientThread(() -> client.submitInputBatch(actions));
+        });
         registry.register("connect", request -> {
             ServerAddress address = parseServerAddress(request.payload());
             return executor.callOnClientThread(() -> {

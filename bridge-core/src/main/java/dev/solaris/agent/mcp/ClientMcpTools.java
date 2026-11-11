@@ -21,6 +21,12 @@ public final class ClientMcpTools {
             "observe",
             objectSchema(properties(), List.of())
         ),
+        mutating(
+            "minecraft_submit_input_batch",
+            "Submit an ordered batch of click_slot and instant break_block inputs in one client tick.",
+            "submit_input_batch",
+            objectSchema(properties("actions", inputBatchSchema()), List.of("actions"))
+        ),
         readOnly(
             "minecraft_read_item_components",
             "Read one actual received stack's native components on demand. Selected forbids slot; player/container require slot; container requires a visible menu.",
@@ -740,6 +746,20 @@ public final class ClientMcpTools {
             ),
             List.of("keys", "ticks")
         );
+    }
+
+    private static JsonObject inputBatchSchema() {
+        JsonObject schema = new JsonObject();
+        schema.addProperty("type", "array");
+        schema.addProperty("minItems", 1);
+        schema.addProperty("maxItems", 16);
+        schema.add("items", objectSchema(properties(
+            "kind", enumString(List.of("click_slot", "break_block")),
+            "slot", integer(0, Short.MAX_VALUE),
+            "x", integer(), "y", integer(), "z", integer(),
+            "face", enumString(BLOCK_FACES)
+        ), List.of("kind")));
+        return schema;
     }
 
     private static JsonObject inputKeysSchema() {
