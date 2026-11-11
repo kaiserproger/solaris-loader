@@ -23,7 +23,7 @@ public final class ClientMcpTools {
         ),
         mutating(
             "minecraft_submit_input_batch",
-            "Submit an ordered batch of click_slot and break_block inputs in one client tick.",
+            "Submit an ordered batch of click_slot and instant break_block inputs in one client tick.",
             "submit_input_batch",
             objectSchema(properties("actions", inputBatchSchema()), List.of("actions"))
         ),

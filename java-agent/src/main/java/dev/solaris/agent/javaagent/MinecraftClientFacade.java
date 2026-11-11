@@ -27,7 +27,6 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
-import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.inventory.ContainerInput;
@@ -117,11 +116,16 @@ public final class MinecraftClientFacade implements ClientFacade {
                     throw new IllegalArgumentException("container slot out of bounds");
                 }
             } else if ("break_block".equals(kind)) {
-                action.get("x").getAsInt();
-                action.get("y").getAsInt();
-                action.get("z").getAsInt();
+                BlockPos pos = new BlockPos(action.get("x").getAsInt(), action.get("y").getAsInt(),
+                    action.get("z").getAsInt());
                 if (Direction.byName(action.get("face").getAsString()) == null) {
                     throw new IllegalArgumentException("invalid block face");
+                }
+                // Vanilla completes only an instant break from the start input; a slower
+                // block would need held mining across ticks, which a batch cannot express.
+                var state = minecraft.level.getBlockState(pos);
+                if (state.isAir() || state.getDestroyProgress(minecraft.player, minecraft.level, pos) < 1.0F) {
+                    throw new IllegalArgumentException("break_block requires a block this player breaks instantly");
                 }
             } else {
                 throw new IllegalArgumentException("unknown action kind: " + kind);
@@ -147,11 +151,10 @@ public final class MinecraftClientFacade implements ClientFacade {
                 BlockPos pos = new BlockPos(action.get("x").getAsInt(), action.get("y").getAsInt(),
                     action.get("z").getAsInt());
                 Direction face = Direction.byName(action.get("face").getAsString());
+                // Vanilla's own start path: predicts the break and sends START_DESTROY_BLOCK only.
                 if (!minecraft.gameMode.startDestroyBlock(pos, face)) {
                     throw new IllegalStateException("Minecraft rejected block break start");
                 }
-                minecraft.player.connection.send(new ServerboundPlayerActionPacket(
-                    ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, pos, face));
             }
             sent.add(receipt);
         }

@@ -679,10 +679,12 @@ Controls:
   server-side close/reopen, while quick moves and buttons require the active
   container state ID to advance.
 - `minecraft_submit_input_batch` dispatches an ordered bounded list of
-  `click_slot` and `break_block` actions in one client-thread task. Its client
-  tick receipt proves dispatch order only (a click receipt also names the
-  container and state ids its packet carried); server-side consumed-input and
-  world observations are required to prove admission and outcome.
+  `click_slot` and `break_block` actions in one client-thread task.
+  `break_block` is vanilla's start-destroy input and is refused unless the
+  player breaks that block instantly. Its client tick receipt proves dispatch
+  order only (a click receipt also names the container and state ids its packet
+  carried); server-side consumed-input and world observations are required to
+  prove admission and outcome.
 - Regression: `minecraft_run_scenario` runs an existing deterministic
   in-client scenario and returns its structured report through MCP.
 - Optional visual context: `minecraft_screenshot`.
