@@ -680,7 +680,8 @@ Controls:
   container state ID to advance.
 - `minecraft_submit_input_batch` dispatches an ordered bounded list of
   `click_slot` and `break_block` actions in one client-thread task. Its client
-  tick receipt proves dispatch order only; server-side consumed-input and
+  tick receipt proves dispatch order only (a click receipt also names the
+  container and state ids its packet carried); server-side consumed-input and
   world observations are required to prove admission and outcome.
 - Regression: `minecraft_run_scenario` runs an existing deterministic
   in-client scenario and returns its structured report through MCP.

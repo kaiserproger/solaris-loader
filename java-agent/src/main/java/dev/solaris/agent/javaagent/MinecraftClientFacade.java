@@ -132,8 +132,16 @@ public final class MinecraftClientFacade implements ClientFacade {
         for (var element : actions) {
             JsonObject action = element.getAsJsonObject();
             String kind = action.get("kind").getAsString();
+            JsonObject receipt = new JsonObject();
+            receipt.addProperty("order", sent.size());
+            receipt.addProperty("kind", kind);
+            receipt.addProperty("client_tick", tick);
             if ("click_slot".equals(kind)) {
-                minecraft.gameMode.handleContainerInput(minecraft.player.containerMenu.containerId,
+                var menu = minecraft.player.containerMenu;
+                // The click packet carries exactly these ids, read on this thread just before sending.
+                receipt.addProperty("container_id", menu.containerId);
+                receipt.addProperty("state_id", menu.getStateId());
+                minecraft.gameMode.handleContainerInput(menu.containerId,
                     action.get("slot").getAsInt(), 0, ContainerInput.PICKUP, minecraft.player);
             } else {
                 BlockPos pos = new BlockPos(action.get("x").getAsInt(), action.get("y").getAsInt(),
@@ -145,10 +153,6 @@ public final class MinecraftClientFacade implements ClientFacade {
                 minecraft.player.connection.send(new ServerboundPlayerActionPacket(
                     ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, pos, face));
             }
-            JsonObject receipt = new JsonObject();
-            receipt.addProperty("order", sent.size());
-            receipt.addProperty("kind", kind);
-            receipt.addProperty("client_tick", tick);
             sent.add(receipt);
         }
         JsonObject result = new JsonObject();

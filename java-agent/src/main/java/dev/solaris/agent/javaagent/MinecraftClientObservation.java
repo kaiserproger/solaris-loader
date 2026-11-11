@@ -364,6 +364,7 @@ final class MinecraftClientObservation {
     private static JsonObject container(AbstractContainerMenu menu) {
         JsonObject container = new JsonObject();
         container.addProperty("container_id", menu.containerId);
+        container.addProperty("container_state_id", menu.getStateId());
         container.addProperty("menu_class", menu.getClass().getName());
         container.addProperty("slot_count", menu.slots.size());
         JsonArray slots = new JsonArray();
