@@ -14,13 +14,20 @@ public final class SolarisClientAgent {
     private static AgentHttpBridge bridge;
     private static McpHttpServer mcp;
     private static boolean shutdownHookInstalled;
+    private static volatile boolean vanillaEventsActive;
     private static volatile Consumer<String> loaderViewRequester;
 
     private SolarisClientAgent() {
     }
 
     public static void premain(String agentArgs, Instrumentation instrumentation) {
+        instrumentation.addTransformer(new VanillaEventTransformer());
+        vanillaEventsActive = true;
         start(agentArgs);
+    }
+
+    static boolean vanillaEventsActive() {
+        return vanillaEventsActive;
     }
 
     public static void agentmain(String agentArgs, Instrumentation instrumentation) {

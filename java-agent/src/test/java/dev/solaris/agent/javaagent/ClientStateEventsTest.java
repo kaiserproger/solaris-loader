@@ -14,6 +14,38 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 final class ClientStateEventsTest {
     @Test
+    void appliedSystemChatPacketsKeepExactOrderedReceiptsAndWakeStateWaiters() {
+        String marker = "packet-receipt-" + UUID.randomUUID();
+        long before = ClientStateEvents.version();
+        var packet = new net.minecraft.network.protocol.game.ClientboundSystemChatPacket(
+            net.minecraft.network.chat.Component.literal(marker), false);
+        VanillaPacketHooks.afterPacket(packet);
+        var first = ClientStateEvents.systemChatSnapshot();
+        assertEquals(marker, first.messages().getLast());
+        assertEquals(before + 1, ClientStateEvents.version());
+        VanillaPacketHooks.afterPacket(packet);
+        var second = ClientStateEvents.systemChatSnapshot();
+        assertEquals(marker, second.messages().getLast());
+        assertEquals(marker, second.messages().get(second.messages().size() - 2));
+        assertEquals(before + 2, ClientStateEvents.version());
+        assertEquals(Math.min(first.messages().size() + 1, 4096), second.messages().size());
+        assertEquals(first.dropped() + (first.messages().size() == 4096 ? 1 : 0), second.dropped());
+    }
+
+    @Test
+    void systemChatJournalIsBoundedAndReportsLostReceipts() {
+        var before = ClientStateEvents.systemChatSnapshot();
+        for (int index = 0; index < 4097; index++) {
+            ClientStateEvents.publishSystemChat("overflow-" + index);
+        }
+        var after = ClientStateEvents.systemChatSnapshot();
+        assertEquals(4096, after.messages().size());
+        assertEquals("overflow-1", after.messages().getFirst());
+        assertEquals("overflow-4096", after.messages().getLast());
+        assertEquals(before.dropped() + before.messages().size() + 1, after.dropped());
+    }
+
+    @Test
     void shieldBlockProofRequiresTheOwnEntityAndExactIncomingBlockSound() {
         long before = ClientStateEvents.shieldBlockVersion();
         long stateBefore = ClientStateEvents.version();

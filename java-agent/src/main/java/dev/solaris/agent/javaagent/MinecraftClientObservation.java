@@ -115,6 +115,13 @@ final class MinecraftClientObservation {
         observation.add("screen", screen(minecraft));
         observation.add("overlay", overlay(minecraft));
         observation.add("recent_chat", recentChat(minecraft));
+        if (SolarisClientAgent.vanillaEventsActive()) {
+            var chatReceipts = ClientStateEvents.systemChatSnapshot();
+            JsonArray receivedChat = new JsonArray();
+            chatReceipts.messages().forEach(receivedChat::add);
+            observation.add("received_system_chat", receivedChat);
+            observation.addProperty("dropped_system_chat", chatReceipts.dropped());
+        }
         if (minecraft.screen instanceof DisconnectedScreen disconnectedScreen) {
             observation.addProperty(
                 "disconnect_reason",

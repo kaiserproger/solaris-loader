@@ -8,6 +8,7 @@ val clientJarPath = providers.environmentVariable("SOLARIS_CLIENT_JAR")
 val clientJar = file(clientJarPath.get())
 
 dependencies {
+    implementation("org.ow2.asm:asm:9.9")
     implementation(project(":bridge-core"))
     compileOnly(files(clientJar))
     compileOnly("com.mojang:brigadier:1.3.10")
@@ -20,7 +21,7 @@ dependencies {
     testCompileOnly(files(clientJar))
     testImplementation("com.google.code.gson:gson:2.11.0")
     testRuntimeOnly("com.mojang:authlib:7.0.63")
-    testRuntimeOnly("com.mojang:brigadier:1.3.10")
+    testImplementation("com.mojang:brigadier:1.3.10")
     testRuntimeOnly("com.mojang:datafixerupper:9.0.19")
     testRuntimeOnly("io.netty:netty-all:4.2.7.Final")
     testRuntimeOnly("it.unimi.dsi:fastutil:8.5.18")
