@@ -23,11 +23,14 @@ import net.minecraft.client.multiplayer.ServerData;
 import net.minecraft.client.multiplayer.resolver.ServerAddress;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.Connection;
 import net.minecraft.network.protocol.game.ServerboundMovePlayerPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.inventory.ContainerInput;
 import net.minecraft.world.phys.Vec3;
 
 import java.lang.reflect.Method;
@@ -93,6 +96,64 @@ public final class MinecraftClientFacade implements ClientFacade {
     @Override
     public JsonObject observe() {
         return MinecraftClientObservation.observe(Minecraft.getInstance());
+    }
+
+    @Override
+    public JsonObject submitInputBatch(JsonArray actions) {
+        Minecraft minecraft = requireInPlay();
+        if (minecraft.gameMode == null) {
+            throw new IllegalStateException("game mode is unavailable");
+        }
+        // Validate the entire batch before sending any input.
+        for (var element : actions) {
+            if (!element.isJsonObject()) {
+                throw new IllegalArgumentException("action must be an object");
+            }
+            JsonObject action = element.getAsJsonObject();
+            String kind = action.get("kind").getAsString();
+            if ("click_slot".equals(kind)) {
+                int slot = action.get("slot").getAsInt();
+                if (slot < 0 || slot >= minecraft.player.containerMenu.slots.size()) {
+                    throw new IllegalArgumentException("container slot out of bounds");
+                }
+            } else if ("break_block".equals(kind)) {
+                action.get("x").getAsInt();
+                action.get("y").getAsInt();
+                action.get("z").getAsInt();
+                if (Direction.byName(action.get("face").getAsString()) == null) {
+                    throw new IllegalArgumentException("invalid block face");
+                }
+            } else {
+                throw new IllegalArgumentException("unknown action kind: " + kind);
+            }
+        }
+        long tick = ClientStateEvents.tickVersion();
+        JsonArray sent = new JsonArray();
+        for (var element : actions) {
+            JsonObject action = element.getAsJsonObject();
+            String kind = action.get("kind").getAsString();
+            if ("click_slot".equals(kind)) {
+                minecraft.gameMode.handleContainerInput(minecraft.player.containerMenu.containerId,
+                    action.get("slot").getAsInt(), 0, ContainerInput.PICKUP, minecraft.player);
+            } else {
+                BlockPos pos = new BlockPos(action.get("x").getAsInt(), action.get("y").getAsInt(),
+                    action.get("z").getAsInt());
+                Direction face = Direction.byName(action.get("face").getAsString());
+                if (!minecraft.gameMode.startDestroyBlock(pos, face)) {
+                    throw new IllegalStateException("Minecraft rejected block break start");
+                }
+                minecraft.player.connection.send(new ServerboundPlayerActionPacket(
+                    ServerboundPlayerActionPacket.Action.STOP_DESTROY_BLOCK, pos, face));
+            }
+            JsonObject receipt = new JsonObject();
+            receipt.addProperty("order", sent.size());
+            receipt.addProperty("kind", kind);
+            receipt.addProperty("client_tick", tick);
+            sent.add(receipt);
+        }
+        JsonObject result = new JsonObject();
+        result.add("sent", sent);
+        return result;
     }
 
     @Override

@@ -80,13 +80,17 @@ final class MinecraftClientObservation {
             result.addProperty("container_id", menu.containerId);
             result.addProperty("container_state_id", menu.getStateId());
         }
-        JsonObject components = new JsonObject();
-        result.add("components", components);
+        result.add("components", components(minecraft, stack));
         result.addProperty("item_id", stack.isEmpty()
                 ? "minecraft:air" : BuiltInRegistries.ITEM.getKey(stack.getItem()).toString());
         result.addProperty("count", stack.isEmpty() ? 0 : stack.getCount());
+        return result;
+    }
+
+    private static JsonObject components(Minecraft minecraft, ItemStack stack) {
+        JsonObject components = new JsonObject();
         if (stack.isEmpty()) {
-            return result;
+            return components;
         }
         var ops = minecraft.level.registryAccess().createSerializationContext(JsonOps.INSTANCE);
         for (TypedDataComponent<?> component : stack.getComponents()) {
@@ -106,7 +110,7 @@ final class MinecraftClientObservation {
                 components.add(identifier.toString(), component.encodeValue(ops).getOrThrow());
             }
         }
-        return result;
+        return components;
     }
 
     static JsonObject observe(Minecraft minecraft) {
@@ -273,6 +277,13 @@ final class MinecraftClientObservation {
         player.addProperty("experience_progress", minecraft.player.experienceProgress);
         player.addProperty("total_experience", minecraft.player.totalExperience);
         player.addProperty("selected_hotbar_slot", minecraft.player.getInventory().getSelectedSlot());
+        if (minecraft.gameMode != null) {
+            player.addProperty("game_mode", minecraft.gameMode.getPlayerMode().getName());
+        }
+        var haste = minecraft.player.getEffect(net.minecraft.world.effect.MobEffects.HASTE);
+        var fatigue = minecraft.player.getEffect(net.minecraft.world.effect.MobEffects.MINING_FATIGUE);
+        if (haste != null) player.addProperty("haste_amplifier", haste.getAmplifier());
+        if (fatigue != null) player.addProperty("mining_fatigue_amplifier", fatigue.getAmplifier());
         player.addProperty("pose", minecraft.player.getPose().toString().toLowerCase(Locale.ROOT));
         return player;
     }
@@ -324,7 +335,9 @@ final class MinecraftClientObservation {
             value.addProperty("max_health", living.getMaxHealth());
         }
         if (entity instanceof ItemEntity itemEntity) {
-            value.add("item", item(itemEntity.getItem()));
+            JsonObject stack = item(itemEntity.getItem());
+            stack.add("components", components(Minecraft.getInstance(), itemEntity.getItem()));
+            value.add("item", stack);
         }
         if (entity instanceof ExperienceOrb orb) {
             value.addProperty("value", orb.getValue());

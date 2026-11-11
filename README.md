@@ -678,6 +678,10 @@ Controls:
   ordinary clicks accept primary or secondary input and also confirm a
   server-side close/reopen, while quick moves and buttons require the active
   container state ID to advance.
+- `minecraft_submit_input_batch` dispatches an ordered bounded list of
+  `click_slot` and `break_block` actions in one client-thread task. Its client
+  tick receipt proves dispatch order only; server-side consumed-input and
+  world observations are required to prove admission and outcome.
 - Regression: `minecraft_run_scenario` runs an existing deterministic
   in-client scenario and returns its structured report through MCP.
 - Optional visual context: `minecraft_screenshot`.
