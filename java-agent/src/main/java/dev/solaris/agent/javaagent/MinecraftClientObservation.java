@@ -322,6 +322,8 @@ final class MinecraftClientObservation {
         if (entity instanceof LivingEntity living) {
             value.addProperty("health", living.getHealth());
             value.addProperty("max_health", living.getMaxHealth());
+            value.addProperty("walk_position", living.walkAnimation.position());
+            value.addProperty("walk_speed", living.walkAnimation.speed());
         }
         if (entity instanceof ItemEntity itemEntity) {
             value.add("item", item(itemEntity.getItem()));
