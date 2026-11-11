@@ -16,7 +16,6 @@ import dev.solaris.loader.fabric.mixin.ClientCommonPacketListenerAccessor;
 import dev.solaris.loader.fabric.mixin.PackRepositoryAccessor;
 import dev.solaris.loader.minecraft.LoaderRuntimeResourcePack;
 import dev.solaris.loader.minecraft.LoaderMinecraftView;
-import dev.solaris.loader.minecraft.LoaderMinecraftBlock;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Map;
@@ -65,6 +64,7 @@ public final class SolarisFabricLoader implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ComputerClient.initialize();
+        ScreenClient.initialize();
         Minecraft client = Minecraft.getInstance();
         LoaderFabricMcpRuntime mcpRuntime =
                 LoaderFabricMcpRuntime.createIfEnabled();
@@ -349,8 +349,7 @@ public final class SolarisFabricLoader implements ClientModInitializer {
             return CONTROLLERS.computeIfAbsent(
                     connection,
                     ignored -> new LoaderPermissionController(
-                            LoaderRuntimeSettings.permissionDecisionsFile(),
-                            LoaderMinecraftBlock::carrierStateIds));
+                            LoaderRuntimeSettings.permissionDecisionsFile()));
         }
     }
 

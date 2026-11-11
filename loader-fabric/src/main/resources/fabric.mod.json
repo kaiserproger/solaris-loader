@@ -6,9 +6,6 @@
   "description": "Solaris client-bundle configuration transport.",
   "environment": "client",
   "entrypoints": {
-    "main": [
-      "dev.solaris.loader.fabric.SolarisFabricContent"
-    ],
     "client": [
       "dev.solaris.loader.fabric.SolarisFabricLoader"
     ]

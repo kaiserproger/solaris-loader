@@ -91,6 +91,20 @@ final class LoaderContentArchiveTest {
     }
 
     @Test
+    void aBlockMayShareItsIdWithItsDropItem() throws Exception {
+        LoaderActivatedContent active = LoaderTestBundles.activate(
+                cacheDirectory,
+                LoaderTestArchive.blockWithSameIdDropItem(),
+                "[\"blocks\",\"items\",\"assets\"]",
+                "[\"register_blocks\",\"register_items\",\"load_assets\"]",
+                LoaderPermission.REGISTER_BLOCKS,
+                LoaderPermission.REGISTER_ITEMS,
+                LoaderPermission.LOAD_ASSETS);
+        assertEquals("example:ruby", active.blocks().get("example:ruby").dropItem());
+        assertEquals("example:ruby", active.items().get("example:ruby").id());
+    }
+
+    @Test
     void blockScreenBindsItsOwnedModelAndCarrierState() throws Exception {
         byte[] archive = LoaderTestArchive.screenAndBlock();
         String content = "[\"views\",\"blocks\",\"assets\"]";
@@ -106,9 +120,15 @@ final class LoaderContentArchiveTest {
 
         assertEquals("example:block/ruby_block", active.blocks().get("example:ruby_block").model());
         assertEquals(
+                "minecraft:black_glazed_terracotta",
+                active.blocks().get("example:ruby_block").carrier());
+        assertEquals(
+                "example:ruby",
+                active.blocks().get("example:ruby_block").dropItem());
+        assertEquals(
                 "example:ruby_block",
                 active.screens().get("example:catalog").blockId().orElseThrow());
-        assertTrue(new String(
+        assertFalse(new String(
                         LoaderHandshake.acknowledgement(
                                 LoaderHandshake.inspectManifest(
                                         LoaderTestBundles.manifest(archive, content, permissions),
@@ -120,13 +140,14 @@ final class LoaderContentArchiveTest {
                                         LoaderPermission.LOAD_ASSETS),
                                 active),
                         StandardCharsets.UTF_8)
-                .contains("\"carrier_block_state_ids\":{\"example:ruby_block\":321}"));
+                .contains("carrier_block_state_ids"));
 
         byte[] missingModel = LoaderTestArchive.archive(
                 """
                 {"schema":2,"screens":[],"world_previews":[],"blocks":[{
                   "id":"example:ruby_block","model":"example:block/ruby_block",
-                  "name":"Ruby Block"
+                  "name":"Ruby Block","carrier":"minecraft:black_glazed_terracotta",
+                  "drop_item":"example:ruby"
                 }],"items":[],"assets":[],"sounds":[]}
                 """,
                 Map.of());
@@ -140,6 +161,86 @@ final class LoaderContentArchiveTest {
     }
 
     @Test
+    void blockEntryRequiresCarrierAndDropItemWithoutUnknownFields() throws Exception {
+        byte[] missingCarrier = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[{
+                  "id":"example:ruby_block","model":"example:block/ruby_block",
+                  "name":"Ruby Block","drop_item":"example:ruby"
+                }],"items":[],"assets":[],"sounds":[]}
+                """,
+                Map.of());
+        LoaderTestBundles.writeCache(cacheDirectory, missingCarrier);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoaderClientTransport().acceptManifest(
+                        LoaderTestBundles.manifest(missingCarrier, "[\"blocks\"]", "[\"register_blocks\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.REGISTER_BLOCKS),
+                        cacheDirectory));
+
+        byte[] unknownField = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[{
+                  "id":"example:ruby_block","model":"example:block/ruby_block",
+                  "name":"Ruby Block","carrier":"minecraft:black_glazed_terracotta",
+                  "drop_item":"example:ruby","future":true
+                }],"items":[],"assets":[],"sounds":[]}
+                """,
+                Map.of());
+        LoaderTestBundles.writeCache(cacheDirectory, unknownField);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoaderClientTransport().acceptManifest(
+                        LoaderTestBundles.manifest(unknownField, "[\"blocks\"]", "[\"register_blocks\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.REGISTER_BLOCKS),
+                        cacheDirectory));
+
+        byte[] unnamespacedDrop = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[{
+                  "id":"example:ruby_block","model":"example:block/ruby_block",
+                  "name":"Ruby Block","carrier":"minecraft:black_glazed_terracotta",
+                  "drop_item":"ruby"
+                }],"items":[],"assets":[],"sounds":[]}
+                """,
+                Map.of());
+        LoaderTestBundles.writeCache(cacheDirectory, unnamespacedDrop);
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new LoaderClientTransport().acceptManifest(
+                        LoaderTestBundles.manifest(unnamespacedDrop, "[\"blocks\"]", "[\"register_blocks\"]"),
+                        LoaderTestBundles.environment(LoaderPermission.REGISTER_BLOCKS),
+                        cacheDirectory));
+
+        byte[] full = LoaderTestArchive.archive(
+                """
+                {"schema":2,"screens":[],"world_previews":[],"blocks":[{
+                  "id":"example:ruby_block","model":"example:block/ruby_block",
+                  "name":"Ruby Block","carrier":"minecraft:black_glazed_terracotta",
+                  "drop_item":"solaris:monitor"
+                }],"items":[],"assets":[{"id":"example:model_asset",
+                  "path":"assets/example/models/block/ruby_block.json",
+                  "sha256":"%s","size_bytes":2}],"sounds":[]}
+                """.formatted(LoaderTestArchive.sha256("{}".getBytes(StandardCharsets.UTF_8))),
+                Map.of(
+                        "assets/example/models/block/ruby_block.json",
+                        "{}".getBytes(StandardCharsets.UTF_8)));
+        LoaderActivatedContent active = LoaderTestBundles.activate(
+                cacheDirectory,
+                full,
+                "[\"blocks\",\"assets\"]",
+                "[\"register_blocks\",\"load_assets\"]",
+                LoaderPermission.REGISTER_BLOCKS,
+                LoaderPermission.LOAD_ASSETS);
+        assertEquals(
+                "minecraft:black_glazed_terracotta",
+                active.blocks().get("example:ruby_block").carrier());
+        assertEquals(
+                "solaris:monitor",
+                active.blocks().get("example:ruby_block").dropItem());
+    }
+
+    @Test
     void screensMayOnlyReferenceTheirOwnDeclaredItemAndBlock() throws Exception {
         byte[] undeclaredBlock = LoaderTestArchive.archive(
                 """
@@ -148,7 +249,8 @@ final class LoaderContentArchiveTest {
                   "block_id":"example:missing","widgets":[]}],
                 "world_previews":[],"blocks":[{
                   "id":"example:ruby_block","model":"example:block/ruby_block",
-                  "name":"Ruby Block"
+                  "name":"Ruby Block","carrier":"minecraft:black_glazed_terracotta",
+                  "drop_item":"example:ruby"
                 }],"items":[],"assets":[{
                   "id":"example:ruby_block_model",
                   "path":"assets/example/models/block/ruby_block.json",
@@ -176,7 +278,8 @@ final class LoaderContentArchiveTest {
                 """
                 {"schema":2,"screens":[],"world_previews":[],"blocks":[{
                   "id":"other:ruby_block","model":"example:block/ruby_block",
-                  "name":"Ruby Block"
+                  "name":"Ruby Block","carrier":"minecraft:black_glazed_terracotta",
+                  "drop_item":"example:ruby"
                 }],"items":[],"assets":[],"sounds":[]}
                 """,
                 Map.of());

@@ -4,32 +4,38 @@ import dev.solaris.loader.LoaderActivatedContent;
 import dev.solaris.loader.LoaderBlockDefinition;
 import dev.solaris.loader.LoaderScreenDefinition;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
-import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
+/**
+ * Carrier-backed Loader blocks (ADR 0018 "Monitor block"). Core stores and sends
+ * only the vanilla carrier block's {@code facing} states; the Loader block is the
+ * client's model for them. The runtime resource pack therefore overrides the
+ * carrier's blockstate with the bundle's model (rotated per {@code facing}); no
+ * block is registered and no state id is negotiated.
+ */
 public final class LoaderMinecraftBlock {
+    static final int MAX_BLOCKS = 8;
+    private static final String[] FACINGS = {"north", "east", "south", "west"};
+
     private LoaderMinecraftBlock() {
     }
 
     public static Optional<ItemStack> forScreen(
             LoaderScreenDefinition screen,
             LoaderActivatedContent content) {
-        Optional<String> blockId = screen.blockId();
-        return blockId.flatMap(id -> resolve(screen, content)
-                .flatMap(definition -> create(
-                        definition,
-                        carrierIndex(content, id))));
+        return resolve(screen, content)
+                .map(LoaderBlockDefinition::dropItem)
+                .map(content.items()::get)
+                .flatMap(LoaderMinecraftItem::create);
     }
 
     static Optional<LoaderBlockDefinition> resolve(
@@ -41,92 +47,72 @@ public final class LoaderMinecraftBlock {
     }
 
     static void validate(LoaderActivatedContent content) {
-        if (content.blocks().isEmpty()) {
-            return;
+        if (content.blocks().size() > MAX_BLOCKS) {
+            throw new IllegalArgumentException("Solaris Loader block capacity exceeded");
         }
-        if (content.blocks().size() > LoaderBlockCarrier.MAX_CARRIERS) {
-            throw new IllegalStateException("Solaris Loader block carrier capacity exceeded");
+        for (LoaderBlockDefinition definition : content.blocks().values()) {
+            Block carrier = carrierBlock(definition);
+            for (BlockState state : carrier.getStateDefinition().getPossibleStates()) {
+                if (!state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
+                    throw new IllegalArgumentException(
+                            "Loader block carrier has no horizontal facing: "
+                                    + definition.carrier());
+                }
+            }
+            if (!content.items().containsKey(definition.dropItem())) {
+                throw new IllegalArgumentException(
+                        "Loader block drop item is not an installed item: "
+                                + definition.dropItem());
+            }
         }
-        // Runtime block-state ids are platform-owned. Fabric/NeoForge use the vanilla
-        // state registry, while Forge 26.1.2 binds custom states through GameData's
-        // block-state id map. The platform-specific ACK supplier performs the exact
-        // state-id round-trip check after resource activation.
     }
 
-    public static List<Integer> carrierStateIds() {
-        List<Integer> stateIds = new ArrayList<>(LoaderBlockCarrier.MAX_CARRIERS);
-        for (int index = 0; index < LoaderBlockCarrier.MAX_CARRIERS; index++) {
-            Identifier id = LoaderBlockCarrier.id(index);
-            if (!BuiltInRegistries.BLOCK.containsKey(id)
-                    || !BuiltInRegistries.ITEM.containsKey(id)) {
-                throw new IllegalStateException(
-                        "Solaris Loader block carrier was not registered before registry freeze");
-            }
-            Block block = BuiltInRegistries.BLOCK.getValue(id);
-            BlockState state = block.defaultBlockState();
-            int stateId = Block.getId(state);
-            BlockState roundTrip = stateId < 0 ? null : Block.BLOCK_STATE_REGISTRY.byId(stateId);
-            if (stateId < 0 || roundTrip != state) {
-                throw new IllegalStateException(
-                        "Solaris Loader block carrier has no exact runtime state id: carrier="
-                                + id
-                                + ", block_registry_id=" + BuiltInRegistries.BLOCK.getId(block)
-                                + ", state_id=" + stateId
-                                + ", state_registry_size=" + Block.BLOCK_STATE_REGISTRY.size()
-                                + ", roundtrip_same=" + (roundTrip == state));
-            }
-            stateIds.add(stateId);
-        }
-        return List.copyOf(stateIds);
+    /** Whether {@code state} is the carrier of any activated Loader block. */
+    public static boolean isCarrier(
+            LoaderActivatedContent content,
+            BlockState state) {
+        Identifier id = BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        return content.blocks().values().stream()
+                .anyMatch(definition -> definition.carrier().equals(id.toString()));
     }
 
     static Map<Identifier, byte[]> generatedResources(
             LoaderActivatedContent content) {
-        if (content.blocks().isEmpty()) {
-            return Map.of();
-        }
         Map<Identifier, byte[]> resources = new LinkedHashMap<>();
-        List<String> blockIds = content.blocks().keySet().stream().sorted().toList();
-        for (int index = 0; index < blockIds.size(); index++) {
-            LoaderBlockDefinition definition = content.blocks().get(blockIds.get(index));
-            String path = LoaderBlockCarrier.path(index);
-            resources.put(
-                    Identifier.fromNamespaceAndPath(
-                            "solaris_loader", "blockstates/" + path + ".json"),
-                    """
-                    {"variants":{"":{"model":"%s"}}}
-                    """.formatted(definition.model()).getBytes(StandardCharsets.UTF_8));
-            resources.put(
-                    Identifier.fromNamespaceAndPath(
-                            "solaris_loader", "items/" + path + ".json"),
-                    """
-                    {"model":{"type":"minecraft:model","model":"%s"}}
-                    """.formatted(definition.model()).getBytes(StandardCharsets.UTF_8));
+        for (LoaderBlockDefinition definition : content.blocks().values()) {
+            Identifier carrier = Identifier.parse(definition.carrier());
+            Identifier blockstate = Identifier.fromNamespaceAndPath(
+                    carrier.getNamespace(), "blockstates/" + carrier.getPath() + ".json");
+            if (resources.putIfAbsent(blockstate, blockstates(definition.model())) != null) {
+                throw new IllegalArgumentException(
+                        "two Loader blocks share carrier " + definition.carrier());
+            }
         }
         return Map.copyOf(resources);
     }
 
-    private static int carrierIndex(LoaderActivatedContent content, String blockId) {
-        List<String> blockIds = content.blocks().keySet().stream().sorted().toList();
-        int index = blockIds.indexOf(blockId);
-        if (index < 0 || index >= LoaderBlockCarrier.MAX_CARRIERS) {
-            throw new IllegalStateException("Solaris Loader block has no registered carrier");
+    private static byte[] blockstates(String model) {
+        StringBuilder json = new StringBuilder("{\"variants\":{");
+        for (int index = 0; index < FACINGS.length; index++) {
+            if (index > 0) {
+                json.append(',');
+            }
+            json.append("\"facing=").append(FACINGS[index]).append("\":{\"model\":\"")
+                    .append(model).append('"');
+            if (index > 0) {
+                json.append(",\"y\":").append(index * 90);
+            }
+            json.append('}');
         }
-        return index;
+        return json.append("}}\n").toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    private static Optional<ItemStack> create(
-            LoaderBlockDefinition definition,
-            int carrierIndex) {
-        Identifier carrierId = LoaderBlockCarrier.id(carrierIndex);
-        if (!BuiltInRegistries.ITEM.containsKey(carrierId)) {
-            return Optional.empty();
+    private static Block carrierBlock(LoaderBlockDefinition definition) {
+        Identifier id = Identifier.tryParse(definition.carrier());
+        if (id == null || !BuiltInRegistries.BLOCK.containsKey(id)) {
+            throw new IllegalArgumentException(
+                    "Loader block has unknown carrier " + definition.carrier());
         }
-        ItemStack stack =
-                new ItemStack(BuiltInRegistries.ITEM.getValue(carrierId));
-        stack.set(
-                DataComponents.CUSTOM_NAME,
-                Component.literal(definition.name()));
-        return Optional.of(stack);
+        return BuiltInRegistries.BLOCK.getValue(id);
     }
 }

@@ -64,7 +64,6 @@ public final class SolarisForgeLoader {
     private static Channel<CustomPacketPayload> channel;
 
     public SolarisForgeLoader(FMLJavaModLoadingContext context) {
-        SolarisForgeContent.register(context);
         FMLClientSetupEvent.getBus(context.getModBusGroup())
                 .addListener(SolarisForgeLoader::onClientSetup);
         ClientTickEvent.Pre.BUS.addListener(SolarisForgeLoader::onClientTickPre);
@@ -377,8 +376,7 @@ public final class SolarisForgeLoader {
             return CONTROLLERS.computeIfAbsent(
                     connection,
                     ignored -> new LoaderPermissionController(
-                            LoaderRuntimeSettings.permissionDecisionsFile(),
-                            SolarisForgeContent::carrierStateIds));
+                            LoaderRuntimeSettings.permissionDecisionsFile()));
         }
     }
 

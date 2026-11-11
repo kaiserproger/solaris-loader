@@ -64,7 +64,7 @@ final class LoaderContentArchive {
             "size_z",
             "blocks");
     private static final Set<String> LOCAL_BLOCK_FIELDS = Set.of("x", "y", "z", "block_id");
-    private static final Set<String> BLOCK_FIELDS = Set.of("id", "model", "name");
+    private static final Set<String> BLOCK_FIELDS = Set.of("id", "model", "name", "carrier", "drop_item");
     private static final Set<String> ITEM_FIELDS = Set.of("id", "base_item", "name");
     private static final Set<String> ASSET_FIELDS = Set.of("id", "path", "sha256", "size_bytes");
     private static final Set<String> SOUND_FIELDS = Set.of("id");
@@ -224,7 +224,7 @@ final class LoaderContentArchive {
                 LoaderBlockDefinition previous = activatedBlocks.putIfAbsent(
                         block.id(),
                         new LoaderBlockDefinition(
-                                block.id(), block.model(), block.name()));
+                                block.id(), block.model(), block.name(), block.carrier(), block.dropItem()));
                 if (previous != null) {
                     throw new IllegalArgumentException(
                             "duplicate activated Loader block " + block.id());
@@ -681,6 +681,8 @@ final class LoaderContentArchive {
         for (JsonElement entry : entries) {
             JsonObject block = LoaderJson.object(entry, "Loader block");
             LoaderJson.rejectUnknown(block, BLOCK_FIELDS, "Loader block");
+            String dropItem = LoaderJson.identifier(block, "drop_item", "Loader block drop item");
+            requireNamespaced(dropItem, "Loader block drop item");
             blocks.add(new BlockIndex(
                     LoaderJson.identifier(block, "id", "Loader block id"),
                     LoaderJson.identifier(block, "model", "Loader block model"),
@@ -688,7 +690,9 @@ final class LoaderContentArchive {
                             block,
                             "name",
                             LoaderScreenDefinition.MAX_TITLE_BYTES,
-                            "Loader block name")));
+                            "Loader block name"),
+                    LoaderJson.identifier(block, "carrier", "Loader block carrier"),
+                    dropItem));
         }
         return List.copyOf(blocks);
     }
@@ -853,11 +857,12 @@ final class LoaderContentArchive {
                 throw new IllegalArgumentException(
                         "Loader item is missing its item definition asset " + modelPath);
             }
-            if (!ids.add(item.id())) {
+            // A block's own drop item (ADR 0018 monitor) legitimately shares the block's id.
+            if (!itemIds.add(item.id())
+                    || !blockIds.contains(item.id()) && !ids.add(item.id())) {
                 throw new IllegalArgumentException(
                         "Loader archive contains duplicate content id " + item.id());
             }
-            itemIds.add(item.id());
         }
         Set<String> previewIds = new HashSet<>();
         for (LoaderWorldPreviewDefinition preview : index.worldPreviews()) {
@@ -1126,7 +1131,9 @@ final class LoaderContentArchive {
     private record BlockIndex(
             String id,
             String model,
-            String name) {
+            String name,
+            String carrier,
+            String dropItem) {
     }
 
     private record ItemIndex(

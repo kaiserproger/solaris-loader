@@ -1,6 +1,7 @@
 package dev.solaris.loader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.google.gson.Gson;
@@ -55,14 +56,14 @@ final class LoaderHandshakeTest {
                     manifest,
                     environment,
                     LoaderActivatedContent.empty());
-            LoaderClientAck ack =
-                    new Gson().fromJson(new String(payload, StandardCharsets.UTF_8), LoaderClientAck.class);
+            String json = new String(payload, StandardCharsets.UTF_8);
+            LoaderClientAck ack = new Gson().fromJson(json, LoaderClientAck.class);
             assertEquals(platform, ack.platform());
             assertEquals(
                     List.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS),
                     ack.acceptedPermissions());
             assertEquals(List.of(CACHE_KEY), ack.cachedBundles());
-            assertEquals(Map.of(), ack.carrierBlockStateIds());
+            assertFalse(json.contains("carrier_block_state_ids"));
         }
     }
 
@@ -124,30 +125,13 @@ final class LoaderHandshakeTest {
     }
 
     @Test
-    void acknowledgementMapsSortedOwnerBlocksToDistinctCarrierStates() {
-        LoaderEnvironment environment = new LoaderEnvironment() {
-            @Override
-            public LoaderPlatform platform() {
-                return LoaderPlatform.FABRIC;
-            }
-
-            @Override
-            public String loaderVersion() {
-                return "0.1.0";
-            }
-
-            @Override
-            public Set<LoaderPermission> grantedPermissions() {
-                return Set.of(
+    void acknowledgementCarriesOwnerBlocksWithoutCarrierStateIds() {
+        LoaderEnvironment environment = environment(
+                LoaderPlatform.FABRIC,
+                Set.of(
                         LoaderPermission.PRESENT_VIEWS,
-                        LoaderPermission.LOAD_ASSETS);
-            }
-
-            @Override
-            public List<Integer> carrierBlockStateIds() {
-                return List.of(101, 202);
-            }
-        };
+                        LoaderPermission.REGISTER_BLOCKS,
+                        LoaderPermission.LOAD_ASSETS));
         LoaderManifest manifest = LoaderHandshake.validateTransferManifest(
                 MANIFEST,
                 environment);
@@ -160,27 +144,30 @@ final class LoaderHandshakeTest {
                         new LoaderBlockDefinition(
                                 "other:sapphire_block",
                                 "other:block/sapphire_block",
-                                "Sapphire Block"),
+                                "Sapphire Block",
+                                "minecraft:black_glazed_terracotta",
+                                "other:sapphire"),
                         "example:ruby_block",
                         new LoaderBlockDefinition(
                                 "example:ruby_block",
                                 "example:block/ruby_block",
-                                "Ruby Block")),
+                                "Ruby Block",
+                                "minecraft:black_glazed_terracotta",
+                                "example:ruby")),
                 Map.of(),
                 Map.of(),
                 Map.of());
 
-        LoaderClientAck ack = new Gson().fromJson(
-                new String(
-                        LoaderHandshake.acknowledgement(manifest, environment, content),
-                        StandardCharsets.UTF_8),
-                LoaderClientAck.class);
+        String json = new String(
+                LoaderHandshake.acknowledgement(manifest, environment, content),
+                StandardCharsets.UTF_8);
+        LoaderClientAck ack = new Gson().fromJson(json, LoaderClientAck.class);
 
+        assertEquals(List.of(CACHE_KEY), ack.cachedBundles());
         assertEquals(
-                Map.of(
-                        "example:ruby_block", 101,
-                        "other:sapphire_block", 202),
-                ack.carrierBlockStateIds());
+                List.of("example:ruby_block", "other:sapphire_block"),
+                content.blocks().keySet().stream().sorted().toList());
+        assertFalse(json.contains("carrier_block_state_ids"));
     }
 
     @Test

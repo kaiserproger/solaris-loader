@@ -145,6 +145,53 @@ The ordinary test run skips that explicit display-dependent method; it is not a
 capture pass. `:loader-core:test --tests '*ComputerProtocolTest'` tests codec
 vectors, limits, stale-session rejection and bounded transcript behavior.
 
+## Monitors and shared screens (Fabric)
+
+With the server's `computer:monitor` bundle admitted for Fabric,
+the Fabric mod shows the monitor model (the carrier's `facing` states are overridden
+by the runtime resource pack) and speaks the `solaris:screen` relay (server ADR 0018
+"Screen sharing"). Right-click a monitor face (sneak to place blocks against it instead):
+
+- **Someone else's active screen** (generic "on" panel): sends `REQUEST`; the owner
+  must allow. Frames (H.264, at most 640 px) then replace the panel, stretched
+  (letterboxed) over the whole W×H monitor rectangle, only while you look at it.
+  `F8` leaves; `STOP` resets the panel. The mod never sends input to the owner.
+- **An inactive monitor**: opens a "Share your screen?" dialog. Nothing is captured
+  before you press *Share*, and frames upload only while the server's `DEMAND` is on
+  (at most 5 fps, 128 KiB per picture). When a viewer asks, a centered *Allow / Deny*
+  dialog answers it. Linux needs an X11 `$DISPLAY`, `ffmpeg` and `xdpyinfo`
+  (view-only; Wayland is not supported); Windows captures the primary screen with
+  `java.awt.Robot` (compiled, **not run on Windows**).
+
+Pictures are H.264 (Constrained Baseline, Annex B, one picture per FRAME, `key` flag,
+`KEY_REQUEST`; no JPEG) encoded and decoded in pure Java by JCodec 0.2.5 (FreeBSD licence,
+2 MB, bundled jar-in-jar, no native library). Pure codec/state/geometry live in `loader-core`
+(`ScreenProtocol`, `ScreenRelay`, `ScreenGeometry`, `ScreenVideo`); `loader-fabric` has the renderer, dialogs and
+capture. The server must admit Fabric Loader sessions for the screen channel.
+
+Screen audio is **receive-only** in Fabric: permitted owners' Opus packets (48 kHz
+mono, 20 ms, at most 1000 bytes) decode in pure Java with bundled Concentus 1.0.2
+(BSD licence). Playback uses Minecraft's sound engine at the monitor face centre,
+with the Blocks/Master volume controls and linear attenuation out to 32 blocks.
+The stream is supplied through Fabric's `FabricSoundInstance` extension, leaving
+Fabric API's sound-engine mixin as the sole owner of stream dispatch.
+The PCM queue is bounded to 100 ms; look-away STOP, revocation, F8, monitor closure
+and disconnect discard it. Fabric never captures or transmits audio: whole-desktop
+audio would include Minecraft/voice playback and feed it back into the stream.
+Voice is a separate Simple Voice Chat mod connected through the server's SVC
+bridge, not a voice client implemented by this Loader.
+
+Native/Fabric H.264 live interop was exercised in both directions on isolated Xvfb
+clients: changing native test-pattern pictures rendered in Fabric; a moving X11
+source captured by Fabric rendered in native with increasing decoded-frame counts.
+Separately, a combined native H.264/audio client streamed a 440 Hz source through
+the real server/Opus path to Fabric while changing pictures remained visible.
+Fabric's private OpenAL Wave File Writer output contained the tone; no-stream and
+look-away controls contained only one-LSB output dither. No host audio device was
+used. This gate required the Fabric-capable screen relay: the `4bcd34fc` server
+still admits only native screen clients and was not credited with a pass.
+Neither screen gate establishes Distant Horizons coverage.
+
 ## Troubleshooting
 
 - **“Loader required”**: verify the launched instance, `mods/` location, adapter,
@@ -239,19 +286,14 @@ unknown, unbound or duplicated key refuses the whole view with no bindings rathe
 than guessing a key.
 
 Each block declaration (`id`, owner
-`model`, and `name`) is backed by its exact verified model asset. Each item
+`model`, `name`, vanilla `carrier`, and `drop_item`) is backed by its exact
+verified model asset. Each item
 names a known vanilla base item and requires its exact verified
 `assets/<namespace>/items/<path>.json` definition; a screen may reference one
 declared item and one declared block. Up to 64 `world_previews` (`id`,
 `blueprint_id`, 64-hex `content_hash`, one quarter-turn `rotation`, `size_x/y/z`
 at most 64, at most 65,536 local `blocks`) require `present_world_previews`, and
 `views` content requires `present_views`.
-Up to 64 `sounds` (`id`) require `play_sounds` and same-bundle verified mono
-OGG Vorbis assets. Shared pack preparation probes their headers/initial audio
-and generates owner `sounds.json` indexes without late registry mutation.
-The activated registry is bounded to 64 screens, 64 previews, one block per
-bundle (eight total), 128 items, 128 assets, 64 sounds and 64 MiB of asset
-bytes.
 The three adapters publish the resulting immutable registry before sending the
 acknowledgement and keep it available in Play. Unknown archive fields or
 entries and mismatched asset bytes fail before acknowledgement. An acknowledged
@@ -313,19 +355,15 @@ connection. Declared
 `assets/<namespace>/<path>` bytes now form one
 transient required Minecraft client resource pack. The acknowledgement waits
 for an exact-byte resource reload, and the pack is removed and reloaded out
-when its originating connection closes. The block path pre-registers eight
-bounded carriers before freeze on each platform. After verified pack reload it
-sorts up to eight owner block ids, maps each blockstate/item definition to the
-corresponding carrier, and sends the exact owner-id-to-runtime-state map as
-`carrier_block_state_ids`. Solaris cross-checks that closed map against the
-hash-verified artifacts and retains it only in the acknowledged Play session.
-Server grants, placement, projection, break drops, persistence, and pickup
-preserve the exact owner identity through that mapping; no client runtime id
-enters canonical world or inventory state.
-Installing or enabling a Loader adapter needs a client restart before those
-native carriers exist; joining a new server with an already installed adapter
-only activates verified per-connection content and reloads its resource pack,
-not the frozen block registry.
+when its originating connection closes. The client renders each declared block
+by overriding its server-dictated vanilla `carrier` blockstate with the
+bundle's `model` through the runtime resource pack; the `drop_item` names the
+item the carrier drops. The ack JSON carries no `carrier_block_state_ids`: the
+client negotiates no block state ids, and the server refuses a non-empty
+`carrier_block_state_ids` map. Server grants, placement, projection, break
+drops, persistence, and pickup preserve the exact owner identity; no client
+runtime id enters canonical world or inventory state. Joining a new server only
+activates verified per-connection content and reloads its resource pack.
 
 `solaris:loader/sound` resolves only an activated sound on its originating
 connection. The shared native presenter supports personal or fixed-position

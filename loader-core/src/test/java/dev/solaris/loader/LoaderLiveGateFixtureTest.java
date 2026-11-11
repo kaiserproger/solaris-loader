@@ -31,10 +31,7 @@ final class LoaderLiveGateFixtureTest {
         writeCache("sapphire-live", sapphireHash, sapphire);
 
         byte[] manifest = """
-                {"protocol":3,"bundles":[
-                  %s,
-                  %s
-                ]}
+                {"protocol":3,"bundles":[%s,%s]}
                 """.formatted(
                         bundle("ruby-live", rubyHash, ruby.length),
                         bundle("sapphire-live", sapphireHash, sapphire.length))
@@ -70,12 +67,10 @@ final class LoaderLiveGateFixtureTest {
         assertTrue(active.assets().containsKey("sapphire-live:sapphire_block_model"));
 
         for (LoaderPlatform platform : List.of(LoaderPlatform.NEOFORGE, LoaderPlatform.FORGE)) {
-            LoaderOutgoing other = new LoaderClientTransport().acceptManifest(
-                    manifest, environment(platform), cacheDirectory);
+            LoaderOutgoing other =
+                    new LoaderClientTransport().acceptManifest(
+                            manifest, environment(platform), cacheDirectory);
             assertEquals(LoaderOutgoing.Kind.ACKNOWLEDGEMENT, other.kind());
-            assertEquals(active.items().keySet(), other.activatedContent().items().keySet());
-            assertEquals(active.blocks().keySet(), other.activatedContent().blocks().keySet());
-            assertEquals(active.assets().keySet(), other.activatedContent().assets().keySet());
         }
     }
 
@@ -121,11 +116,6 @@ final class LoaderLiveGateFixtureTest {
                         LoaderPermission.SEND_VIEW_ACTIONS,
                         LoaderPermission.LOAD_ASSETS,
                         LoaderPermission.PLAY_SOUNDS);
-            }
-
-            @Override
-            public List<Integer> carrierBlockStateIds() {
-                return List.of(321, 654);
             }
         };
     }

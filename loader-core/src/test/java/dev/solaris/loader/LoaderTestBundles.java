@@ -3,10 +3,8 @@ package dev.solaris.loader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Set;
 
-/** One-bundle manifest, cache and activation fixtures for the Loader tests. */
 final class LoaderTestBundles {
     static final String OWNER = "example";
     static final String BUNDLE_ID = "content";
@@ -72,11 +70,6 @@ final class LoaderTestBundles {
             @Override
             public Set<LoaderPermission> grantedPermissions() {
                 return Set.of(permissions);
-            }
-
-            @Override
-            public List<Integer> carrierBlockStateIds() {
-                return List.of(321, 654);
             }
         };
     }

@@ -10,31 +10,17 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
-import java.util.function.Supplier;
 
 public final class LoaderPermissionController {
     private static final Map<Path, LoaderPermissionStore> STORES = new HashMap<>();
 
     private final LoaderClientTransport transport = new LoaderClientTransport();
     private final LoaderPermissionStore store;
-    private final Supplier<List<Integer>> carrierBlockStateIds;
     private long generation;
     private boolean expectingArtifact;
 
     public LoaderPermissionController(Path decisionsFile) {
-        this(
-                decisionsFile,
-                () -> {
-                    throw new IllegalStateException(
-                            "Solaris Loader block carrier state is unavailable");
-                });
-    }
-
-    public LoaderPermissionController(
-            Path decisionsFile,
-            Supplier<List<Integer>> carrierBlockStateIds) {
         store = sharedStore(decisionsFile);
-        this.carrierBlockStateIds = carrierBlockStateIds;
     }
 
     public synchronized void acceptManifest(
@@ -175,8 +161,7 @@ public final class LoaderPermissionController {
                     new AllowedEnvironment(
                             platform,
                             loaderVersion,
-                            Set.copyOf(request.permissions()),
-                            carrierBlockStateIds),
+                            Set.copyOf(request.permissions())),
                     cacheDirectory);
             expectingArtifact = next.kind() == LoaderOutgoing.Kind.REQUEST;
             if (!connectionActive.getAsBoolean()) {
@@ -225,11 +210,6 @@ public final class LoaderPermissionController {
     private record AllowedEnvironment(
             LoaderPlatform platform,
             String loaderVersion,
-            Set<LoaderPermission> grantedPermissions,
-            Supplier<List<Integer>> carrierBlockStateIdsSupplier) implements LoaderEnvironment {
-        @Override
-        public List<Integer> carrierBlockStateIds() {
-            return carrierBlockStateIdsSupplier.get();
-        }
+            Set<LoaderPermission> grantedPermissions) implements LoaderEnvironment {
     }
 }

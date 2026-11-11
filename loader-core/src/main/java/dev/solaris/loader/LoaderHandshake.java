@@ -6,11 +6,8 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.Set;
 
 public final class LoaderHandshake {
@@ -78,30 +75,12 @@ public final class LoaderHandshake {
             }
             cached.add(bundle.cacheKey());
         }
-        Map<String, Integer> carrierBlockStateIds = new LinkedHashMap<>();
-        List<String> blockIds = content.blocks().keySet().stream().sorted().toList();
-        if (!blockIds.isEmpty()) {
-            List<Integer> stateIds = environment.carrierBlockStateIds();
-            if (stateIds.size() < blockIds.size()) {
-                throw new IllegalArgumentException(
-                        "Solaris Loader block carrier capacity is unavailable");
-            }
-            for (int index = 0; index < blockIds.size(); index++) {
-                int stateId = stateIds.get(index);
-                if (stateId < 0) {
-                    throw new IllegalArgumentException(
-                            "Solaris Loader block carrier state must be non-negative");
-                }
-                carrierBlockStateIds.put(blockIds.get(index), stateId);
-            }
-        }
         LoaderClientAck ack = new LoaderClientAck(
                 PROTOCOL_VERSION,
                 platform,
                 environment.loaderVersion(),
                 List.copyOf(accepted),
-                List.copyOf(cached),
-                Collections.unmodifiableMap(carrierBlockStateIds));
+                List.copyOf(cached));
         return GSON.toJson(ack).getBytes(StandardCharsets.UTF_8);
     }
 
