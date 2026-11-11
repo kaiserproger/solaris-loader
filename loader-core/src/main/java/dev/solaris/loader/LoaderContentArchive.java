@@ -64,7 +64,7 @@ final class LoaderContentArchive {
             "size_z",
             "blocks");
     private static final Set<String> LOCAL_BLOCK_FIELDS = Set.of("x", "y", "z", "block_id");
-    private static final Set<String> BLOCK_FIELDS = Set.of("id", "model", "name");
+    private static final Set<String> BLOCK_FIELDS = Set.of("id", "model", "name", "carrier", "drop_item");
     private static final Set<String> ITEM_FIELDS = Set.of("id", "base_item", "name");
     private static final Set<String> ASSET_FIELDS = Set.of("id", "path", "sha256", "size_bytes");
     private static final Set<String> SOUND_FIELDS = Set.of("id");
@@ -114,6 +114,12 @@ final class LoaderContentArchive {
                             sounds,
                             activatedAssetBytes));
             cacheKeys.add(bundle.cacheKey());
+        }
+        for (LoaderBlockDefinition block : blocks.values()) {
+            LoaderItemDefinition item = items.get(block.dropItem());
+            if (item != null && !item.baseItem().equals(block.carrier())) {
+                throw new IllegalArgumentException("Loader block drop item must use its carrier: " + block.dropItem());
+            }
         }
         return new LoaderActivatedContent(
                 cacheKeys, screens, worldPreviews, blocks, items, assets, sounds);
@@ -221,10 +227,13 @@ final class LoaderContentArchive {
                 }
             }
             for (BlockIndex block : index.blocks()) {
+                if (activatedBlocks.values().stream().anyMatch(existing -> existing.carrier().equals(block.carrier()))) {
+                    throw new IllegalArgumentException("duplicate activated Loader block carrier " + block.carrier());
+                }
                 LoaderBlockDefinition previous = activatedBlocks.putIfAbsent(
                         block.id(),
                         new LoaderBlockDefinition(
-                                block.id(), block.model(), block.name()));
+                                block.id(), block.model(), block.name(), block.carrier(), block.dropItem()));
                 if (previous != null) {
                     throw new IllegalArgumentException(
                             "duplicate activated Loader block " + block.id());
@@ -688,7 +697,9 @@ final class LoaderContentArchive {
                             block,
                             "name",
                             LoaderScreenDefinition.MAX_TITLE_BYTES,
-                            "Loader block name")));
+                            "Loader block name"),
+                    LoaderJson.identifier(block, "carrier", "Loader block carrier"),
+                    LoaderJson.identifier(block, "drop_item", "Loader block drop item")));
         }
         return List.copyOf(blocks);
     }
@@ -834,6 +845,12 @@ final class LoaderContentArchive {
         for (BlockIndex block : index.blocks()) {
             requireOwnedIdentifier(block.id(), bundle.owner(), "block id");
             requireOwnedIdentifier(block.model(), bundle.owner(), "block model");
+            requireOwnedIdentifier(block.carrier(), "minecraft", "block carrier");
+            requireOwnedIdentifier(block.dropItem(), bundle.owner(), "block drop item");
+            if (!Set.of("minecraft:gray_glazed_terracotta", "minecraft:pink_glazed_terracotta",
+                    "minecraft:blue_glazed_terracotta").contains(block.carrier())) {
+                throw new IllegalArgumentException("unsupported Loader block carrier " + block.carrier());
+            }
             String modelPath = modelDefinitionPath(block.model());
             if (!assetPaths.contains(modelPath)) {
                 throw new IllegalArgumentException(
@@ -853,11 +870,16 @@ final class LoaderContentArchive {
                 throw new IllegalArgumentException(
                         "Loader item is missing its item definition asset " + modelPath);
             }
-            if (!ids.add(item.id())) {
+            if ((!ids.add(item.id()) && !blockIds.contains(item.id())) || !itemIds.add(item.id())) {
                 throw new IllegalArgumentException(
                         "Loader archive contains duplicate content id " + item.id());
             }
-            itemIds.add(item.id());
+        }
+        Set<String> carriers = new HashSet<>();
+        for (BlockIndex block : index.blocks()) {
+            if (!carriers.add(block.carrier())) {
+                throw new IllegalArgumentException("duplicate Loader block carrier " + block.carrier());
+            }
         }
         Set<String> previewIds = new HashSet<>();
         for (LoaderWorldPreviewDefinition preview : index.worldPreviews()) {
@@ -1126,7 +1148,9 @@ final class LoaderContentArchive {
     private record BlockIndex(
             String id,
             String model,
-            String name) {
+            String name,
+            String carrier,
+            String dropItem) {
     }
 
     private record ItemIndex(

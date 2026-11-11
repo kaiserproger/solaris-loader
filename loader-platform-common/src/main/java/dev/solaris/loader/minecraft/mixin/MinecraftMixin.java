@@ -12,7 +12,9 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 /**
  * Gameplay input focus: the head of the client's own screen transition releases
  * every held Loader binding before the new GUI takes focus, so no held edge
- * outlives the key-up that the GUI may never deliver.
+ * outlives the key-up that the GUI may never deliver. Since 26.3 the client's
+ * screen and overlay live on {@link net.minecraft.client.gui.Gui}; the owning
+ * class is selected through the version shim.
  */
 @Mixin(targets = ClientVersionApi.GUI_FOCUS_OWNER)
 abstract class MinecraftMixin {

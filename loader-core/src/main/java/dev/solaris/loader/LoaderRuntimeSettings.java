@@ -3,7 +3,7 @@ package dev.solaris.loader;
 import java.nio.file.Path;
 
 public final class LoaderRuntimeSettings {
-    public static final String LOADER_VERSION = "0.1.0";
+    public static final String LOADER_VERSION = "1.0.0-rc.2";
     public static final String CACHE_DIRECTORY_PROPERTY = "solaris.loader.cacheDir";
 
     private LoaderRuntimeSettings() {

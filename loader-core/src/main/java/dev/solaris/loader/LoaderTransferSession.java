@@ -66,7 +66,7 @@ final class LoaderTransferSession {
                     LoaderContentArchive.activate(manifest, cacheDirectory);
             return new LoaderOutgoing(
                     LoaderOutgoing.Kind.ACKNOWLEDGEMENT,
-                    LoaderHandshake.acknowledgement(manifest, environment, content),
+                    LoaderHandshake.acknowledgement(manifest, environment),
                     content);
         }
         LoaderBundle bundle = missing.get(nextMissing);

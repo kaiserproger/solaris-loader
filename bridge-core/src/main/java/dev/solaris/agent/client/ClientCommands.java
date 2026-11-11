@@ -137,7 +137,7 @@ public final class ClientCommands {
         registry.registerConcurrent("wait_entity_motion", request -> {
             JsonObject payload = request.payload();
             return client.waitForEntityMotion(
-                boundedInt(payload, "entity_id", 0, Integer.MAX_VALUE),
+                boundedInt(payload, "entity_id", Integer.MIN_VALUE, Integer.MAX_VALUE),
                 boundedUuid(payload, "entity_uuid"),
                 boundedString(payload, "entity_type", 128),
                 optionalBoundedDouble(
@@ -154,7 +154,7 @@ public final class ClientCommands {
         registry.registerConcurrent("wait_entity_removed", request -> {
             JsonObject payload = request.payload();
             return client.waitForEntityRemoved(
-                boundedInt(payload, "entity_id", 0, Integer.MAX_VALUE),
+                boundedInt(payload, "entity_id", Integer.MIN_VALUE, Integer.MAX_VALUE),
                 boundedUuid(payload, "entity_uuid"),
                 boundedString(payload, "entity_type", 128),
                 eventTimeout(payload)
@@ -231,14 +231,14 @@ public final class ClientCommands {
         registry.register("approach_entity", request -> {
             JsonObject payload = request.payload();
             return client.approachEntity(
-                boundedInt(payload, "entity_id", 0, Integer.MAX_VALUE),
+                boundedInt(payload, "entity_id", Integer.MIN_VALUE, Integer.MAX_VALUE),
                 eventTimeout(payload)
             );
         });
         registry.register("interact_entity", request -> {
             JsonObject payload = request.payload();
             return client.interactEntity(
-                boundedInt(payload, "entity_id", 0, Integer.MAX_VALUE),
+                boundedInt(payload, "entity_id", Integer.MIN_VALUE, Integer.MAX_VALUE),
                 boundedUuid(payload, "entity_uuid"),
                 boundedString(payload, "entity_type", 128),
                 entityInteractionHand(payload)
@@ -247,7 +247,7 @@ public final class ClientCommands {
         registry.register("attack_entity_once", request -> {
             JsonObject payload = request.payload();
             return client.attackEntityOnce(
-                boundedInt(payload, "entity_id", 0, Integer.MAX_VALUE),
+                boundedInt(payload, "entity_id", Integer.MIN_VALUE, Integer.MAX_VALUE),
                 boundedUuid(payload, "entity_uuid"),
                 boundedString(payload, "entity_type", 128),
                 eventTimeout(payload)
@@ -256,7 +256,7 @@ public final class ClientCommands {
         registry.register("attack_entity_until_drop_collected", request -> {
             JsonObject payload = request.payload();
             return client.attackEntityUntilDropCollected(
-                boundedInt(payload, "entity_id", 0, Integer.MAX_VALUE),
+                boundedInt(payload, "entity_id", Integer.MIN_VALUE, Integer.MAX_VALUE),
                 boundedString(payload, "expected_drop_item_id", 128),
                 boundedInt(payload, "expected_drop_count", 1, 64),
                 eventTimeout(payload)

@@ -616,7 +616,7 @@ public final class ClientMcpTools {
     private static JsonObject entityMotionWaitSchema() {
         return objectSchema(
             properties(
-                "entity_id", integer(0, Integer.MAX_VALUE),
+                "entity_id", integer(Integer.MIN_VALUE, Integer.MAX_VALUE),
                 "entity_uuid", string(36),
                 "entity_type", string(128),
                 "minimum_horizontal_distance", number(0.001, 128.0, 0.01),
@@ -630,7 +630,7 @@ public final class ClientMcpTools {
     private static JsonObject entityRemovedWaitSchema() {
         return objectSchema(
             properties(
-                "entity_id", integer(0, Integer.MAX_VALUE),
+                "entity_id", integer(Integer.MIN_VALUE, Integer.MAX_VALUE),
                 "entity_uuid", string(36),
                 "entity_type", string(128),
                 "timeout_seconds", number(0.1, 120.0, 8.0)
@@ -642,7 +642,7 @@ public final class ClientMcpTools {
     private static JsonObject approachEntitySchema() {
         return objectSchema(
             properties(
-                "entity_id", integer(0, Integer.MAX_VALUE),
+                "entity_id", integer(Integer.MIN_VALUE, Integer.MAX_VALUE),
                 "timeout_seconds", number(0.1, 120.0, 30.0)
             ),
             List.of("entity_id")
@@ -654,7 +654,7 @@ public final class ClientMcpTools {
         hand.addProperty("default", "main_hand");
         return objectSchema(
             properties(
-                "entity_id", integer(0, Integer.MAX_VALUE),
+                "entity_id", integer(Integer.MIN_VALUE, Integer.MAX_VALUE),
                 "entity_uuid", string(36),
                 "entity_type", string(128),
                 "hand", hand
@@ -666,7 +666,7 @@ public final class ClientMcpTools {
     private static JsonObject entityIdentitySchema() {
         return objectSchema(
             properties(
-                "entity_id", integer(0, Integer.MAX_VALUE),
+                "entity_id", integer(Integer.MIN_VALUE, Integer.MAX_VALUE),
                 "entity_uuid", string(36),
                 "entity_type", string(128)
             ),
@@ -677,7 +677,7 @@ public final class ClientMcpTools {
     private static JsonObject entityAttackOnceSchema() {
         return objectSchema(
             properties(
-                "entity_id", integer(0, Integer.MAX_VALUE),
+                "entity_id", integer(Integer.MIN_VALUE, Integer.MAX_VALUE),
                 "entity_uuid", string(36),
                 "entity_type", string(128),
                 "timeout_seconds", number(0.1, 120.0, 8.0)
@@ -689,7 +689,7 @@ public final class ClientMcpTools {
     private static JsonObject attackEntitySchema() {
         return objectSchema(
             properties(
-                "entity_id", integer(0, Integer.MAX_VALUE),
+                "entity_id", integer(Integer.MIN_VALUE, Integer.MAX_VALUE),
                 "expected_drop_item_id", string(128),
                 "expected_drop_count", integer(1, 64),
                 "timeout_seconds", number(0.1, 120.0, 30.0)

@@ -93,8 +93,8 @@ final class LoaderContentArchiveTest {
     @Test
     void blockScreenBindsItsOwnedModelAndCarrierState() throws Exception {
         byte[] archive = LoaderTestArchive.screenAndBlock();
-        String content = "[\"views\",\"blocks\",\"assets\"]";
-        String permissions = "[\"present_views\",\"register_blocks\",\"load_assets\"]";
+        String content = "[\"views\",\"blocks\",\"items\",\"assets\"]";
+        String permissions = "[\"present_views\",\"register_blocks\",\"register_items\",\"load_assets\"]";
         LoaderActivatedContent active = LoaderTestBundles.activate(
                 cacheDirectory,
                 archive,
@@ -102,31 +102,31 @@ final class LoaderContentArchiveTest {
                 permissions,
                 LoaderPermission.PRESENT_VIEWS,
                 LoaderPermission.REGISTER_BLOCKS,
+                LoaderPermission.REGISTER_ITEMS,
                 LoaderPermission.LOAD_ASSETS);
 
         assertEquals("example:block/ruby_block", active.blocks().get("example:ruby_block").model());
+        assertEquals("minecraft:pink_glazed_terracotta", active.blocks().get("example:ruby_block").carrier());
+        assertEquals("example:ruby_block", active.blocks().get("example:ruby_block").dropItem());
         assertEquals(
                 "example:ruby_block",
                 active.screens().get("example:catalog").blockId().orElseThrow());
-        assertTrue(new String(
-                        LoaderHandshake.acknowledgement(
-                                LoaderHandshake.inspectManifest(
-                                        LoaderTestBundles.manifest(archive, content, permissions),
-                                        LoaderPlatform.FABRIC,
-                                        "0.1.0"),
-                                LoaderTestBundles.environment(
-                                        LoaderPermission.PRESENT_VIEWS,
-                                        LoaderPermission.REGISTER_BLOCKS,
-                                        LoaderPermission.LOAD_ASSETS),
-                                active),
-                        StandardCharsets.UTF_8)
-                .contains("\"carrier_block_state_ids\":{\"example:ruby_block\":321}"));
+        byte[] acknowledgement = LoaderHandshake.acknowledgement(
+                LoaderHandshake.inspectManifest(
+                        LoaderTestBundles.manifest(archive, content, permissions),
+                        LoaderPlatform.FABRIC, "0.1.0"),
+                LoaderTestBundles.environment(LoaderPermission.PRESENT_VIEWS,
+                        LoaderPermission.REGISTER_BLOCKS, LoaderPermission.REGISTER_ITEMS,
+                        LoaderPermission.LOAD_ASSETS));
+        assertFalse(new String(acknowledgement, StandardCharsets.UTF_8)
+                .contains("carrier_block_state_ids"));
 
         byte[] missingModel = LoaderTestArchive.archive(
                 """
                 {"schema":2,"screens":[],"world_previews":[],"blocks":[{
                   "id":"example:ruby_block","model":"example:block/ruby_block",
-                  "name":"Ruby Block"
+                  "name":"Ruby Block","carrier":"minecraft:pink_glazed_terracotta",
+                  "drop_item":"example:ruby_block"
                 }],"items":[],"assets":[],"sounds":[]}
                 """,
                 Map.of());
@@ -140,35 +140,80 @@ final class LoaderContentArchiveTest {
     }
 
     @Test
+    void reservedCarriersActivateWithMatchingDropItems() throws Exception {
+        for (String carrier : List.of(
+                "minecraft:gray_glazed_terracotta",
+                "minecraft:pink_glazed_terracotta",
+                "minecraft:blue_glazed_terracotta")) {
+            LoaderActivatedContent active = LoaderTestBundles.activate(
+                    cacheDirectory,
+                    LoaderTestArchive.screenAndBlock(carrier),
+                    "[\"views\",\"blocks\",\"items\",\"assets\"]",
+                    "[\"present_views\",\"register_blocks\",\"register_items\",\"load_assets\"]",
+                    LoaderPermission.PRESENT_VIEWS,
+                    LoaderPermission.REGISTER_BLOCKS,
+                    LoaderPermission.REGISTER_ITEMS,
+                    LoaderPermission.LOAD_ASSETS);
+            assertEquals(carrier, active.blocks().get("example:ruby_block").carrier());
+            assertEquals(carrier, active.items().get("example:ruby_block").baseItem());
+        }
+    }
+
+    @Test
+    void blockDeclarationsRequireOwnedDropAndSupportedCarrier() throws Exception {
+        for (String fields : List.of(
+                "",
+                "\"carrier\":\"minecraft:pink_glazed_terracotta\"",
+                "\"drop_item\":\"example:ruby_block\"",
+                "\"carrier\":\"bad carrier\",\"drop_item\":\"example:ruby_block\"",
+                "\"carrier\":\"minecraft:stone\",\"drop_item\":\"example:ruby_block\"",
+                "\"carrier\":\"minecraft:blue_glazed_terracotta\",\"drop_item\":\"example:ruby_block\"",
+                "\"carrier\":\"minecraft:pink_glazed_terracotta\",\"drop_item\":\"other:ruby_block\"")) {
+            byte[] archive = LoaderTestArchive.screenAndBlockFields(fields);
+            LoaderTestBundles.writeCache(cacheDirectory, archive);
+            assertThrows(IllegalArgumentException.class, () -> new LoaderClientTransport().acceptManifest(
+                    LoaderTestBundles.manifest(archive,
+                            "[\"views\",\"blocks\",\"items\",\"assets\"]",
+                            "[\"present_views\",\"register_blocks\",\"register_items\",\"load_assets\"]"),
+                    LoaderTestBundles.environment(LoaderPermission.PRESENT_VIEWS,
+                            LoaderPermission.REGISTER_BLOCKS, LoaderPermission.REGISTER_ITEMS,
+                            LoaderPermission.LOAD_ASSETS),
+                    cacheDirectory), fields);
+        }
+        for (String carrier : List.of(
+                "minecraft:black_glazed_terracotta",
+                "minecraft:red_glazed_terracotta")) {
+            byte[] archive = LoaderTestArchive.screenAndBlock(carrier);
+            LoaderTestBundles.writeCache(cacheDirectory, archive);
+            assertThrows(
+                    IllegalArgumentException.class, () -> new LoaderClientTransport().acceptManifest(
+                            LoaderTestBundles.manifest(archive,
+                                    "[\"views\",\"blocks\",\"items\",\"assets\"]",
+                                    "[\"present_views\",\"register_blocks\",\"register_items\",\"load_assets\"]"),
+                            LoaderTestBundles.environment(LoaderPermission.PRESENT_VIEWS,
+                                    LoaderPermission.REGISTER_BLOCKS, LoaderPermission.REGISTER_ITEMS,
+                                    LoaderPermission.LOAD_ASSETS),
+                            cacheDirectory), carrier);
+        }
+    }
+
+    @Test
     void screensMayOnlyReferenceTheirOwnDeclaredItemAndBlock() throws Exception {
-        byte[] undeclaredBlock = LoaderTestArchive.archive(
-                """
-                {"schema":2,"screens":[{
-                  "id":"example:catalog","title":"Catalog",
-                  "block_id":"example:missing","widgets":[]}],
-                "world_previews":[],"blocks":[{
-                  "id":"example:ruby_block","model":"example:block/ruby_block",
-                  "name":"Ruby Block"
-                }],"items":[],"assets":[{
-                  "id":"example:ruby_block_model",
-                  "path":"assets/example/models/block/ruby_block.json",
-                  "sha256":"%s","size_bytes":2
-                }],"sounds":[]}
-                """.formatted(LoaderTestArchive.sha256("{}".getBytes(StandardCharsets.UTF_8))),
-                Map.of(
-                        "assets/example/models/block/ruby_block.json",
-                        "{}".getBytes(StandardCharsets.UTF_8)));
+        byte[] undeclaredBlock = LoaderTestArchive.screenAndBlockFields(
+                "\"carrier\":\"minecraft:pink_glazed_terracotta\",\"drop_item\":\"example:ruby_block\"",
+                "example:missing");
         LoaderTestBundles.writeCache(cacheDirectory, undeclaredBlock);
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new LoaderClientTransport().acceptManifest(
                         LoaderTestBundles.manifest(
                                 undeclaredBlock,
-                                "[\"views\",\"blocks\",\"assets\"]",
-                                "[\"present_views\",\"register_blocks\",\"load_assets\"]"),
+                                "[\"views\",\"blocks\",\"items\",\"assets\"]",
+                                "[\"present_views\",\"register_blocks\",\"register_items\",\"load_assets\"]"),
                         LoaderTestBundles.environment(
                                 LoaderPermission.PRESENT_VIEWS,
                                 LoaderPermission.REGISTER_BLOCKS,
+                                LoaderPermission.REGISTER_ITEMS,
                                 LoaderPermission.LOAD_ASSETS),
                         cacheDirectory));
 
@@ -176,7 +221,8 @@ final class LoaderContentArchiveTest {
                 """
                 {"schema":2,"screens":[],"world_previews":[],"blocks":[{
                   "id":"other:ruby_block","model":"example:block/ruby_block",
-                  "name":"Ruby Block"
+                  "name":"Ruby Block","carrier":"minecraft:pink_glazed_terracotta",
+                  "drop_item":"example:ruby_block"
                 }],"items":[],"assets":[],"sounds":[]}
                 """,
                 Map.of());

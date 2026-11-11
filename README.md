@@ -1,7 +1,7 @@
 # Solaris Loader
 
 Optional **client-side mod** for [Solaris](https://github.com/kaiserproger/solaris)
-servers whose plugins — WebAssembly components of the `solaris:plugin` `0.7.0`
+servers whose plugins — WebAssembly components of the `solaris:plugin` `0.8.0`
 contract — provide custom views, HUDs, assets, sounds,
 items and blocks. If the server uses only server-side plugins, an ordinary
 vanilla client is enough.
@@ -17,9 +17,9 @@ JAR from its Assets, not GitHub's source-code archive:
 
 | Minecraft | Platform baseline | Download |
 | --- | --- | --- |
-| 26.3 | Fabric Loader 0.19.5 + Fabric API 0.163.0+26.3 | `loader-fabric-0.1.0.jar` |
-| 26.3 | NeoForge 26.3.0.83 | `loader-neoforge-0.1.0.jar` |
-| 26.3 | Forge 26.3-66.1.0 | `loader-forge-0.1.0.jar` |
+| 26.3 | Fabric Loader 0.19.5 + Fabric API 0.163.0+26.3 | `loader-fabric-1.0.0-rc.2.jar` |
+| 26.3 | NeoForge 26.3.0.83 | `loader-neoforge-1.0.0-rc.2.jar` |
+| 26.3 | Forge 26.3-66.1.0 | `loader-forge-1.0.0-rc.2.jar` |
 
 Use **Java 25**. The same platform JAR works across operating systems; the
 launcher, Java runtime, Minecraft version, and mod loader must match. Do not
@@ -29,7 +29,7 @@ allows verification with `sha256sum -c SHA256SUMS --ignore-missing` on Linux;
 on Windows, compare `Get-FileHash FILE.jar -Algorithm SHA256` with that file.
 
 Current Loader protocol is **3** with client artifact index **schema 2**. The
-server plugin frontend is the WebAssembly component API **0.7.0** only; the
+server plugin frontend is the WebAssembly component API **0.8.0** only; the
 Luau `0.6.0` frontend is retired, and the plugin API version does not change
 the client wire protocol or artifact schema. These are alpha contracts:
 match the server's declared compatibility, not just similar version numbers.
@@ -76,7 +76,8 @@ A different server address or permission set prompts again.
 
 Decisions and verified content are cached under `~/.solaris/loader-cache/`.
 Active content, the open modal, every HUD instance with its held bindings, and
-Loader sounds are cleared on disconnect.
+Loader sounds are cleared on disconnect. An interrupted download's temporary
+file is removed when its connection closes, including during Configuration.
 Only approve servers you trust; a matching content hash establishes byte
 identity, not that a server is trustworthy.
 
@@ -173,6 +174,9 @@ git clone https://github.com/kaiserproger/solaris-loader.git
 cd solaris-loader
 ./gradlew --no-configuration-cache :loader-fabric:jar :loader-neoforge:jar :loader-forge:jar
 ```
+
+The build uses ModDevGradle 2.0.148 for Minecraft 26.3 source transformation;
+older ModDevGradle releases can fail to recompile `HolderSet`.
 
 On Windows use `gradlew.bat`. JARs appear in each adapter's `build/libs/`.
 Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
@@ -343,19 +347,16 @@ connection. Declared
 `assets/<namespace>/<path>` bytes now form one
 transient required Minecraft client resource pack. The acknowledgement waits
 for an exact-byte resource reload, and the pack is removed and reloaded out
-when its originating connection closes. The block path pre-registers eight
-bounded carriers before freeze on each platform. After verified pack reload it
-sorts up to eight owner block ids, maps each blockstate/item definition to the
-corresponding carrier, and sends the exact owner-id-to-runtime-state map as
-`carrier_block_state_ids`. Solaris cross-checks that closed map against the
-hash-verified artifacts and retains it only in the acknowledged Play session.
-Server grants, placement, projection, break drops, persistence, and pickup
-preserve the exact owner identity through that mapping; no client runtime id
-enters canonical world or inventory state.
-Installing or enabling a Loader adapter needs a client restart before those
-native carriers exist; joining a new server with an already installed adapter
-only activates verified per-connection content and reloads its resource pack,
-not the frozen block registry.
+when its originating connection closes. Schema-2 block declarations require
+`id`, `model`, `name`, `carrier`, and `drop_item`. The drop item is
+owner-qualified; the server validates its installed custom item and carrier. The
+reserved carriers are gray (monitor), pink (Ruby), and blue (Sapphire) glazed
+terracotta; each can be used by only one activated block. Black and red glazed
+terracotta are not admitted. The runtime pack maps each declared vanilla
+carrier's four facing states to the owner's block model and generates a preview
+item model from that same block model. The server determines the actual block states;
+the client neither registers custom carrier blocks nor sends state IDs in its
+acknowledgement. The runtime pack is removed on disconnect.
 
 `solaris:loader/sound` resolves only an activated sound on its originating
 connection. The shared native presenter supports personal or fixed-position
@@ -595,8 +596,7 @@ Read-only tools:
 - `minecraft_wait_for_block_state`: wait for an exact block ID and optional
   state properties, rechecking only after applied client state events.
 - `minecraft_scan_blocks`: an inclusive loaded box with the same fields, capped at 4096 cells.
-- `minecraft_list_entities`: visible entities within 128 blocks, capped at 512.
-  Living entities include their observed walk position and speed for gait comparisons.
+- `minecraft_list_entities`: visible entities within 128 blocks, capped at 512. Entity IDs are signed 32-bit values, including server-sent presentation entities with negative IDs. Living entities include their observed walk position and speed for gait comparisons.
 - `minecraft_read_recipe_book`: bounded recipe display IDs accepted into the
   real client's recipe book.
 - `minecraft_wait_for_visible_entity`: wait for an entity type within a bounded radius.

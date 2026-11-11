@@ -62,6 +62,17 @@ final class LoaderLiveGateFixtureTest {
         assertEquals("sapphire-live:sapphire_block", sapphireScreen.blockId().orElseThrow());
         assertTrue(active.blocks().containsKey("ruby-live:ruby_block"));
         assertTrue(active.blocks().containsKey("sapphire-live:sapphire_block"));
+        assertEquals("minecraft:pink_glazed_terracotta",
+                active.blocks().get("ruby-live:ruby_block").carrier());
+        assertEquals("ruby-live:ruby_block", active.blocks().get("ruby-live:ruby_block").dropItem());
+        assertEquals("minecraft:pink_glazed_terracotta",
+                active.items().get("ruby-live:ruby_block").baseItem());
+        assertEquals("minecraft:blue_glazed_terracotta",
+                active.blocks().get("sapphire-live:sapphire_block").carrier());
+        assertEquals("sapphire-live:sapphire_block", active.blocks().get("sapphire-live:sapphire_block").dropItem());
+        assertEquals("minecraft:blue_glazed_terracotta",
+                active.items().get("sapphire-live:sapphire_block").baseItem());
+        assertTrue(!new String(outgoing.bytes(), StandardCharsets.UTF_8).contains("carrier_block_state_ids"));
         assertTrue(active.items().containsKey("ruby-live:ruby"));
         assertTrue(active.items().containsKey("ruby-live:blade"));
         assertTrue(active.items().containsKey("sapphire-live:sapphire"));
@@ -73,6 +84,7 @@ final class LoaderLiveGateFixtureTest {
             LoaderOutgoing other = new LoaderClientTransport().acceptManifest(
                     manifest, environment(platform), cacheDirectory);
             assertEquals(LoaderOutgoing.Kind.ACKNOWLEDGEMENT, other.kind());
+            assertTrue(!new String(other.bytes(), StandardCharsets.UTF_8).contains("carrier_block_state_ids"));
             assertEquals(active.items().keySet(), other.activatedContent().items().keySet());
             assertEquals(active.blocks().keySet(), other.activatedContent().blocks().keySet());
             assertEquals(active.assets().keySet(), other.activatedContent().assets().keySet());
@@ -121,11 +133,6 @@ final class LoaderLiveGateFixtureTest {
                         LoaderPermission.SEND_VIEW_ACTIONS,
                         LoaderPermission.LOAD_ASSETS,
                         LoaderPermission.PLAY_SOUNDS);
-            }
-
-            @Override
-            public List<Integer> carrierBlockStateIds() {
-                return List.of(321, 654);
             }
         };
     }

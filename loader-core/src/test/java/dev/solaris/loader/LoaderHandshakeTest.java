@@ -1,6 +1,7 @@
 package dev.solaris.loader;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import com.google.gson.Gson;
@@ -52,9 +53,7 @@ final class LoaderHandshakeTest {
                     manifest,
                     new Gson().fromJson(new Gson().toJson(manifest), LoaderManifest.class));
             byte[] payload = LoaderHandshake.acknowledgement(
-                    manifest,
-                    environment,
-                    LoaderActivatedContent.empty());
+                    manifest, environment);
             LoaderClientAck ack =
                     new Gson().fromJson(new String(payload, StandardCharsets.UTF_8), LoaderClientAck.class);
             assertEquals(platform, ack.platform());
@@ -62,7 +61,7 @@ final class LoaderHandshakeTest {
                     List.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS),
                     ack.acceptedPermissions());
             assertEquals(List.of(CACHE_KEY), ack.cachedBundles());
-            assertEquals(Map.of(), ack.carrierBlockStateIds());
+            assertFalse(new String(payload, StandardCharsets.UTF_8).contains("carrier_block_state_ids"));
         }
     }
 
@@ -119,69 +118,9 @@ final class LoaderHandshakeTest {
                 MANIFEST, LoaderPlatform.FABRIC, "0.1.0");
         assertThrows(
                 IllegalArgumentException.class,
-                () -> LoaderHandshake.acknowledgement(
-                        manifest, nativeEnvironment, LoaderActivatedContent.empty()));
+                () -> LoaderHandshake.acknowledgement(manifest, nativeEnvironment));
     }
 
-    @Test
-    void acknowledgementMapsSortedOwnerBlocksToDistinctCarrierStates() {
-        LoaderEnvironment environment = new LoaderEnvironment() {
-            @Override
-            public LoaderPlatform platform() {
-                return LoaderPlatform.FABRIC;
-            }
-
-            @Override
-            public String loaderVersion() {
-                return "0.1.0";
-            }
-
-            @Override
-            public Set<LoaderPermission> grantedPermissions() {
-                return Set.of(
-                        LoaderPermission.PRESENT_VIEWS,
-                        LoaderPermission.LOAD_ASSETS);
-            }
-
-            @Override
-            public List<Integer> carrierBlockStateIds() {
-                return List.of(101, 202);
-            }
-        };
-        LoaderManifest manifest = LoaderHandshake.validateTransferManifest(
-                MANIFEST,
-                environment);
-        LoaderActivatedContent content = new LoaderActivatedContent(
-                List.of(),
-                Map.of(),
-                Map.of(),
-                Map.of(
-                        "other:sapphire_block",
-                        new LoaderBlockDefinition(
-                                "other:sapphire_block",
-                                "other:block/sapphire_block",
-                                "Sapphire Block"),
-                        "example:ruby_block",
-                        new LoaderBlockDefinition(
-                                "example:ruby_block",
-                                "example:block/ruby_block",
-                                "Ruby Block")),
-                Map.of(),
-                Map.of(),
-                Map.of());
-
-        LoaderClientAck ack = new Gson().fromJson(
-                new String(
-                        LoaderHandshake.acknowledgement(manifest, environment, content),
-                        StandardCharsets.UTF_8),
-                LoaderClientAck.class);
-
-        assertEquals(
-                Map.of(
-                        "example:ruby_block", 101,
-                        "other:sapphire_block", 202),
-                ack.carrierBlockStateIds());
-    }
 
     @Test
     void rejectsMissingPermission() {
@@ -254,8 +193,7 @@ final class LoaderHandshakeTest {
 
         LoaderManifest manifest = LoaderHandshake.validateTransferManifest(MANIFEST, environment);
         assertEquals(3, manifest.protocol());
-        byte[] acknowledgement = LoaderHandshake.acknowledgement(
-                manifest, environment, LoaderActivatedContent.empty());
+        byte[] acknowledgement = LoaderHandshake.acknowledgement(manifest, environment);
         assertEquals(
                 3,
                 new Gson()

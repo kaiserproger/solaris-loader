@@ -29,11 +29,11 @@ final class LoaderMinecraftBlockTest {
         LoaderBlockDefinition block = new LoaderBlockDefinition(
                 "example:ruby_block",
                 "example:block/ruby_block",
-                "Ruby Block");
+                "Ruby Block", "minecraft:pink_glazed_terracotta", "example:ruby_block");
         LoaderBlockDefinition second = new LoaderBlockDefinition(
                 "other:sapphire_block",
                 "other:block/sapphire_block",
-                "Sapphire Block");
+                "Sapphire Block", "minecraft:blue_glazed_terracotta", "other:sapphire_block");
         LoaderActivatedContent content = new LoaderActivatedContent(
                 List.of(),
                 Map.of(screen.id().value(), screen),
@@ -49,26 +49,16 @@ final class LoaderMinecraftBlockTest {
         Map<Identifier, byte[]> resources =
                 LoaderMinecraftBlock.generatedResources(content);
         assertEquals(4, resources.size());
-        assertTrue(new String(
-                        resources.get(Identifier.parse(
-                                "solaris_loader:blockstates/loader_block.json")),
-                        StandardCharsets.UTF_8)
-                .contains("\"model\":\"example:block/ruby_block\""));
-        assertTrue(new String(
-                        resources.get(Identifier.parse(
-                                "solaris_loader:blockstates/loader_block_1.json")),
-                        StandardCharsets.UTF_8)
-                .contains("\"model\":\"other:block/sapphire_block\""));
-        assertTrue(new String(
-                        resources.get(Identifier.parse(
-                                "solaris_loader:items/loader_block.json")),
-                        StandardCharsets.UTF_8)
-                .contains("\"model\":\"example:block/ruby_block\""));
-        assertTrue(new String(
-                        resources.get(Identifier.parse(
-                                "solaris_loader:items/loader_block_1.json")),
-                        StandardCharsets.UTF_8)
-                .contains("\"model\":\"other:block/sapphire_block\""));
+        String ruby = new String(resources.get(Identifier.parse(
+                "minecraft:blockstates/pink_glazed_terracotta.json")), StandardCharsets.UTF_8);
+        String sapphire = new String(resources.get(Identifier.parse(
+                "minecraft:blockstates/blue_glazed_terracotta.json")), StandardCharsets.UTF_8);
+        assertTrue(ruby.contains("\"facing=north\":{\"model\":\"example:block/ruby_block\",\"y\":180}"));
+        assertTrue(ruby.contains("\"facing=west\":{\"model\":\"example:block/ruby_block\",\"y\":90}"));
+        assertTrue(sapphire.contains("\"facing=south\":{\"model\":\"other:block/sapphire_block\"}"));
+        assertTrue(new String(resources.get(Identifier.parse(
+                "solaris_loader:items/block_preview/example/ruby_block.json")),
+                StandardCharsets.UTF_8).contains("example:block/ruby_block"));
     }
 
     @Test
