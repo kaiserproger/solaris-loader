@@ -796,11 +796,15 @@ final class ClientCommandsTest {
 
         BridgeCommand waitPlay = registry.find("wait_play").orElseThrow();
 
+        // The fake's state wait reports the bound expiring without an event, so the
+        // request bound can be generous: the outcome never depends on host speed.
         assertEquals("", waitPlay.execute(
-            request("wait_play", "{\"timeout_seconds\":0.01}")
+            request("wait_play", "{\"timeout_seconds\":60}")
         ).get("dimension").getAsString());
         assertEquals(1, client.snapshotCalls);
         assertEquals(1, client.awaitStateChangeCalls);
+        assertTrue(client.awaitedTimeout.isPositive());
+        assertTrue(client.awaitedTimeout.compareTo(Duration.ofSeconds(60)) <= 0);
     }
 
     @Test
@@ -1763,6 +1767,7 @@ final class ClientCommandsTest {
 
     private static final class NeverPlayClient extends FakeClient {
         int snapshotCalls;
+        Duration awaitedTimeout;
 
         @Override
         public ClientSnapshot snapshot() {
@@ -1773,6 +1778,7 @@ final class ClientCommandsTest {
         @Override
         public boolean awaitStateChange(long observedVersion, Duration timeout) {
             awaitStateChangeCalls += 1;
+            awaitedTimeout = timeout;
             return false;
         }
     }

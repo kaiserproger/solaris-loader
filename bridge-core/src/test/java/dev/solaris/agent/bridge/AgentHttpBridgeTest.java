@@ -2,6 +2,7 @@ package dev.solaris.agent.bridge;
 
 import com.google.gson.JsonObject;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,15 +13,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+// Waits block on the exact event; this is only a hang guard that turns a lost
+// event (e.g. a serialized dispatcher) into a failure instead of a stuck build.
+@Timeout(value = 2, unit = TimeUnit.MINUTES)
 final class AgentHttpBridgeTest {
     @Test
     void acceptsLoopbackRpcWithSharedSecret() throws Exception {
@@ -103,38 +107,30 @@ final class AgentHttpBridgeTest {
     void servesObservationWhileLongCommandIsRunning() throws Exception {
         CountDownLatch longCommandStarted = new CountDownLatch(1);
         CountDownLatch releaseLongCommand = new CountDownLatch(1);
-        CountDownLatch observationExecuted = new CountDownLatch(1);
         CommandRegistry registry = new CommandRegistry();
         registry.register("long-command", request -> {
             longCommandStarted.countDown();
-            if (!releaseLongCommand.await(5, TimeUnit.SECONDS)) {
-                throw new AssertionError("test did not release long command");
-            }
+            releaseLongCommand.await();
             return new JsonObject();
         });
-        registry.registerConcurrent("state", request -> {
-            observationExecuted.countDown();
-            return new JsonObject();
-        });
+        registry.registerConcurrent("state", request -> new JsonObject());
 
-        ExecutorService clients = Executors.newFixedThreadPool(2);
+        ExecutorService clients = Executors.newFixedThreadPool(1);
         try (AgentHttpBridge bridge = AgentHttpBridge.start("run-secret", 0, registry)) {
             Future<HttpResponse<String>> longCommand = clients.submit(() -> post(bridge.port(), """
                 {"id":4,"secret":"run-secret","command":"long-command","payload":{}}
                 """));
-            assertTrue(longCommandStarted.await(2, TimeUnit.SECONDS));
+            longCommandStarted.await();
 
-            Future<HttpResponse<String>> observation = clients.submit(() -> post(bridge.port(), """
+            // The long command is released only after this response, so a served
+            // observation proves it was not queued behind the long command.
+            assertEquals(200, post(bridge.port(), """
                 {"id":5,"secret":"run-secret","command":"state","payload":{}}
-                """));
-            assertTrue(
-                observationExecuted.await(2, TimeUnit.SECONDS),
-                "state command must execute before the long command completes"
-            );
+                """).statusCode());
+            assertFalse(longCommand.isDone());
 
             releaseLongCommand.countDown();
-            assertEquals(200, observation.get(2, TimeUnit.SECONDS).statusCode());
-            assertEquals(200, longCommand.get(2, TimeUnit.SECONDS).statusCode());
+            assertEquals(200, longCommand.get().statusCode());
         } finally {
             releaseLongCommand.countDown();
             clients.shutdownNow();
@@ -146,21 +142,15 @@ final class AgentHttpBridgeTest {
         int legacyWorkerCount = 4;
         CountDownLatch waitsStarted = new CountDownLatch(legacyWorkerCount);
         CountDownLatch releaseWaits = new CountDownLatch(1);
-        CountDownLatch controlExecuted = new CountDownLatch(1);
         CommandRegistry registry = new CommandRegistry();
         registry.registerConcurrent("wait_state_change", request -> {
             waitsStarted.countDown();
-            if (!releaseWaits.await(5, TimeUnit.SECONDS)) {
-                throw new AssertionError("test did not release notification wait");
-            }
+            releaseWaits.await();
             return new JsonObject();
         });
-        registry.register("disconnect", request -> {
-            controlExecuted.countDown();
-            return new JsonObject();
-        });
+        registry.register("disconnect", request -> new JsonObject());
 
-        ExecutorService clients = Executors.newFixedThreadPool(legacyWorkerCount + 1);
+        ExecutorService clients = Executors.newFixedThreadPool(legacyWorkerCount);
         List<Future<HttpResponse<String>>> waits = new ArrayList<>();
         try (AgentHttpBridge bridge = AgentHttpBridge.start("run-secret", 0, registry)) {
             for (int index = 0; index < legacyWorkerCount; index += 1) {
@@ -169,20 +159,16 @@ final class AgentHttpBridgeTest {
                     {"id":%d,"secret":"run-secret","command":"wait_state_change","payload":{}}
                     """.formatted(requestId))));
             }
-            assertTrue(waitsStarted.await(2, TimeUnit.SECONDS));
+            waitsStarted.await();
 
-            Future<HttpResponse<String>> control = clients.submit(() -> post(bridge.port(), """
+            // The waits are released only after this response: control was dispatched
+            // while every legacy worker slot was occupied.
+            assertEquals(200, post(bridge.port(), """
                 {"id":200,"secret":"run-secret","command":"disconnect","payload":{}}
-                """));
-            assertTrue(
-                controlExecuted.await(2, TimeUnit.SECONDS),
-                "control RPC must dispatch before notification waits complete"
-            );
-
-            assertEquals(200, control.get(2, TimeUnit.SECONDS).statusCode());
+                """).statusCode());
             releaseWaits.countDown();
             for (Future<HttpResponse<String>> wait : waits) {
-                assertEquals(200, wait.get(2, TimeUnit.SECONDS).statusCode());
+                assertEquals(200, wait.get().statusCode());
             }
         } finally {
             releaseWaits.countDown();
@@ -199,9 +185,7 @@ final class AgentHttpBridgeTest {
         registry.registerConcurrent("wait_state_change", request -> {
             waitStarted.countDown();
             try {
-                if (!releaseWait.await(10, TimeUnit.SECONDS)) {
-                    throw new AssertionError("test did not close or release notification wait");
-                }
+                releaseWait.await();
             } catch (InterruptedException error) {
                 waitInterrupted.countDown();
                 throw error;
@@ -209,27 +193,24 @@ final class AgentHttpBridgeTest {
             return new JsonObject();
         });
 
-        ExecutorService clients = Executors.newFixedThreadPool(2);
+        ExecutorService clients = Executors.newFixedThreadPool(1);
         AgentHttpBridge bridge = AgentHttpBridge.start("run-secret", 0, registry);
-        Future<?> close = null;
+        boolean closed = false;
         try {
             clients.submit(() -> post(bridge.port(), """
                 {"id":300,"secret":"run-secret","command":"wait_state_change","payload":{}}
                 """));
-            assertTrue(waitStarted.await(2, TimeUnit.SECONDS));
+            waitStarted.await();
 
-            close = clients.submit(bridge::close);
-            assertTrue(
-                waitInterrupted.await(2, TimeUnit.SECONDS),
-                "bridge close must interrupt outstanding notification waits"
-            );
-            close.get(2, TimeUnit.SECONDS);
+            // close() returns only once the executor terminated, which the wait
+            // allows only by observing the interrupt.
+            bridge.close();
+            closed = true;
+            assertEquals(0, waitInterrupted.getCount(), "bridge close must interrupt outstanding notification waits");
         } finally {
             releaseWait.countDown();
-            if (close == null) {
+            if (!closed) {
                 bridge.close();
-            } else {
-                close.get(7, TimeUnit.SECONDS);
             }
             clients.shutdownNow();
         }
@@ -256,7 +237,7 @@ final class AgentHttpBridgeTest {
             return new JsonObject();
         });
 
-        ExecutorService clients = Executors.newFixedThreadPool(2);
+        ExecutorService clients = Executors.newFixedThreadPool(1);
         AgentHttpBridge bridge = AgentHttpBridge.start(
             "run-secret",
             0,
@@ -267,25 +248,22 @@ final class AgentHttpBridgeTest {
             clients.submit(() -> post(bridge.port(), """
                 {"id":400,"secret":"run-secret","command":"wait_state_change","payload":{}}
                 """));
-            assertTrue(waitStarted.await(2, TimeUnit.SECONDS));
+            waitStarted.await();
 
-            Future<?> close = clients.submit(bridge::close);
-            assertTrue(interruptObserved.await(2, TimeUnit.SECONDS));
-            ExecutionException failure = assertThrows(
-                ExecutionException.class,
-                () -> close.get(2, TimeUnit.SECONDS)
-            );
-            assertTrue(failure.getCause() instanceof IllegalStateException);
+            // The handler survives the interrupt until released, so the bound expires
+            // however long the host takes to schedule it.
+            IllegalStateException failure = assertThrows(IllegalStateException.class, bridge::close);
             assertEquals(
                 "HTTP bridge executor did not terminate within " + shutdownTimeout,
-                failure.getCause().getMessage()
+                failure.getMessage()
             );
+            interruptObserved.await();
 
             releaseWait.countDown();
-            assertTrue(handlerTerminated.await(2, TimeUnit.SECONDS));
+            handlerTerminated.await();
         } finally {
             releaseWait.countDown();
-            assertTrue(handlerTerminated.await(2, TimeUnit.SECONDS));
+            handlerTerminated.await();
             bridge.close();
             clients.shutdownNow();
         }
