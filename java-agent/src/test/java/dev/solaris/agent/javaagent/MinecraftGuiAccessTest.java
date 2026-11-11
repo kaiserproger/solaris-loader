@@ -15,6 +15,7 @@ public final class MinecraftGuiAccessTest {
         assertSame(minecraft.overlay, (Object) access.overlay().invokeExact((Object) minecraft));
         assertSame(minecraft.gui.chat, (Object) access.chat().invokeExact((Object) minecraft));
         assertSame(minecraft.target, (Object) access.mainRenderTarget().invokeExact((Object) minecraft));
+        assertSame(minecraft.gameRenderer.renderState, (Object) access.renderState().invokeExact((Object) minecraft));
         FakeScreen replacement = new FakeScreen();
         access.setScreen().invokeExact((Object) minecraft, (Object) replacement);
         assertSame(replacement, minecraft.screen);
@@ -30,6 +31,7 @@ public final class MinecraftGuiAccessTest {
         assertSame(minecraft.gui.overlay, (Object) access.overlay().invokeExact((Object) minecraft));
         assertSame(minecraft.gui.hud.chat, (Object) access.chat().invokeExact((Object) minecraft));
         assertSame(minecraft.gameRenderer.target, (Object) access.mainRenderTarget().invokeExact((Object) minecraft));
+        assertSame(minecraft.gameRenderer.renderState, (Object) access.renderState().invokeExact((Object) minecraft));
         FakeScreen replacement = new FakeScreen();
         access.setScreen().invokeExact((Object) minecraft, (Object) replacement);
         assertSame(replacement, minecraft.gui.current);
@@ -55,6 +57,7 @@ public final class MinecraftGuiAccessTest {
 
     public static final class LegacyMinecraft {
         public final LegacyGui gui = new LegacyGui();
+        public final LegacyGameRenderer gameRenderer = new LegacyGameRenderer();
         public FakeScreen screen = new FakeScreen();
         final Object overlay = new Object();
         final Object target = new Object();
@@ -69,6 +72,14 @@ public final class MinecraftGuiAccessTest {
 
         public Object getMainRenderTarget() {
             return target;
+        }
+    }
+
+    public static final class LegacyGameRenderer {
+        final Object renderState = new Object();
+
+        public Object getGameRenderState() {
+            return renderState;
         }
     }
 
@@ -105,9 +116,14 @@ public final class MinecraftGuiAccessTest {
 
     public static final class GameRenderer {
         final Object target = new Object();
+        final Object renderState = new Object();
 
         public Object mainRenderTarget() {
             return target;
+        }
+
+        public Object gameRenderState() {
+            return renderState;
         }
     }
 

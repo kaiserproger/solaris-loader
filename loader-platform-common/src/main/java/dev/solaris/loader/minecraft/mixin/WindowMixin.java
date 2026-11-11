@@ -2,6 +2,7 @@ package dev.solaris.loader.minecraft.mixin;
 
 import com.mojang.blaze3d.platform.Window;
 import dev.solaris.loader.minecraft.LoaderMinecraftInput;
+import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;

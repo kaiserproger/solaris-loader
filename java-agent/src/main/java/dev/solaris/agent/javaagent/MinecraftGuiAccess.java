@@ -61,6 +61,14 @@ final class MinecraftGuiAccess {
         return name.equals("KEYBOARD") || name.equals("KEYSYM");
     }
 
+    static Object renderState(Minecraft minecraft) {
+        try {
+            return ACCESS.renderState().invokeExact((Object) minecraft);
+        } catch (Throwable failure) {
+            throw new IllegalStateException("reading Minecraft game render state", failure);
+        }
+    }
+
     // Resolve the complete layout once. Missing members are an unsupported API,
     // never an empty screen/chat observation or a per-frame reflective search.
     static Access resolve(Class<?> minecraft) {
@@ -79,13 +87,17 @@ final class MinecraftGuiAccess {
             MethodHandle overlay;
             MethodHandle chat;
             MethodHandle mainRenderTarget;
+            MethodHandle renderState;
             if (legacyScreen != null) {
                 screen = lookup.unreflectGetter(legacyScreen);
                 setScreen = lookup.unreflect(minecraft.getMethod("setScreen", legacyScreen.getType()));
                 overlay = lookup.unreflect(minecraft.getMethod("getOverlay"));
                 chat = MethodHandles.filterReturnValue(guiGetter,
                     lookup.unreflect(gui.getType().getMethod("getChat")));
+                Field renderer = minecraft.getField("gameRenderer");
                 mainRenderTarget = lookup.unreflect(minecraft.getMethod("getMainRenderTarget"));
+                renderState = MethodHandles.filterReturnValue(lookup.unreflectGetter(renderer),
+                    lookup.unreflect(renderer.getType().getMethod("getGameRenderState")));
             } else {
                 var screenMethod = gui.getType().getMethod("screen");
                 screen = MethodHandles.filterReturnValue(guiGetter, lookup.unreflect(screenMethod));
@@ -101,17 +113,20 @@ final class MinecraftGuiAccess {
                 Field renderer = minecraft.getField("gameRenderer");
                 mainRenderTarget = MethodHandles.filterReturnValue(lookup.unreflectGetter(renderer),
                     lookup.unreflect(renderer.getType().getMethod("mainRenderTarget")));
+                renderState = MethodHandles.filterReturnValue(lookup.unreflectGetter(renderer),
+                    lookup.unreflect(renderer.getType().getMethod("gameRenderState")));
             }
             MethodType getter = MethodType.methodType(Object.class, Object.class);
             return new Access(screen.asType(getter),
                 setScreen.asType(MethodType.methodType(void.class, Object.class, Object.class)),
-                overlay.asType(getter), chat.asType(getter), mainRenderTarget.asType(getter));
+                overlay.asType(getter), chat.asType(getter), mainRenderTarget.asType(getter),
+                renderState.asType(getter));
         } catch (ReflectiveOperationException failure) {
             throw new IllegalStateException("unsupported Minecraft GUI API: " + minecraft.getName(), failure);
         }
     }
 
     record Access(MethodHandle screen, MethodHandle setScreen, MethodHandle overlay, MethodHandle chat,
-                  MethodHandle mainRenderTarget) {
+                  MethodHandle mainRenderTarget, MethodHandle renderState) {
     }
 }
