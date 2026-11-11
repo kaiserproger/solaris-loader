@@ -63,7 +63,7 @@ final class DistantHorizonsScenario {
                         new MinecraftClientFacade().disconnect();
                         // The low-level disconnect deliberately leaves a
                         // ProgressScreen; this scenario returns to the menu.
-                        ClientVersionApi.setScreen(Minecraft.getInstance(), new TitleScreen());
+                        MinecraftGuiAccess.setScreen(Minecraft.getInstance(), new TitleScreen());
                         closed.complete(null);
                     } catch (Throwable failure) {
                         closed.completeExceptionally(failure);
@@ -71,7 +71,7 @@ final class DistantHorizonsScenario {
                 });
                 closed.get(120, TimeUnit.SECONDS);
                 if (Minecraft.getInstance().level != null
-                    || !(ClientVersionApi.screen(Minecraft.getInstance()) instanceof TitleScreen)) {
+                    || !(MinecraftGuiAccess.screen(Minecraft.getInstance()) instanceof TitleScreen)) {
                     throw new IllegalStateException("DH disconnect did not return to the title screen");
                 }
                 return new ClientScenarioReport("passed", id,
@@ -82,7 +82,7 @@ final class DistantHorizonsScenario {
                 new MinecraftClientExecutor().callOnClientThread(() -> {
                     // Command chat/toasts otherwise cover the distant test column.
                     Minecraft minecraft = Minecraft.getInstance();
-                    if (ClientVersionApi.hudHidden(minecraft) != !id.endsWith("-debug")) ClientVersionApi.toggleHud(minecraft);
+                    MinecraftHudAccess.setHidden(minecraft, !id.endsWith("-debug"));
                     if (id.endsWith("-debug")) Minecraft.getInstance().debugEntries.toggleDebugOverlay();
                     return null;
                 });
@@ -216,7 +216,7 @@ final class DistantHorizonsScenario {
     private static JsonObject renderSnapshot(ClassLoader loader, Object world) throws Exception {
         var minecraft = Minecraft.getInstance();
         JsonObject state = new JsonObject();
-        state.addProperty("overlay_open", ClientVersionApi.overlay(minecraft) != null);
+        state.addProperty("overlay_open", MinecraftGuiAccess.overlay(minecraft) != null);
         state.addProperty("landmark_vanilla_loaded",
             minecraft.level.getChunkSource().hasChunk(LANDMARK_X >> 4, LANDMARK_Z >> 4));
         Class<?> section = Class.forName(CORE + "pos.DhSectionPos", true, loader);

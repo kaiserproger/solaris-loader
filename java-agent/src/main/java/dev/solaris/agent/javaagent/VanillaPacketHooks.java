@@ -23,7 +23,9 @@ public final class VanillaPacketHooks {
     }
 
     public static void afterPacket(Object packet) {
-        if (packet instanceof ClientboundSetEntityDataPacket metadata) {
+        if (packet instanceof ClientboundSystemChatPacket chat) {
+            ClientStateEvents.publishSystemChat(chat.content().getString());
+        } else if (packet instanceof ClientboundSetEntityDataPacket metadata) {
             ReceivedEntityQa.metadata(metadata);
         } else if (packet instanceof ClientboundSetEquipmentPacket equipment) {
             ReceivedEntityQa.equipment(equipment);

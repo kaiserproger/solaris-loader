@@ -52,6 +52,7 @@ final class VanillaEventTransformerTest {
         Map<String, Integer> packets = hooks("net/minecraft/client/multiplayer/ClientPacketListener");
         assertTrue(packets.getOrDefault("handleTakeItemEntity:beforePacket", 0) > 0);
         assertTrue(packets.getOrDefault("handleTakeItemEntity:afterPacket", 0) > 0);
+        assertTrue(packets.getOrDefault("handleSystemChat:afterPacket", 0) > 0);
         assertTrue(packets.getOrDefault("handleContainerContent:afterPacket", 0) > 0);
         assertTrue(packets.getOrDefault("handleBlockChangedAck:afterPacket", 0) > 0);
     }

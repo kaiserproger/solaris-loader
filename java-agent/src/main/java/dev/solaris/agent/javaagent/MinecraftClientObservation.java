@@ -15,6 +15,7 @@ import net.minecraft.core.component.TypedDataComponent;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.ExperienceOrb;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.item.ItemStack;
@@ -61,7 +62,7 @@ final class MinecraftClientObservation {
             }
             case "container" -> {
                 menu = minecraft.player.containerMenu;
-                if (!(ClientVersionApi.screen(minecraft) instanceof AbstractContainerScreen<?> screen)
+                if (!(MinecraftGuiAccess.screen(minecraft) instanceof AbstractContainerScreen<?> screen)
                         || screen.getMenu() != menu) {
                     throw new IllegalStateException("no visible container menu is open");
                 }
@@ -115,7 +116,12 @@ final class MinecraftClientObservation {
         observation.add("screen", screen(minecraft));
         observation.add("overlay", overlay(minecraft));
         observation.add("recent_chat", recentChat(minecraft));
-        if (ClientVersionApi.screen(minecraft) instanceof DisconnectedScreen disconnectedScreen) {
+        var chatReceipts = ClientStateEvents.systemChatSnapshot();
+        JsonArray receivedChat = new JsonArray();
+        chatReceipts.messages().forEach(receivedChat::add);
+        observation.add("received_system_chat", receivedChat);
+        observation.addProperty("dropped_system_chat", chatReceipts.dropped());
+        if (MinecraftGuiAccess.screen(minecraft) instanceof DisconnectedScreen disconnectedScreen) {
             observation.addProperty(
                 "disconnect_reason",
                 disconnectedScreen.getNarrationMessage().getString()
@@ -256,7 +262,6 @@ final class MinecraftClientObservation {
 
     private static JsonObject player(Minecraft minecraft) {
         JsonObject player = entity(minecraft.player, 0.0, minecraft.player);
-        player.addProperty("eye_y", minecraft.player.getEyeY());
         player.addProperty("health", minecraft.player.getHealth());
         player.addProperty("max_health", minecraft.player.getMaxHealth());
         player.addProperty("food", minecraft.player.getFoodData().getFoodLevel());
@@ -316,11 +321,12 @@ final class MinecraftClientObservation {
         if (entity instanceof LivingEntity living) {
             value.addProperty("health", living.getHealth());
             value.addProperty("max_health", living.getMaxHealth());
-            value.addProperty("walk_position", living.walkAnimation.position());
-            value.addProperty("walk_speed", living.walkAnimation.speed());
         }
         if (entity instanceof ItemEntity itemEntity) {
             value.add("item", item(itemEntity.getItem()));
+        }
+        if (entity instanceof ExperienceOrb orb) {
+            value.addProperty("value", orb.getValue());
         }
         return value;
     }
@@ -389,20 +395,20 @@ final class MinecraftClientObservation {
 
     private static JsonObject screen(Minecraft minecraft) {
         JsonObject screen = new JsonObject();
-        if (ClientVersionApi.screen(minecraft) == null) {
+        if (MinecraftGuiAccess.screen(minecraft) == null) {
             screen.addProperty("open", false);
             screen.addProperty("class", "none");
             screen.addProperty("title", "");
             return screen;
         }
         screen.addProperty("open", true);
-        screen.addProperty("class", ClientVersionApi.screen(minecraft).getClass().getName());
-        screen.addProperty("title", ClientVersionApi.screen(minecraft).getTitle().getString());
+        screen.addProperty("class", MinecraftGuiAccess.screen(minecraft).getClass().getName());
+        screen.addProperty("title", MinecraftGuiAccess.screen(minecraft).getTitle().getString());
         return screen;
     }
 
     private static JsonObject overlay(Minecraft minecraft) {
-        var current = ClientVersionApi.overlay(minecraft);
+        var current = MinecraftGuiAccess.overlay(minecraft);
         JsonObject overlay = new JsonObject();
         overlay.addProperty("open", current != null);
         overlay.addProperty("class", current == null ? "none" : current.getClass().getName());
@@ -455,7 +461,7 @@ final class MinecraftClientObservation {
 
     private static JsonArray recentChat(Minecraft minecraft) {
         JsonArray recent = new JsonArray();
-        List<String> messages = chatMessageTexts(ClientVersionApi.chat(minecraft));
+        List<String> messages = chatMessageTexts(MinecraftGuiAccess.chat(minecraft));
         for (int index = 0; index < Math.min(RECENT_CHAT_LIMIT, messages.size()); index++) {
             recent.add(messages.get(index));
         }

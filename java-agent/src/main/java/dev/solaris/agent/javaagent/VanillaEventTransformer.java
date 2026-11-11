@@ -17,7 +17,7 @@ final class VanillaEventTransformer implements ClassFileTransformer {
         "handleSetEntityData", "handleSetEquipment", "handleBlockChangedAck",
         "handleTakeItemEntity", "handleSetTime", "handleSetHealth", "handleSoundEntityEvent",
         "handleOpenScreen", "handleContainerSetSlot", "handleContainerContent",
-        "handleContainerSetData", "handleContainerClose"
+        "handleContainerSetData", "handleContainerClose", "handleSystemChat"
     );
 
     @Override

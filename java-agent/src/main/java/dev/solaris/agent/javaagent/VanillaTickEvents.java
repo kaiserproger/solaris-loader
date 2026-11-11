@@ -12,7 +12,7 @@ public final class VanillaTickEvents {
     private VanillaTickEvents() {}
 
     public static void afterTick(Minecraft minecraft) {
-        Object screen = ClientVersionApi.screen(minecraft);
+        Object screen = MinecraftGuiAccess.screen(minecraft);
         Object level = minecraft.level;
         Object player = minecraft.player;
         ClientStateEvents.publishTick();

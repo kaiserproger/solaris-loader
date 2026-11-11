@@ -363,7 +363,7 @@ final class ScenarioBlockTargets {
         }
         minecraft.gameMode.startDestroyBlock(obstacle, Direction.UP);
         minecraft.gameMode.continueDestroyBlock(obstacle, Direction.UP);
-        ClientVersionApi.swing(minecraft.player, InteractionHand.MAIN_HAND);
+        MinecraftActionAccess.swing(minecraft.player, InteractionHand.MAIN_HAND);
         return true;
     }
 

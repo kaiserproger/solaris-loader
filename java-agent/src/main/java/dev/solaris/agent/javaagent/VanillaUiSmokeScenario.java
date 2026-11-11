@@ -20,7 +20,6 @@ import net.minecraft.world.scores.PlayerTeam;
 import net.minecraft.world.scores.ReadOnlyScoreInfo;
 import net.minecraft.world.scores.Scoreboard;
 
-
 import java.lang.reflect.Field;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -122,7 +121,7 @@ final class VanillaUiSmokeScenario {
         check(roots > 0, "command-tree", "received_root_count=" + roots);
         ChatScreen chat = read(() -> {
             ChatScreen screen = new ChatScreen("/gam", false);
-            ClientVersionApi.setScreen(minecraft(), screen);
+            MinecraftGuiAccess.setScreen(minecraft(), screen);
             CommandSuggestions suggestions = field(screen, "commandSuggestions", CommandSuggestions.class);
             suggestions.setAllowSuggestions(true);
             suggestions.updateCommandInfo();
@@ -185,12 +184,12 @@ final class VanillaUiSmokeScenario {
         command("team add red");
         check(await(() -> board().getPlayerTeam("red") != null), "team-added", "client team red exists");
         command("team modify red color red");
-        check(await(() -> ClientVersionApi.redTeam(board().getPlayerTeam("red"))),
-            "team-color-red", "client team color=" + read(() -> board().getPlayerTeam("red").getColor()));
+        check(await(() -> "RED".equals(MinecraftHudAccess.teamColor(board().getPlayerTeam("red")))),
+            "team-color-red", "client team color=" + read(() -> MinecraftHudAccess.teamColor(board().getPlayerTeam("red"))));
         command("team join red @s");
         check(await(() -> {
             PlayerTeam team = board().getPlayersTeam(minecraft().player.getScoreboardName());
-            return team != null && team.getName().equals("red") && ClientVersionApi.redTeam(team);
+            return team != null && team.getName().equals("red") && "RED".equals(MinecraftHudAccess.teamColor(team));
         }), "team-self-membership", "client self team=" + read(() -> minecraft().player.getTeam()));
     }
 
@@ -344,15 +343,15 @@ final class VanillaUiSmokeScenario {
     }
 
     void showInventory() throws Exception {
-        read(() -> { ClientVersionApi.setScreen(minecraft(), new InventoryScreen(minecraft().player)); return null; });
+        read(() -> { MinecraftGuiAccess.setScreen(minecraft(), new InventoryScreen(minecraft().player)); return null; });
     }
 
     private void showChat() throws Exception {
-        read(() -> { ClientVersionApi.setScreen(minecraft(), new ChatScreen("", false)); return null; });
+        read(() -> { MinecraftGuiAccess.setScreen(minecraft(), new ChatScreen("", false)); return null; });
     }
 
     private void clearChat() throws Exception {
-        read(() -> { ClientVersionApi.chat(minecraft()).clearMessages(false); return null; });
+        read(() -> { MinecraftGuiAccess.chat(minecraft()).clearMessages(false); return null; });
     }
 
     void check(boolean passed, String name, String details) throws Exception {

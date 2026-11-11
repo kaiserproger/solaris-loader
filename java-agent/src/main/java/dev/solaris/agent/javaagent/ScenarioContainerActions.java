@@ -79,11 +79,11 @@ final class ScenarioContainerActions {
 
     static boolean closeCurrentScreenOnClientThread(Minecraft minecraft) {
         minecraft.options.pauseOnLostFocus = false;
-        if (ClientVersionApi.screen(minecraft) != null) {
+        if (MinecraftGuiAccess.screen(minecraft) != null) {
             minecraft.player.closeContainer();
-            ClientVersionApi.setScreen(minecraft, null);
+            MinecraftGuiAccess.setScreen(minecraft, null);
         }
-        return ClientVersionApi.screen(minecraft) == null;
+        return MinecraftGuiAccess.screen(minecraft) == null;
     }
 
     static int activeContainerIdOnClientThread() {
@@ -101,8 +101,8 @@ final class ScenarioContainerActions {
             long observedVersion = ClientStateEvents.version();
             finalSample = executor.callOnClientThread(() -> {
                 Minecraft minecraft = requireInPlay();
-                return ClientVersionApi.screen(minecraft) != null
-                    && Objects.equals(ClientVersionApi.screen(minecraft).getClass().getName(), className);
+                return MinecraftGuiAccess.screen(minecraft) != null
+                    && Objects.equals(MinecraftGuiAccess.screen(minecraft).getClass().getName(), className);
             });
             if (finalSample || !awaitClientStateChange(observedVersion, deadlineNanos)) {
                 break;
@@ -480,7 +480,7 @@ final class ScenarioContainerActions {
         ContainerClickCheckpoint checkpoint = executor.callOnClientThread(() -> {
             Minecraft minecraft = requireInPlay();
             AbstractContainerMenu menu = minecraft.player.containerMenu;
-            if (!(ClientVersionApi.screen(minecraft) instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen)
+            if (!(MinecraftGuiAccess.screen(minecraft) instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen<?> screen)
                 || screen.getMenu() != menu) {
                 throw new IllegalStateException("no visible container menu is open");
             }

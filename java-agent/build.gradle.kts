@@ -7,12 +7,11 @@ val clientJarPath = providers.environmentVariable("SOLARIS_CLIENT_JAR")
     .orElse(providers.gradleProperty("solaris.clientJar"))
     .orElse(rootProject.file("../solaris/.analysis/client-automation/versions/${clientVersion.get()}/client.jar").absolutePath)
 val clientJar = file(clientJarPath.get())
+val testClientJar = providers.gradleProperty("solaris.testClientJar").orElse(clientJarPath)
 
-sourceSets.main {
-    java.srcDir("src/minecraft-${clientVersion.get()}/java")
-}
 
 dependencies {
+    implementation("org.ow2.asm:asm:9.9")
     implementation(project(":bridge-core"))
     implementation("org.ow2.asm:asm:9.9")
     compileOnly(files(clientJar))
@@ -22,12 +21,12 @@ dependencies {
     compileOnly("io.netty:netty-transport:4.2.7.Final")
     compileOnly("it.unimi.dsi:fastutil:8.5.18")
     compileOnly("org.jspecify:jspecify:1.0.0")
-    testRuntimeOnly(files(clientJar))
+    testRuntimeOnly(files(file(testClientJar.get())))
     testCompileOnly(files(clientJar))
     testImplementation("com.google.code.gson:gson:2.11.0")
     testRuntimeOnly("com.mojang:logging:1.7.12")
     testRuntimeOnly("com.mojang:authlib:7.0.63")
-    testRuntimeOnly("com.mojang:brigadier:1.3.10")
+    testImplementation("com.mojang:brigadier:1.3.10")
     testRuntimeOnly("com.mojang:datafixerupper:9.0.19")
     testRuntimeOnly("io.netty:netty-all:4.2.7.Final")
     testRuntimeOnly("it.unimi.dsi:fastutil:8.5.18")

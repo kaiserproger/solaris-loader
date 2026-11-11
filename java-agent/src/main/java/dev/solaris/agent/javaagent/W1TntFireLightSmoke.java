@@ -204,7 +204,7 @@ final class W1TntFireLightSmoke {
             var result = minecraft().player.getMainHandItem().getItem() instanceof BucketItem
                 ? minecraft().gameMode.useItem(minecraft().player, InteractionHand.MAIN_HAND)
                 : minecraft().gameMode.useItemOn(minecraft().player, InteractionHand.MAIN_HAND, hit);
-            ClientVersionApi.swing(minecraft().player, InteractionHand.MAIN_HAND);
+            MinecraftActionAccess.swing(minecraft().player, InteractionHand.MAIN_HAND);
             return new ScenarioUseResult(result.toString(), ackBefore);
         });
     }
