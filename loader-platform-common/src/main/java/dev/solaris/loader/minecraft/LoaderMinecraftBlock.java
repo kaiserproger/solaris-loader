@@ -12,11 +12,20 @@ import java.util.Optional;
 import java.util.Set;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
+/**
+ * Carrier-backed Loader blocks (ADR 0018 "Monitor block"). Core stores and sends
+ * only the vanilla carrier block's {@code facing} states; the Loader block is the
+ * client's model for them. The runtime resource pack therefore overrides the
+ * carrier's blockstate with the bundle's model (rotated per {@code facing}); no
+ * block is registered and no state id is negotiated.
+ */
 public final class LoaderMinecraftBlock {
+    static final int MAX_BLOCKS = 8;
+    private static final String[] FACINGS = {"north", "east", "south", "west"};
+
     private LoaderMinecraftBlock() {
     }
 

@@ -64,6 +64,7 @@ public final class SolarisFabricLoader implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         ComputerClient.initialize();
+        ScreenClient.initialize();
         Minecraft client = Minecraft.getInstance();
         LoaderFabricMcpRuntime mcpRuntime =
                 LoaderFabricMcpRuntime.createIfEnabled();

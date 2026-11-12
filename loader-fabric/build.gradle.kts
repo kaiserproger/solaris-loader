@@ -36,6 +36,8 @@ dependencies {
     implementation("net.fabricmc:fabric-loader:${fabricLoaderVersion.get()}")
     implementation("net.fabricmc.fabric-api:fabric-api:${fabricApiVersion.get()}")
     include(project(":loader-core"))
+    include("org.jcodec:jcodec:0.2.5")
+    include("io.github.jaredmdobson:concentus:1.0.2")
     clientMcpRuntime(project(":java-agent"))
     testImplementation("org.junit.jupiter:junit-jupiter-api:5.10.2")
     testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:5.10.2")

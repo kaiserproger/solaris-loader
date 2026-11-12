@@ -91,6 +91,20 @@ final class LoaderContentArchiveTest {
     }
 
     @Test
+    void aBlockMayShareItsIdWithItsDropItem() throws Exception {
+        LoaderActivatedContent active = LoaderTestBundles.activate(
+                cacheDirectory,
+                LoaderTestArchive.blockWithSameIdDropItem(),
+                "[\"blocks\",\"items\",\"assets\"]",
+                "[\"register_blocks\",\"register_items\",\"load_assets\"]",
+                LoaderPermission.REGISTER_BLOCKS,
+                LoaderPermission.REGISTER_ITEMS,
+                LoaderPermission.LOAD_ASSETS);
+        assertEquals("example:ruby", active.blocks().get("example:ruby").dropItem());
+        assertEquals("example:ruby", active.items().get("example:ruby").id());
+    }
+
+    @Test
     void blockScreenBindsItsOwnedModelAndCarrierState() throws Exception {
         byte[] archive = LoaderTestArchive.screenAndBlock();
         String content = "[\"views\",\"blocks\",\"items\",\"assets\"]";
@@ -108,6 +122,12 @@ final class LoaderContentArchiveTest {
         assertEquals("example:block/ruby_block", active.blocks().get("example:ruby_block").model());
         assertEquals("minecraft:pink_glazed_terracotta", active.blocks().get("example:ruby_block").carrier());
         assertEquals("example:ruby_block", active.blocks().get("example:ruby_block").dropItem());
+        assertEquals(
+                "minecraft:black_glazed_terracotta",
+                active.blocks().get("example:ruby_block").carrier());
+        assertEquals(
+                "example:ruby",
+                active.blocks().get("example:ruby_block").dropItem());
         assertEquals(
                 "example:ruby_block",
                 active.screens().get("example:catalog").blockId().orElseThrow());
