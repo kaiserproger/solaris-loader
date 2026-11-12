@@ -1,7 +1,23 @@
-# Solaris Loader
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kaiserproger/krasnokamen/main/docs/brand/krasnokamen-logo-on-dark.svg">
+    <img src="https://raw.githubusercontent.com/kaiserproger/krasnokamen/main/docs/brand/krasnokamen-logo-on-light.svg" alt="Krasnokamen" width="420">
+  </picture>
+</p>
 
-Optional **client-side mod** for [Solaris](https://github.com/kaiserproger/solaris)
-servers whose plugins — WebAssembly components of the `solaris:plugin` `0.7.0`
+<h1 align="center">Krasnokamen Loader</h1>
+
+<p align="center">
+  <b>An engine for large Minecraft-compatible simulations.</b><br>
+  Optional client mod for Fabric, NeoForge and Forge that shows Krasnokamen plugin content
+</p>
+
+<p align="center">
+  <sub><b>Krasnokamen 1.0.0-rc.5 «Pauline»</b> · formerly Solaris (<a href="https://github.com/kaiserproger/krasnokamen/blob/main/docs/brand/README.md#formerly-solaris">why the name changed</a>)</sub>
+</p>
+
+Optional **client-side mod** for [Krasnokamen](https://github.com/kaiserproger/krasnokamen)
+servers whose plugins — WebAssembly components of the `krasnokamen:plugin` `0.9.0`
 contract — provide custom views, HUDs, assets, sounds,
 items and blocks. If the server uses only server-side plugins, an ordinary
 vanilla client is enough.
@@ -11,7 +27,7 @@ NeoForge, or Forge. Players do not need Gradle, Rust, MCP, or an API token.
 
 ## Download
 
-Open [Releases](https://github.com/kaiserproger/solaris-loader/releases) and
+Open [Releases](https://github.com/kaiserproger/krasnokamen-loader/releases) and
 choose the Loader release required by your server. Download **one** platform
 JAR from its Assets, not GitHub's source-code archive:
 
@@ -29,7 +45,7 @@ allows verification with `sha256sum -c SHA256SUMS --ignore-missing` on Linux;
 on Windows, compare `Get-FileHash FILE.jar -Algorithm SHA256` with that file.
 
 Current Loader protocol is **3** with client artifact index **schema 2**. The
-server plugin frontend is the WebAssembly component API **0.7.0** only; the
+server plugin frontend is the WebAssembly component API **0.9.0** only; the
 Luau `0.6.0` frontend is retired, and the plugin API version does not change
 the client wire protocol or artifact schema. These are alpha contracts:
 match the server's declared compatibility, not just similar version numbers.
@@ -42,9 +58,9 @@ survival-readiness claims.
 1. Close the Minecraft instance.
 2. Select Minecraft **26.1.2**, Java **25**, and one platform from the table.
 3. Open the **game directory of that instance** and its `mods/` folder.
-4. Copy the matching Solaris Loader JAR there. For Fabric, also install the
-   matching Fabric API JAR. Remove an older Solaris Loader JAR from that same
-   instance so exactly one remains.
+4. Copy the matching Krasnokamen Loader JAR there. For Fabric, also install the
+   matching Fabric API JAR. Remove any older Krasnokamen Loader or Solaris Loader
+   JAR from that same instance so exactly one remains.
 5. Start that instance, connect to the server, and review its permission prompt.
 
 | Launcher | Where to place the JAR |
@@ -63,7 +79,7 @@ claim that every launcher/platform combination was graphically tested.
 [Prism's mod installation guide](https://prismlauncher.org/wiki/getting-started/download-mods/)
 explains its instance/loader selection.
 
-Do **not** unzip the JAR or place it in the Solaris server's `plugins/` folder.
+Do **not** unzip the JAR or place it in the Krasnokamen server's `plugins/` folder.
 For a custom game directory, its `mods/` folder is authoritative; operating
 system default Minecraft folders are not reliable for separate instances.
 
@@ -74,7 +90,7 @@ downloads missing declared bundles, verifies their sizes and SHA-256 hashes,
 then activates content. **Deny** disconnects without requesting those bundles.
 A different server address or permission set prompts again.
 
-Decisions and verified content are cached under `~/.solaris/loader-cache/`.
+Decisions and verified content are cached under `~/.krasnokamen/loader-cache/`.
 Active content, the open modal, every HUD instance with its held bindings, and
 Loader sounds are cleared on disconnect.
 Only approve servers you trust; a matching content hash establishes byte
@@ -84,7 +100,7 @@ identity, not that a server is trustworthy.
 
 The in-game computer is a plain-text terminal/chat bridge, separate from Loader
 wire 3. Enable the server's `[computer]` section and add
-`-Dsolaris.computer.enabled=true` to the **client JVM arguments**. Place an ordinary
+`-Dkrasnokamen.computer.enabled=true` to the **client JVM arguments**. Place an ordinary
 iron block, connect as an unlocked level-4 operator, and right-click it. Type a
 line and press **Send**; replies stream into bounded plain-text scrollback.
 **Older/Newer** navigate history; **Close/Escape** terminates the direct child
@@ -135,7 +151,7 @@ and checks OpenGL readback. This passed on Linux/Xvfb with `LIBGL_ALWAYS_SOFTWAR
 rendering evidence. Run only on an isolated display:
 
 ```sh
-env -u WAYLAND_DISPLAY SOLARIS_CAPTURE_SMOKE_X11=1 LIBGL_ALWAYS_SOFTWARE=1 \
+env -u WAYLAND_DISPLAY KRASNOKAMEN_CAPTURE_SMOKE_X11=1 LIBGL_ALWAYS_SOFTWARE=1 \
   xvfb-run -a -s '-screen 0 128x128x24' \
   ./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx2g --max-workers=2 \
   :loader-fabric:test --tests '*ComputerCaptureTest'
@@ -148,7 +164,7 @@ vectors, limits, stale-session rejection and bounded transcript behavior.
 ## Troubleshooting
 
 - **“Loader required”**: verify the launched instance, `mods/` location, adapter,
-  and Minecraft version. Look for `solaris_loader` in `logs/latest.log`.
+  and Minecraft version. Look for `krasnokamen_loader` in `logs/latest.log`.
 - **Missing Fabric API / incompatible mod**: use the matching dependencies from
   the table, not Fabric API for another Minecraft release.
 - **Wrong Java / unsupported class version**: configure Java 25 for this
@@ -160,8 +176,8 @@ vectors, limits, stale-session rejection and bounded transcript behavior.
   corrected bundle. Do not disable verification or mix adapters.
 
 Operators and plugin authors: see the
-[full installation/permission guide](https://github.com/kaiserproger/solaris/blob/main/docs/SOLARIS_LOADER.md)
-and [plugin API](https://github.com/kaiserproger/solaris/blob/main/docs/PLUGINS.md).
+[full installation/permission guide](https://github.com/kaiserproger/krasnokamen/blob/main/docs/KRASNOKAMEN_LOADER.md)
+and [plugin API](https://github.com/kaiserproger/krasnokamen/blob/main/docs/PLUGINS.md).
 
 ## Build from source
 
@@ -169,8 +185,8 @@ Java 25 is required. This Gradle workspace builds independently of core;
 integration tests use the sibling `../solaris` fixtures.
 
 ```sh
-git clone https://github.com/kaiserproger/solaris-loader.git
-cd solaris-loader
+git clone https://github.com/kaiserproger/krasnokamen-loader.git
+cd krasnokamen-loader
 ./gradlew --no-configuration-cache :loader-fabric:jar :loader-neoforge:jar :loader-forge:jar
 ```
 
@@ -190,7 +206,7 @@ acknowledgement payloads through their native 26.1.2 networking APIs.
 
 Bundle `loaders` metadata recognizes the shared supported-platform values
 `native`, `fabric`, `neoforge`, and `forge`. The `native` value is preserved for
-the Solaris native client; it is not a Java adapter identity. Each Java adapter
+the Krasnokamen native client; it is not a Java adapter identity. Each Java adapter
 is admitted only when its real platform is listed, and acknowledges as
 `fabric`, `neoforge`, or `forge`, never `native`. Unknown, empty, or duplicate
 supported-platform declarations still fail validation. This does not change
@@ -200,15 +216,15 @@ The first manifest for an exact server address and permission set opens a
 Minecraft confirmation screen. Allow and deny decisions are stored separately
 per normalized server address in `permissions.properties` under the Loader
 cache. A different server or changed permission set prompts again. The cache
-directory defaults to `~/.solaris/loader-cache` and may be overridden for tests
+directory defaults to `~/.krasnokamen/loader-cache` and may be overridden for tests
 or isolated profiles:
 
 ```text
--Dsolaris.loader.cacheDir=/path/to/loader-cache
+-Dkrasnokamen.loader.cacheDir=/path/to/loader-cache
 ```
 
 Denial disconnects before an artifact request or staging file can be created.
-Solaris keeps the Loader Configuration handshake open for up to two minutes so
+Krasnokamen keeps the Loader Configuration handshake open for up to two minutes so
 the first confirmation is not constrained by the ordinary ten-second pre-Play
 packet timeout.
 For each missing exact cache identity the client requests only that bundle,
@@ -216,7 +232,7 @@ streams bounded Configuration payloads into a temporary file, verifies the
 declared size and SHA-256, and atomically publishes it before acknowledging the
 manifest. An unknown, duplicate, or missing permission fails the handshake.
 After all exact cache files pass verification, the shared core opens each ZIP
-with `solaris-client.json` as its first entry. That closed schema **2** accepts
+with `krasnokamen-client.json` as its first entry. That closed schema **2** accepts
 `screens`, `world_previews`, `blocks`, `items`, `assets` and `sounds`; unknown
 fields, unknown widget types and out-of-bound geometry fail activation, and
 schema-1 indexes or the removed UI/interaction shapes have no decoder. Each
@@ -256,7 +272,7 @@ The three adapters publish the resulting immutable registry before sending the
 acknowledgement and keep it available in Play. Unknown archive fields or
 entries and mismatched asset bytes fail before acknowledgement. An acknowledged
 Loader session can receive
-`solaris:loader/view` in Play. One shared renderer serves both view modes. A
+`krasnokamen:loader/view` in Play. One shared renderer serves both view modes. A
 modal view screen is the paginated presentation for the exact originating
 connection - a paged table of rows, tabs, typed inputs, a resource panel, action
 buttons honouring `enabled` and showing `deny_reason`, and the `reason` line,
@@ -317,7 +333,7 @@ when its originating connection closes. The block path pre-registers eight
 bounded carriers before freeze on each platform. After verified pack reload it
 sorts up to eight owner block ids, maps each blockstate/item definition to the
 corresponding carrier, and sends the exact owner-id-to-runtime-state map as
-`carrier_block_state_ids`. Solaris cross-checks that closed map against the
+`carrier_block_state_ids`. Krasnokamen cross-checks that closed map against the
 hash-verified artifacts and retains it only in the acknowledged Play session.
 Server grants, placement, projection, break drops, persistence, and pickup
 preserve the exact owner identity through that mapping; no client runtime id
@@ -327,7 +343,7 @@ native carriers exist; joining a new server with an already installed adapter
 only activates verified per-connection content and reloads its resource pack,
 not the frozen block registry.
 
-`solaris:loader/sound` resolves only an activated sound on its originating
+`krasnokamen:loader/sound` resolves only an activated sound on its originating
 connection. The shared native presenter supports personal or fixed-position
 one-shots, bounded volume/pitch, distance attenuation, and owner-id-local stop.
 The [live fixture gate](../solaris/examples/loader-live-gate/README.md) captures actual
@@ -335,10 +351,10 @@ audio output for all three platforms; no acknowledgement or chat response is
 treated as evidence that the sound played.
 
 Run the scoped bridge, agent, and platform tests against the intended core
-checkout (override `SOLARIS_REPO_ROOT` for a worktree):
+checkout (override `KRASNOKAMEN_REPO_ROOT` for a worktree):
 
 ```sh
-SOLARIS_REPO_ROOT=../solaris ./gradlew --no-daemon \
+KRASNOKAMEN_REPO_ROOT=../solaris ./gradlew --no-daemon \
   :bridge-core:test \
   :java-agent:test \
   :loader-core:test \
@@ -364,9 +380,9 @@ Build distributable platform jars with:
 <details>
 <summary>Developer reference: real-client MCP automation</summary>
 
-### Solaris Minecraft Client MCP
+### Krasnokamen Minecraft Client MCP
 
-The Solaris core harness locates this workspace through `SOLARIS_LOADER_ROOT`
+The Krasnokamen core harness locates this workspace through `KRASNOKAMEN_LOADER_ROOT`
 (default `../solaris-loader`). The following automation commands require the
 core checkout; normal player installations do not.
 
@@ -380,17 +396,17 @@ as state assertions or an external command-string launcher.
 Use Java 25 and choose a fresh bearer token:
 
 ```sh
-export SOLARIS_CLIENT_MCP_TOKEN="$(openssl rand -hex 32)"
-export SOLARIS_CLIENT_MCP_PORT=39095
+export KRASNOKAMEN_CLIENT_MCP_TOKEN="$(openssl rand -hex 32)"
+export KRASNOKAMEN_CLIENT_MCP_PORT=39095
 (cd ../solaris && python3 -m tools.harness client)
 ```
 
 The launcher calls the fixed Gradle task
 `:fabric-agent:runClientMcp`. Optional settings are:
 
-- `SOLARIS_CLIENT_MCP_GAME_DIR`: isolated Minecraft game directory.
-- `SOLARIS_CLIENT_MCP_USERNAME`: 1..16 ASCII letters, digits, or underscores.
-- `SOLARIS_CLIENT_MCP_PORT`: free IPv4 loopback port, default `39095`.
+- `KRASNOKAMEN_CLIENT_MCP_GAME_DIR`: isolated Minecraft game directory.
+- `KRASNOKAMEN_CLIENT_MCP_USERNAME`: 1..16 ASCII letters, digits, or underscores.
+- `KRASNOKAMEN_CLIENT_MCP_PORT`: free IPv4 loopback port, default `39095`.
 
 Normal launch checks for an occupied MCP port before starting Gradle; the
 in-client bind remains authoritative if another process races for the port.
@@ -402,14 +418,14 @@ Validate Java, configuration, MCP transport tests, and the Gradle adapter
 without launching Minecraft:
 
 ```sh
-(cd ../solaris && SOLARIS_CLIENT_MCP_TOKEN=local-check-token \
+(cd ../solaris && KRASNOKAMEN_CLIENT_MCP_TOKEN=local-check-token \
   python3 -m tools.harness client --check)
 ```
 
 The same run can be started directly:
 
 ```sh
-SOLARIS_CLIENT_MCP_TOKEN="$SOLARIS_CLIENT_MCP_TOKEN" \
+KRASNOKAMEN_CLIENT_MCP_TOKEN="$KRASNOKAMEN_CLIENT_MCP_TOKEN" \
   ./gradlew --no-configuration-cache :fabric-agent:runClientMcp
 ```
 
@@ -422,8 +438,8 @@ generation requests. The `configure`, `control`, `landmark`, `edit`, `render`,
 `render-update`, `state`, `debug` and `disconnect` phases are named `dh-protocol16-<phase>`.
 
 `tools/dh_scenario.py` is the Java-client driver used by the core harness's
-`dh-gate` profile. Set `SOLARIS_LOADER_ROOT` to this checkout and provide a
-worktree-built `SOLARIS_SERVER_BINARY`, publisher-verified `SOLARIS_DH_JAR`,
+`dh-gate` profile. Set `KRASNOKAMEN_LOADER_ROOT` to this checkout and provide a
+worktree-built `KRASNOKAMEN_SERVER_BINARY`, publisher-verified `KRASNOKAMEN_DH_JAR`,
 Java 25 and Xvfb. Prepare `.analysis/prism-26.1.2/minecraft` here by copying
 the owner's Prism 26.1.2 instance as a **read-only template**, excluding saves,
 screenshots, logs, mods and `Distant_Horizons_server_data`. Install only the
@@ -508,7 +524,7 @@ same bearer token used by the Minecraft process:
 ```sh
 codex mcp add minecraft-client \
   --url http://127.0.0.1:39095/mcp \
-  --bearer-token-env-var SOLARIS_CLIENT_MCP_TOKEN
+  --bearer-token-env-var KRASNOKAMEN_CLIENT_MCP_TOKEN
 ```
 
 No proxy process is required. The MCP endpoint is the mod inside the Minecraft
@@ -529,7 +545,7 @@ container templates and slot zero (`copyOne()`), retaining the exact three-diamo
 assertion. Bucket diagnostics use the vanilla outline/no-fluid POV ray and
 interaction range; actual bucket use still follows the native `Item.use` path.
 
-To test a real connection and structured world reads against Solaris:
+To test a real connection and structured world reads against Krasnokamen:
 
 ```sh
 (cd ../solaris && python3 -m tools.harness mcp \
