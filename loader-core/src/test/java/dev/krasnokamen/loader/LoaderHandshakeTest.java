@@ -1,0 +1,320 @@
+package dev.krasnokamen.loader;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import com.google.gson.Gson;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+final class LoaderHandshakeTest {
+    private static final String HASH = "a".repeat(64);
+    private static final String CACHE_KEY = "example:rich/1/" + HASH;
+    private static final byte[] MANIFEST = """
+            {
+              "protocol": 3,
+              "bundles": [{
+                "owner": "example",
+                "id": "rich",
+                "version": "1",
+                "artifact": "client/rich.zip",
+                "sha256": "%s",
+                "size_bytes": 128,
+                "loaders": ["native", "fabric", "neoforge", "forge"],
+                "content": ["views", "assets"],
+                "permissions": ["present_views", "load_assets"],
+                "cache_key": "%s"
+              }]
+            }
+            """.formatted(HASH, CACHE_KEY).getBytes(StandardCharsets.UTF_8);
+
+    @Test
+    void acceptsTheSameManifestForAllThreeLoaderPlatforms() {
+        for (LoaderPlatform platform : List.of(
+                LoaderPlatform.FABRIC, LoaderPlatform.NEOFORGE, LoaderPlatform.FORGE)) {
+            LoaderEnvironment environment = environment(
+                    platform,
+                    Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
+            LoaderManifest manifest = LoaderHandshake.validateTransferManifest(
+                    MANIFEST,
+                    environment);
+            assertEquals(
+                    List.of(
+                            LoaderPlatform.NATIVE,
+                            LoaderPlatform.FABRIC,
+                            LoaderPlatform.NEOFORGE,
+                            LoaderPlatform.FORGE),
+                    manifest.bundles().get(0).loaders());
+            assertEquals(
+                    manifest,
+                    new Gson().fromJson(new Gson().toJson(manifest), LoaderManifest.class));
+            byte[] payload = LoaderHandshake.acknowledgement(
+                    manifest, environment);
+            LoaderClientAck ack =
+                    new Gson().fromJson(new String(payload, StandardCharsets.UTF_8), LoaderClientAck.class);
+            assertEquals(platform, ack.platform());
+            assertEquals(
+                    List.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS),
+                    ack.acceptedPermissions());
+            assertEquals(List.of(CACHE_KEY), ack.cachedBundles());
+            assertFalse(new String(payload, StandardCharsets.UTF_8).contains("carrier_block_state_ids"));
+        }
+    }
+
+    @Test
+    void rejectsUnknownEmptyAndDuplicateSupportedPlatforms() {
+        LoaderEnvironment environment = environment(
+                LoaderPlatform.FABRIC,
+                Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
+        for (String loaders : List.of(
+                "[\"native\", \"fabric\", \"unknown\"]",
+                "[]",
+                "[\"native\", \"native\", \"fabric\"]")) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LoaderHandshake.validateTransferManifest(withLoaders(loaders), environment));
+        }
+    }
+
+    @Test
+    void nativeSupportDoesNotAdmitAnUnsupportedJavaPlatform() {
+        for (LoaderPlatform platform : List.of(
+                LoaderPlatform.FABRIC, LoaderPlatform.NEOFORGE, LoaderPlatform.FORGE)) {
+            LoaderEnvironment environment = environment(
+                    platform,
+                    Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
+            for (String loaders : List.of("[\"native\"]", "[\"native\", \"%s\"]".formatted(
+                    platform == LoaderPlatform.FABRIC ? "forge" : "fabric"))) {
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> LoaderHandshake.inspectManifest(
+                                withLoaders(loaders), platform, "0.1.0"));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> LoaderHandshake.validateTransferManifest(withLoaders(loaders), environment));
+            }
+        }
+    }
+
+    @Test
+    void javaClientCannotClaimNativeOrAcknowledgeAsNative() {
+        LoaderEnvironment nativeEnvironment = environment(
+                LoaderPlatform.NATIVE,
+                Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
+        for (byte[] payload : List.of(MANIFEST, withLoaders("[\"native\"]"))) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LoaderHandshake.inspectManifest(
+                            payload, LoaderPlatform.NATIVE, "0.1.0"));
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LoaderHandshake.validateTransferManifest(payload, nativeEnvironment));
+        }
+        LoaderManifest manifest = LoaderHandshake.inspectManifest(
+                MANIFEST, LoaderPlatform.FABRIC, "0.1.0");
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderHandshake.acknowledgement(manifest, nativeEnvironment));
+    }
+
+
+    @Test
+    void rejectsMissingPermission() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderHandshake.validateTransferManifest(
+                        MANIFEST,
+                        environment(LoaderPlatform.FABRIC, Set.of(LoaderPermission.LOAD_ASSETS))));
+    }
+
+    @Test
+    void rejectsUnknownManifestAndBundleFields() {
+        String manifest = new String(MANIFEST, StandardCharsets.UTF_8);
+        byte[] unknownManifestField =
+                manifest.replace("\"protocol\": 3,", "\"protocol\": 3, \"future\": true,")
+                        .getBytes(StandardCharsets.UTF_8);
+        byte[] unknownBundleField =
+                manifest.replace("\"owner\": \"example\",", "\"owner\": \"example\", \"future\": true,")
+                        .getBytes(StandardCharsets.UTF_8);
+        LoaderEnvironment environment = environment(
+                LoaderPlatform.FABRIC,
+                Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderHandshake.validateTransferManifest(unknownManifestField, environment));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderHandshake.validateTransferManifest(unknownBundleField, environment));
+    }
+
+    @Test
+    void rejectsCachePathSegmentsInBundleIdentity() {
+        byte[] invalidVersion = new String(MANIFEST, StandardCharsets.UTF_8)
+                .replace("\"version\": \"1\"", "\"version\": \"..\"")
+                .getBytes(StandardCharsets.UTF_8);
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderHandshake.validateTransferManifest(
+                        invalidVersion,
+                        environment(
+                                LoaderPlatform.FABRIC,
+                                Set.of(
+                                        LoaderPermission.PRESENT_VIEWS,
+                                        LoaderPermission.LOAD_ASSETS))));
+    }
+
+    @Test
+    void permissionWireNamesRoundTrip() {
+        for (LoaderPermission permission : LoaderPermission.values()) {
+            assertEquals(
+                    permission,
+                    LoaderPermission.fromWireName(permission.wireName()));
+        }
+    }
+
+    @Test
+    void optionalBundleProbeAndHelloChannelsAreDefined() {
+        assertEquals("krasnokamen:loader/probe", LoaderHandshake.PROBE_CHANNEL);
+        assertEquals("krasnokamen:loader/hello", LoaderHandshake.HELLO_CHANNEL);
+    }
+
+    @Test
+    void wireThreeIsTheOnlyAcceptedProtocol() {
+        assertEquals(3, LoaderHandshake.PROTOCOL_VERSION);
+        LoaderEnvironment environment = environment(
+                LoaderPlatform.FABRIC,
+                Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS));
+
+        LoaderManifest manifest = LoaderHandshake.validateTransferManifest(MANIFEST, environment);
+        assertEquals(3, manifest.protocol());
+        byte[] acknowledgement = LoaderHandshake.acknowledgement(manifest, environment);
+        assertEquals(
+                3,
+                new Gson()
+                        .fromJson(
+                                new String(acknowledgement, StandardCharsets.UTF_8),
+                                LoaderClientAck.class)
+                        .protocol());
+
+        for (String rejected : List.of(
+                new String(MANIFEST, StandardCharsets.UTF_8)
+                        .replace("\"protocol\": 3", "\"protocol\": 2"),
+                new String(MANIFEST, StandardCharsets.UTF_8)
+                        .replace("\"protocol\": 3", "\"protocol\": 4"),
+                new String(MANIFEST, StandardCharsets.UTF_8)
+                        .replace("\"protocol\": 3", "\"protocol\": \"3\""))) {
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LoaderHandshake.validateTransferManifest(
+                            rejected.getBytes(StandardCharsets.UTF_8), environment));
+        }
+    }
+
+    @Test
+    void everyContentKindRequiresItsMatchingPermission() {
+        Map<LoaderContentKind, LoaderPermission> required = Map.of(
+                LoaderContentKind.BLOCKS, LoaderPermission.REGISTER_BLOCKS,
+                LoaderContentKind.ITEMS, LoaderPermission.REGISTER_ITEMS,
+                LoaderContentKind.VIEWS, LoaderPermission.PRESENT_VIEWS,
+                LoaderContentKind.VIEW_ACTIONS, LoaderPermission.SEND_VIEW_ACTIONS,
+                LoaderContentKind.ASSETS, LoaderPermission.LOAD_ASSETS,
+                LoaderContentKind.WORLD_PREVIEWS, LoaderPermission.PRESENT_WORLD_PREVIEWS,
+                LoaderContentKind.WORLD_SELECTION, LoaderPermission.SEND_WORLD_SELECTION,
+                LoaderContentKind.SOUNDS, LoaderPermission.PLAY_SOUNDS);
+        assertEquals(LoaderContentKind.values().length, required.size());
+
+        for (LoaderContentKind kind : LoaderContentKind.values()) {
+            LoaderPermission permission = required.get(kind);
+            LoaderEnvironment granted = environment(LoaderPlatform.FABRIC, Set.of(permission));
+            LoaderManifest manifest = LoaderHandshake.validateTransferManifest(
+                    bundle(content(kind), permission.wireName()),
+                    granted);
+            assertEquals(List.of(kind), manifest.bundles().get(0).content());
+
+            LoaderPermission wrong = permission == LoaderPermission.LOAD_ASSETS
+                    ? LoaderPermission.PLAY_SOUNDS
+                    : LoaderPermission.LOAD_ASSETS;
+            assertThrows(
+                    IllegalArgumentException.class,
+                    () -> LoaderHandshake.validateTransferManifest(
+                            bundle(content(kind), wrong.wireName()),
+                            environment(LoaderPlatform.FABRIC, Set.of(wrong))));
+        }
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderHandshake.validateTransferManifest(
+                        new String(MANIFEST, StandardCharsets.UTF_8)
+                                .replace("\"views\"", "\"ui\"")
+                                .getBytes(StandardCharsets.UTF_8),
+                        environment(
+                                LoaderPlatform.FABRIC,
+                                Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS))));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LoaderHandshake.validateTransferManifest(
+                        new String(MANIFEST, StandardCharsets.UTF_8)
+                                .replace("\"views\"", "\"interactions\"")
+                                .getBytes(StandardCharsets.UTF_8),
+                        environment(
+                                LoaderPlatform.FABRIC,
+                                Set.of(LoaderPermission.PRESENT_VIEWS, LoaderPermission.LOAD_ASSETS))));
+    }
+
+    private static byte[] withLoaders(String loaders) {
+        return new String(MANIFEST, StandardCharsets.UTF_8)
+                .replace("[\"native\", \"fabric\", \"neoforge\", \"forge\"]", loaders)
+                .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static String content(LoaderContentKind kind) {
+        return switch (kind) {
+            case BLOCKS -> "blocks";
+            case ITEMS -> "items";
+            case VIEWS -> "views";
+            case VIEW_ACTIONS -> "view_actions";
+            case ASSETS -> "assets";
+            case WORLD_PREVIEWS -> "world_previews";
+            case WORLD_SELECTION -> "world_selection";
+            case SOUNDS -> "sounds";
+        };
+    }
+
+    private static byte[] bundle(String content, String permission) {
+        return """
+                {"protocol":3,"bundles":[{
+                  "owner":"example","id":"rich","version":"1",
+                  "artifact":"client/rich.zip","sha256":"%s","size_bytes":128,
+                  "loaders":["fabric","neoforge","forge"],"content":["%s"],
+                  "permissions":["%s"],"cache_key":"%s"
+                }]}
+                """.formatted(HASH, content, permission, CACHE_KEY)
+                .getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static LoaderEnvironment environment(
+            LoaderPlatform platform,
+            Set<LoaderPermission> permissions) {
+        return new LoaderEnvironment() {
+            @Override
+            public LoaderPlatform platform() {
+                return platform;
+            }
+
+            @Override
+            public String loaderVersion() {
+                return "0.1.0";
+            }
+
+            @Override
+            public Set<LoaderPermission> grantedPermissions() {
+                return permissions;
+            }
+        };
+    }
+}

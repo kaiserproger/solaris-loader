@@ -6,20 +6,20 @@ plugins {
 }
 
 allprojects {
-    group = "dev.solaris"
+    group = "dev.krasnokamen"
     version = "1.0.0-rc.2"
 }
 
-val loaderClientMcpToken = providers.environmentVariable("SOLARIS_CLIENT_MCP_TOKEN")
-    .orElse(providers.gradleProperty("solaris.clientMcp.token"))
+val loaderClientMcpToken = providers.environmentVariable("KRASNOKAMEN_CLIENT_MCP_TOKEN")
+    .orElse(providers.gradleProperty("krasnokamen.clientMcp.token"))
     .orElse("")
-val loaderClientMcpPort = providers.environmentVariable("SOLARIS_CLIENT_MCP_PORT")
-    .orElse(providers.gradleProperty("solaris.clientMcp.port"))
+val loaderClientMcpPort = providers.environmentVariable("KRASNOKAMEN_CLIENT_MCP_PORT")
+    .orElse(providers.gradleProperty("krasnokamen.clientMcp.port"))
     .orElse("39095")
-val loaderClientMcpGameDir = providers.gradleProperty("solaris.clientMcp.gameDir")
+val loaderClientMcpGameDir = providers.gradleProperty("krasnokamen.clientMcp.gameDir")
     .orElse(rootProject.file(".analysis/minecraft-loader-mcp").absolutePath)
-val loaderClientMcpUsername = providers.gradleProperty("solaris.clientMcp.username")
-    .orElse("SolarisLoader")
+val loaderClientMcpUsername = providers.gradleProperty("krasnokamen.clientMcp.username")
+    .orElse("KrasnoLoader")
 
 tasks.register("validateLoaderClientMcpRunProperties") {
     group = "verification"
@@ -27,25 +27,25 @@ tasks.register("validateLoaderClientMcpRunProperties") {
     doLast {
         if (loaderClientMcpToken.get().isBlank()) {
             throw GradleException(
-                "Missing SOLARIS_CLIENT_MCP_TOKEN or -Psolaris.clientMcp.token for runClientMcp."
+                "Missing KRASNOKAMEN_CLIENT_MCP_TOKEN or -Pkrasnokamen.clientMcp.token for runClientMcp."
             )
         }
         val port = loaderClientMcpPort.get().toIntOrNull()
         if (port == null || port !in 1..65535) {
             throw GradleException(
-                "Invalid MCP port '${loaderClientMcpPort.get()}'. Use SOLARIS_CLIENT_MCP_PORT=1..65535."
+                "Invalid MCP port '${loaderClientMcpPort.get()}'. Use KRASNOKAMEN_CLIENT_MCP_PORT=1..65535."
             )
         }
         val username = loaderClientMcpUsername.get()
         if (!username.matches(Regex("[A-Za-z0-9_]{1,16}"))) {
             throw GradleException(
-                "Invalid -Psolaris.clientMcp.username '$username'. Use 1..16 ASCII letters, digits, or underscores."
+                "Invalid -Pkrasnokamen.clientMcp.username '$username'. Use 1..16 ASCII letters, digits, or underscores."
             )
         }
         val gameDir = file(loaderClientMcpGameDir.get())
         if (!gameDir.isAbsolute) {
             throw GradleException(
-                "Invalid -Psolaris.clientMcp.gameDir '${loaderClientMcpGameDir.get()}'. Use an absolute path."
+                "Invalid -Pkrasnokamen.clientMcp.gameDir '${loaderClientMcpGameDir.get()}'. Use an absolute path."
             )
         }
     }

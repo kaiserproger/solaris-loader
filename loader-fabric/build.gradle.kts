@@ -6,15 +6,15 @@ plugins {
 val minecraftVersion = providers.gradleProperty("minecraftVersion")
 val fabricLoaderVersion = providers.gradleProperty("fabricLoaderVersion")
 val fabricApiVersion = providers.gradleProperty("fabricApiVersion")
-val clientMcpToken = providers.environmentVariable("SOLARIS_CLIENT_MCP_TOKEN")
-    .orElse(providers.gradleProperty("solaris.clientMcp.token"))
+val clientMcpToken = providers.environmentVariable("KRASNOKAMEN_CLIENT_MCP_TOKEN")
+    .orElse(providers.gradleProperty("krasnokamen.clientMcp.token"))
     .orElse("")
-val clientMcpPort = providers.environmentVariable("SOLARIS_CLIENT_MCP_PORT")
-    .orElse(providers.gradleProperty("solaris.clientMcp.port"))
+val clientMcpPort = providers.environmentVariable("KRASNOKAMEN_CLIENT_MCP_PORT")
+    .orElse(providers.gradleProperty("krasnokamen.clientMcp.port"))
     .orElse("39095")
-val clientMcpGameDir = providers.gradleProperty("solaris.clientMcp.gameDir")
+val clientMcpGameDir = providers.gradleProperty("krasnokamen.clientMcp.gameDir")
     .orElse(rootProject.file(".analysis/minecraft-loader-mcp/fabric").absolutePath)
-val clientMcpUsername = providers.gradleProperty("solaris.clientMcp.username").orElse("SolarisLoader")
+val clientMcpUsername = providers.gradleProperty("krasnokamen.clientMcp.username").orElse("KrasnoLoader")
 val clientMcpRuntime by configurations.creating
 
 loom {
@@ -23,8 +23,8 @@ loom {
             client()
             runDirectory.set(file(clientMcpGameDir.get()))
             property(
-                "solaris.loader.cacheDir",
-                file(clientMcpGameDir.get()).resolve("solaris-loader-cache").absolutePath
+                "krasnokamen.loader.cacheDir",
+                file(clientMcpGameDir.get()).resolve("krasnokamen-loader-cache").absolutePath
             )
         }
     }
@@ -63,16 +63,16 @@ tasks.processResources {
 
 tasks.named<JavaExec>("runClientMcp") {
     group = "verification"
-    description = "Runs the Fabric Loader client with the embedded Solaris MCP server."
+    description = "Runs the Fabric Loader client with the embedded Krasnokamen MCP server."
     dependsOn(rootProject.tasks.named("validateLoaderClientMcpRunProperties"))
     classpath += clientMcpRuntime
     workingDir(file(clientMcpGameDir.get()))
     args("--username", clientMcpUsername.get())
-    environment("SOLARIS_CLIENT_MCP_TOKEN", clientMcpToken.get())
-    environment("SOLARIS_CLIENT_MCP_PORT", clientMcpPort.get())
+    environment("KRASNOKAMEN_CLIENT_MCP_TOKEN", clientMcpToken.get())
+    environment("KRASNOKAMEN_CLIENT_MCP_PORT", clientMcpPort.get())
     systemProperty(
-        "solaris.loader.cacheDir",
-        file(clientMcpGameDir.get()).resolve("solaris-loader-cache").absolutePath
+        "krasnokamen.loader.cacheDir",
+        file(clientMcpGameDir.get()).resolve("krasnokamen-loader-cache").absolutePath
     )
     notCompatibleWithConfigurationCache("The Loader MCP profile uses per-run credentials and game directories.")
 }

@@ -11,15 +11,15 @@ dependencies {
     testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.10.2")
 }
 
-val solarisRepoRoot = providers.environmentVariable("SOLARIS_REPO_ROOT")
-    .orElse(providers.gradleProperty("solaris.repoRoot"))
+val krasnokamenRepoRoot = providers.environmentVariable("KRASNOKAMEN_REPO_ROOT")
+    .orElse(providers.gradleProperty("krasnokamen.repoRoot"))
     .orElse(rootProject.file("../solaris").absolutePath)
 
 tasks.test {
     maxHeapSize = "1g"
-    systemProperty("solaris.repoRoot", solarisRepoRoot.get())
+    systemProperty("krasnokamen.repoRoot", krasnokamenRepoRoot.get())
     inputs.files(
-        file("${solarisRepoRoot.get()}/examples/loader-live-gate/plugins/ruby-live/client/rich-content.zip"),
-        file("${solarisRepoRoot.get()}/examples/loader-live-gate/plugins/sapphire-live/client/rich-content.zip"),
+        file("${krasnokamenRepoRoot.get()}/examples/loader-live-gate/plugins/ruby-live/client/rich-content.zip"),
+        file("${krasnokamenRepoRoot.get()}/examples/loader-live-gate/plugins/sapphire-live/client/rich-content.zip"),
     )
 }
