@@ -1,6 +1,22 @@
-# Solaris Loader
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/kaiserproger/krasnokamen/main/docs/brand/krasnokamen-logo-on-dark.svg">
+    <img src="https://raw.githubusercontent.com/kaiserproger/krasnokamen/main/docs/brand/krasnokamen-logo-on-light.svg" alt="Krasnokamen" width="420">
+  </picture>
+</p>
 
-Optional **client-side mod** for [Solaris](https://github.com/kaiserproger/solaris)
+<h1 align="center">Krasnokamen Loader</h1>
+
+<p align="center">
+  <b>An engine for large Minecraft-compatible simulations.</b><br>
+  Optional client mod for Fabric, NeoForge and Forge that shows Krasnokamen plugin content
+</p>
+
+<p align="center">
+  <sub><b>Krasnokamen 1.0.0-rc.5 «Pauline»</b> · formerly Solaris (<a href="https://github.com/kaiserproger/krasnokamen/blob/main/docs/brand/README.md#formerly-solaris">why the name changed</a>)</sub>
+</p>
+
+Optional **client-side mod** for [Krasnokamen](https://github.com/kaiserproger/krasnokamen)
 servers whose plugins — WebAssembly components of the `solaris:plugin` `0.8.0`
 contract — provide custom views, HUDs, assets, sounds,
 items and blocks. If the server uses only server-side plugins, an ordinary
@@ -9,9 +25,11 @@ vanilla client is enough.
 This is not a server plugin, modpack, launcher, or replacement for Fabric,
 NeoForge, or Forge. Players do not need Gradle, Rust, MCP, or an API token.
 
+> **Names.** The code still uses the Solaris names until the rename lands in the source tree: the JAR names, `solaris:loader/*` channels, `SOLARIS_*` variables, `-Dsolaris.*` properties and `~/.solaris/loader-cache` below are the current ones.
+
 ## Download
 
-Open [Releases](https://github.com/kaiserproger/solaris-loader/releases) and
+Open [Releases](https://github.com/kaiserproger/krasnokamen-loader/releases) and
 choose the Loader release required by your server. Download **one** platform
 JAR from its Assets, not GitHub's source-code archive:
 
@@ -42,9 +60,9 @@ survival-readiness claims.
 1. Close the Minecraft instance.
 2. Select Minecraft **26.3**, Java **25**, and one platform from the table.
 3. Open the **game directory of that instance** and its `mods/` folder.
-4. Copy the matching Solaris Loader JAR there. For Fabric, also install the
-   matching Fabric API JAR. Remove an older Solaris Loader JAR from that same
-   instance so exactly one remains.
+4. Copy the matching Krasnokamen Loader JAR there. For Fabric, also install the
+   matching Fabric API JAR. Remove any older Krasnokamen Loader or Solaris Loader
+   JAR from that same instance so exactly one remains.
 5. Start that instance, connect to the server, and review its permission prompt.
 
 | Launcher | Where to place the JAR |
@@ -63,7 +81,7 @@ claim that every launcher/platform combination was graphically tested.
 [Prism's mod installation guide](https://prismlauncher.org/wiki/getting-started/download-mods/)
 explains its instance/loader selection.
 
-Do **not** unzip the JAR or place it in the Solaris server's `plugins/` folder.
+Do **not** unzip the JAR or place it in the Krasnokamen server's `plugins/` folder.
 For a custom game directory, its `mods/` folder is authoritative; operating
 system default Minecraft folders are not reliable for separate instances.
 
@@ -161,8 +179,8 @@ vectors, limits, stale-session rejection and bounded transcript behavior.
   corrected bundle. Do not disable verification or mix adapters.
 
 Operators and plugin authors: see the
-[full installation/permission guide](https://github.com/kaiserproger/solaris/blob/main/docs/SOLARIS_LOADER.md)
-and [plugin API](https://github.com/kaiserproger/solaris/blob/main/docs/PLUGINS.md).
+[full installation/permission guide](https://github.com/kaiserproger/krasnokamen/blob/main/docs/SOLARIS_LOADER.md)
+and [plugin API](https://github.com/kaiserproger/krasnokamen/blob/main/docs/PLUGINS.md).
 
 ## Build from source
 
@@ -170,8 +188,8 @@ Java 25 is required. This Gradle workspace builds independently of core;
 integration tests use the sibling `../solaris` fixtures.
 
 ```sh
-git clone https://github.com/kaiserproger/solaris-loader.git
-cd solaris-loader
+git clone https://github.com/kaiserproger/krasnokamen-loader.git
+cd krasnokamen-loader
 ./gradlew --no-configuration-cache :loader-fabric:jar :loader-neoforge:jar :loader-forge:jar
 ```
 
@@ -194,7 +212,7 @@ acknowledgement payloads through their native 26.3 networking APIs.
 
 Bundle `loaders` metadata recognizes the shared supported-platform values
 `native`, `fabric`, `neoforge`, and `forge`. The `native` value is preserved for
-the Solaris native client; it is not a Java adapter identity. Each Java adapter
+the Krasnokamen native client; it is not a Java adapter identity. Each Java adapter
 is admitted only when its real platform is listed, and acknowledges as
 `fabric`, `neoforge`, or `forge`, never `native`. Unknown, empty, or duplicate
 supported-platform declarations still fail validation. This does not change
@@ -212,7 +230,7 @@ or isolated profiles:
 ```
 
 Denial disconnects before an artifact request or staging file can be created.
-Solaris keeps the Loader Configuration handshake open for up to two minutes so
+Krasnokamen keeps the Loader Configuration handshake open for up to two minutes so
 the first confirmation is not constrained by the ordinary ten-second pre-Play
 packet timeout.
 For each missing exact cache identity the client requests only that bundle,
@@ -365,9 +383,9 @@ Build distributable platform jars with:
 <details>
 <summary>Developer reference: real-client MCP automation</summary>
 
-### Solaris Minecraft Client MCP
+### Krasnokamen Minecraft Client MCP
 
-The Solaris core harness locates this workspace through `SOLARIS_LOADER_ROOT`
+The Krasnokamen core harness locates this workspace through `SOLARIS_LOADER_ROOT`
 (default `../solaris-loader`). The following automation commands require the
 core checkout; normal player installations do not.
 
@@ -530,7 +548,7 @@ container templates and slot zero (`copyOne()`), retaining the exact three-diamo
 assertion. Bucket diagnostics use the vanilla outline/no-fluid POV ray and
 interaction range; actual bucket use still follows the native `Item.use` path.
 
-To test a real connection and structured world reads against Solaris:
+To test a real connection and structured world reads against Krasnokamen:
 
 ```sh
 (cd ../solaris && python3 -m tools.harness mcp \
