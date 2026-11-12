@@ -17,15 +17,13 @@
 </p>
 
 Optional **client-side mod** for [Krasnokamen](https://github.com/kaiserproger/krasnokamen)
-servers whose plugins — WebAssembly components of the `solaris:plugin` `0.8.0`
+servers whose plugins — WebAssembly components of the `krasnokamen:plugin` `0.9.0`
 contract — provide custom views, HUDs, assets, sounds,
 items and blocks. If the server uses only server-side plugins, an ordinary
 vanilla client is enough.
 
 This is not a server plugin, modpack, launcher, or replacement for Fabric,
 NeoForge, or Forge. Players do not need Gradle, Rust, MCP, or an API token.
-
-> **Names.** The code still uses the Solaris names until the rename lands in the source tree: the JAR names, `solaris:loader/*` channels, `SOLARIS_*` variables, `-Dsolaris.*` properties and `~/.solaris/loader-cache` below are the current ones.
 
 ## Download
 
@@ -35,9 +33,9 @@ JAR from its Assets, not GitHub's source-code archive:
 
 | Minecraft | Platform baseline | Download |
 | --- | --- | --- |
-| 26.3 | Fabric Loader 0.19.5 + Fabric API 0.163.0+26.3 | `loader-fabric-1.0.0-rc.2.jar` |
-| 26.3 | NeoForge 26.3.0.83 | `loader-neoforge-1.0.0-rc.2.jar` |
-| 26.3 | Forge 26.3-66.1.0 | `loader-forge-1.0.0-rc.2.jar` |
+| 26.1.2 | Fabric Loader 0.19.3 + Fabric API 0.155.2+26.1.2 | `loader-fabric-0.1.0.jar` |
+| 26.1.2 | NeoForge 26.1.2.76 | `loader-neoforge-0.1.0.jar` |
+| 26.1.2 | Forge 26.1.2-64.1.0 | `loader-forge-0.1.0.jar` |
 
 Use **Java 25**. The same platform JAR works across operating systems; the
 launcher, Java runtime, Minecraft version, and mod loader must match. Do not
@@ -47,7 +45,7 @@ allows verification with `sha256sum -c SHA256SUMS --ignore-missing` on Linux;
 on Windows, compare `Get-FileHash FILE.jar -Algorithm SHA256` with that file.
 
 Current Loader protocol is **3** with client artifact index **schema 2**. The
-server plugin frontend is the WebAssembly component API **0.8.0** only; the
+server plugin frontend is the WebAssembly component API **0.9.0** only; the
 Luau `0.6.0` frontend is retired, and the plugin API version does not change
 the client wire protocol or artifact schema. These are alpha contracts:
 match the server's declared compatibility, not just similar version numbers.
@@ -58,7 +56,7 @@ survival-readiness claims.
 ## Install in your launcher
 
 1. Close the Minecraft instance.
-2. Select Minecraft **26.3**, Java **25**, and one platform from the table.
+2. Select Minecraft **26.1.2**, Java **25**, and one platform from the table.
 3. Open the **game directory of that instance** and its `mods/` folder.
 4. Copy the matching Krasnokamen Loader JAR there. For Fabric, also install the
    matching Fabric API JAR. Remove any older Krasnokamen Loader or Solaris Loader
@@ -92,10 +90,9 @@ downloads missing declared bundles, verifies their sizes and SHA-256 hashes,
 then activates content. **Deny** disconnects without requesting those bundles.
 A different server address or permission set prompts again.
 
-Decisions and verified content are cached under `~/.solaris/loader-cache/`.
+Decisions and verified content are cached under `~/.krasnokamen/loader-cache/`.
 Active content, the open modal, every HUD instance with its held bindings, and
-Loader sounds are cleared on disconnect. An interrupted download's temporary
-file is removed when its connection closes, including during Configuration.
+Loader sounds are cleared on disconnect.
 Only approve servers you trust; a matching content hash establishes byte
 identity, not that a server is trustworthy.
 
@@ -103,7 +100,7 @@ identity, not that a server is trustworthy.
 
 The in-game computer is a plain-text terminal/chat bridge, separate from Loader
 wire 3. Enable the server's `[computer]` section and add
-`-Dsolaris.computer.enabled=true` to the **client JVM arguments**. Place an ordinary
+`-Dkrasnokamen.computer.enabled=true` to the **client JVM arguments**. Place an ordinary
 iron block, connect as an unlocked level-4 operator, and right-click it. Type a
 line and press **Send**; replies stream into bounded plain-text scrollback.
 **Older/Newer** navigate history; **Close/Escape** terminates the direct child
@@ -154,7 +151,7 @@ and checks OpenGL readback. This passed on Linux/Xvfb with `LIBGL_ALWAYS_SOFTWAR
 rendering evidence. Run only on an isolated display:
 
 ```sh
-env -u WAYLAND_DISPLAY SOLARIS_CAPTURE_SMOKE_X11=1 LIBGL_ALWAYS_SOFTWARE=1 \
+env -u WAYLAND_DISPLAY KRASNOKAMEN_CAPTURE_SMOKE_X11=1 LIBGL_ALWAYS_SOFTWARE=1 \
   xvfb-run -a -s '-screen 0 128x128x24' \
   ./gradlew --no-daemon -Dorg.gradle.jvmargs=-Xmx2g --max-workers=2 \
   :loader-fabric:test --tests '*ComputerCaptureTest'
@@ -164,10 +161,57 @@ The ordinary test run skips that explicit display-dependent method; it is not a
 capture pass. `:loader-core:test --tests '*ComputerProtocolTest'` tests codec
 vectors, limits, stale-session rejection and bounded transcript behavior.
 
+## Monitors and shared screens (Fabric)
+
+With the server's `computer:monitor` bundle admitted for Fabric,
+the Fabric mod shows the monitor model (the carrier's `facing` states are overridden
+by the runtime resource pack) and speaks the `krasnokamen:screen` relay (server ADR 0018
+"Screen sharing"). Right-click a monitor face (sneak to place blocks against it instead):
+
+- **Someone else's active screen** (generic "on" panel): sends `REQUEST`; the owner
+  must allow. Frames (H.264, at most 640 px) then replace the panel, stretched
+  (letterboxed) over the whole W×H monitor rectangle, only while you look at it.
+  `F8` leaves; `STOP` resets the panel. The mod never sends input to the owner.
+- **An inactive monitor**: opens a "Share your screen?" dialog. Nothing is captured
+  before you press *Share*, and frames upload only while the server's `DEMAND` is on
+  (at most 5 fps, 128 KiB per picture). When a viewer asks, a centered *Allow / Deny*
+  dialog answers it. Linux needs an X11 `$DISPLAY`, `ffmpeg` and `xdpyinfo`
+  (view-only; Wayland is not supported); Windows captures the primary screen with
+  `java.awt.Robot` (compiled, **not run on Windows**).
+
+Pictures are H.264 (Constrained Baseline, Annex B, one picture per FRAME, `key` flag,
+`KEY_REQUEST`; no JPEG) encoded and decoded in pure Java by JCodec 0.2.5 (FreeBSD licence,
+2 MB, bundled jar-in-jar, no native library). Pure codec/state/geometry live in `loader-core`
+(`ScreenProtocol`, `ScreenRelay`, `ScreenGeometry`, `ScreenVideo`); `loader-fabric` has the renderer, dialogs and
+capture. The server must admit Fabric Loader sessions for the screen channel.
+
+Screen audio is **receive-only** in Fabric: permitted owners' Opus packets (48 kHz
+mono, 20 ms, at most 1000 bytes) decode in pure Java with bundled Concentus 1.0.2
+(BSD licence). Playback uses Minecraft's sound engine at the monitor face centre,
+with the Blocks/Master volume controls and linear attenuation out to 32 blocks.
+The stream is supplied through Fabric's `FabricSoundInstance` extension, leaving
+Fabric API's sound-engine mixin as the sole owner of stream dispatch.
+The PCM queue is bounded to 100 ms; look-away STOP, revocation, F8, monitor closure
+and disconnect discard it. Fabric never captures or transmits audio: whole-desktop
+audio would include Minecraft/voice playback and feed it back into the stream.
+Voice is a separate Simple Voice Chat mod connected through the server's SVC
+bridge, not a voice client implemented by this Loader.
+
+Native/Fabric H.264 live interop was exercised in both directions on isolated Xvfb
+clients: changing native test-pattern pictures rendered in Fabric; a moving X11
+source captured by Fabric rendered in native with increasing decoded-frame counts.
+Separately, a combined native H.264/audio client streamed a 440 Hz source through
+the real server/Opus path to Fabric while changing pictures remained visible.
+Fabric's private OpenAL Wave File Writer output contained the tone; no-stream and
+look-away controls contained only one-LSB output dither. No host audio device was
+used. This gate required the Fabric-capable screen relay: the `4bcd34fc` server
+still admits only native screen clients and was not credited with a pass.
+Neither screen gate establishes Distant Horizons coverage.
+
 ## Troubleshooting
 
 - **“Loader required”**: verify the launched instance, `mods/` location, adapter,
-  and Minecraft version. Look for `solaris_loader` in `logs/latest.log`.
+  and Minecraft version. Look for `krasnokamen_loader` in `logs/latest.log`.
 - **Missing Fabric API / incompatible mod**: use the matching dependencies from
   the table, not Fabric API for another Minecraft release.
 - **Wrong Java / unsupported class version**: configure Java 25 for this
@@ -179,7 +223,7 @@ vectors, limits, stale-session rejection and bounded transcript behavior.
   corrected bundle. Do not disable verification or mix adapters.
 
 Operators and plugin authors: see the
-[full installation/permission guide](https://github.com/kaiserproger/krasnokamen/blob/main/docs/SOLARIS_LOADER.md)
+[full installation/permission guide](https://github.com/kaiserproger/krasnokamen/blob/main/docs/KRASNOKAMEN_LOADER.md)
 and [plugin API](https://github.com/kaiserproger/krasnokamen/blob/main/docs/PLUGINS.md).
 
 ## Build from source
@@ -193,9 +237,6 @@ cd krasnokamen-loader
 ./gradlew --no-configuration-cache :loader-fabric:jar :loader-neoforge:jar :loader-forge:jar
 ```
 
-The build uses ModDevGradle 2.0.148 for Minecraft 26.3 source transformation;
-older ModDevGradle releases can fail to recompile `HolderSet`.
-
 On Windows use `gradlew.bat`. JARs appear in each adapter's `build/libs/`.
 Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
 `fabric-agent`, `java-agent`, and `bridge-core` are development tooling.
@@ -208,7 +249,7 @@ Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
 `loader-core` contains the wire-3 manifest/ack and view codecs and validates
 platform, permissions, and exact cache identities. `loader-fabric`, `loader-neoforge`,
 and `loader-forge` register the same Configuration-state manifest and
-acknowledgement payloads through their native 26.3 networking APIs.
+acknowledgement payloads through their native 26.1.2 networking APIs.
 
 Bundle `loaders` metadata recognizes the shared supported-platform values
 `native`, `fabric`, `neoforge`, and `forge`. The `native` value is preserved for
@@ -222,11 +263,11 @@ The first manifest for an exact server address and permission set opens a
 Minecraft confirmation screen. Allow and deny decisions are stored separately
 per normalized server address in `permissions.properties` under the Loader
 cache. A different server or changed permission set prompts again. The cache
-directory defaults to `~/.solaris/loader-cache` and may be overridden for tests
+directory defaults to `~/.krasnokamen/loader-cache` and may be overridden for tests
 or isolated profiles:
 
 ```text
--Dsolaris.loader.cacheDir=/path/to/loader-cache
+-Dkrasnokamen.loader.cacheDir=/path/to/loader-cache
 ```
 
 Denial disconnects before an artifact request or staging file can be created.
@@ -238,7 +279,7 @@ streams bounded Configuration payloads into a temporary file, verifies the
 declared size and SHA-256, and atomically publishes it before acknowledging the
 manifest. An unknown, duplicate, or missing permission fails the handshake.
 After all exact cache files pass verification, the shared core opens each ZIP
-with `solaris-client.json` as its first entry. That closed schema **2** accepts
+with `krasnokamen-client.json` as its first entry. That closed schema **2** accepts
 `screens`, `world_previews`, `blocks`, `items`, `assets` and `sounds`; unknown
 fields, unknown widget types and out-of-bound geometry fail activation, and
 schema-1 indexes or the removed UI/interaction shapes have no decoder. Each
@@ -261,24 +302,19 @@ unknown, unbound or duplicated key refuses the whole view with no bindings rathe
 than guessing a key.
 
 Each block declaration (`id`, owner
-`model`, and `name`) is backed by its exact verified model asset. Each item
+`model`, `name`, vanilla `carrier`, and `drop_item`) is backed by its exact
+verified model asset. Each item
 names a known vanilla base item and requires its exact verified
 `assets/<namespace>/items/<path>.json` definition; a screen may reference one
 declared item and one declared block. Up to 64 `world_previews` (`id`,
 `blueprint_id`, 64-hex `content_hash`, one quarter-turn `rotation`, `size_x/y/z`
 at most 64, at most 65,536 local `blocks`) require `present_world_previews`, and
 `views` content requires `present_views`.
-Up to 64 `sounds` (`id`) require `play_sounds` and same-bundle verified mono
-OGG Vorbis assets. Shared pack preparation probes their headers/initial audio
-and generates owner `sounds.json` indexes without late registry mutation.
-The activated registry is bounded to 64 screens, 64 previews, one block per
-bundle (eight total), 128 items, 128 assets, 64 sounds and 64 MiB of asset
-bytes.
 The three adapters publish the resulting immutable registry before sending the
 acknowledgement and keep it available in Play. Unknown archive fields or
 entries and mismatched asset bytes fail before acknowledgement. An acknowledged
 Loader session can receive
-`solaris:loader/view` in Play. One shared renderer serves both view modes. A
+`krasnokamen:loader/view` in Play. One shared renderer serves both view modes. A
 modal view screen is the paginated presentation for the exact originating
 connection - a paged table of rows, tabs, typed inputs, a resource panel, action
 buttons honouring `enabled` and showing `deny_reason`, and the `reason` line,
@@ -290,7 +326,7 @@ for undeclared model actions, fields or tabs. Declared actions and inputs absent
 from the live model are hidden, not enabled no-op buttons or placeholder fields;
 live disabled actions remain disabled. Both modes open with the authoritative
 model the `open_view` carried. Referenced items render
-through a local vanilla stack with Minecraft 26.3's owner-namespaced
+through a local vanilla stack with Minecraft 26.1.2's owner-namespaced
 `ITEM_MODEL`; no late registry mutation is used. `open_view` carries
 `view_instance_id`, `revision`, `view_id`, `title` and the model;
 `present_view` replaces the model and resets the action sequence; `close_view`
@@ -335,18 +371,17 @@ connection. Declared
 `assets/<namespace>/<path>` bytes now form one
 transient required Minecraft client resource pack. The acknowledgement waits
 for an exact-byte resource reload, and the pack is removed and reloaded out
-when its originating connection closes. Schema-2 block declarations require
-`id`, `model`, `name`, `carrier`, and `drop_item`. The drop item is
-owner-qualified; the server validates its installed custom item and carrier. The
-reserved carriers are gray (monitor), pink (Ruby), and blue (Sapphire) glazed
-terracotta; each can be used by only one activated block. Black and red glazed
-terracotta are not admitted. The runtime pack maps each declared vanilla
-carrier's four facing states to the owner's block model and generates a preview
-item model from that same block model. The server determines the actual block states;
-the client neither registers custom carrier blocks nor sends state IDs in its
-acknowledgement. The runtime pack is removed on disconnect.
+when its originating connection closes. The client renders each declared block
+by overriding its server-dictated vanilla `carrier` blockstate with the
+bundle's `model` through the runtime resource pack; the `drop_item` names the
+item the carrier drops. The ack JSON carries no `carrier_block_state_ids`: the
+client negotiates no block state ids, and the server refuses a non-empty
+`carrier_block_state_ids` map. Server grants, placement, projection, break
+drops, persistence, and pickup preserve the exact owner identity; no client
+runtime id enters canonical world or inventory state. Joining a new server only
+activates verified per-connection content and reloads its resource pack.
 
-`solaris:loader/sound` resolves only an activated sound on its originating
+`krasnokamen:loader/sound` resolves only an activated sound on its originating
 connection. The shared native presenter supports personal or fixed-position
 one-shots, bounded volume/pitch, distance attenuation, and owner-id-local stop.
 The [live fixture gate](../solaris/examples/loader-live-gate/README.md) captures actual
@@ -354,10 +389,10 @@ audio output for all three platforms; no acknowledgement or chat response is
 treated as evidence that the sound played.
 
 Run the scoped bridge, agent, and platform tests against the intended core
-checkout (override `SOLARIS_REPO_ROOT` for a worktree):
+checkout (override `KRASNOKAMEN_REPO_ROOT` for a worktree):
 
 ```sh
-SOLARIS_REPO_ROOT=../solaris ./gradlew --no-daemon \
+KRASNOKAMEN_REPO_ROOT=../solaris ./gradlew --no-daemon \
   :bridge-core:test \
   :java-agent:test \
   :loader-core:test \
@@ -385,12 +420,12 @@ Build distributable platform jars with:
 
 ### Krasnokamen Minecraft Client MCP
 
-The Krasnokamen core harness locates this workspace through `SOLARIS_LOADER_ROOT`
+The Krasnokamen core harness locates this workspace through `KRASNOKAMEN_LOADER_ROOT`
 (default `../solaris-loader`). The following automation commands require the
 core checkout; normal player installations do not.
 
 The development client agent embeds an authenticated Streamable HTTP MCP
-server in the real Minecraft Java 26.3 client. MCP hosts can inspect the
+server in the real Minecraft Java 26.1.2 client. MCP hosts can inspect the
 client-visible world and drive ordinary client inputs without using screenshots
 as state assertions or an external command-string launcher.
 
@@ -399,17 +434,17 @@ as state assertions or an external command-string launcher.
 Use Java 25 and choose a fresh bearer token:
 
 ```sh
-export SOLARIS_CLIENT_MCP_TOKEN="$(openssl rand -hex 32)"
-export SOLARIS_CLIENT_MCP_PORT=39095
+export KRASNOKAMEN_CLIENT_MCP_TOKEN="$(openssl rand -hex 32)"
+export KRASNOKAMEN_CLIENT_MCP_PORT=39095
 (cd ../solaris && python3 -m tools.harness client)
 ```
 
 The launcher calls the fixed Gradle task
 `:fabric-agent:runClientMcp`. Optional settings are:
 
-- `SOLARIS_CLIENT_MCP_GAME_DIR`: isolated Minecraft game directory.
-- `SOLARIS_CLIENT_MCP_USERNAME`: 1..16 ASCII letters, digits, or underscores.
-- `SOLARIS_CLIENT_MCP_PORT`: free IPv4 loopback port, default `39095`.
+- `KRASNOKAMEN_CLIENT_MCP_GAME_DIR`: isolated Minecraft game directory.
+- `KRASNOKAMEN_CLIENT_MCP_USERNAME`: 1..16 ASCII letters, digits, or underscores.
+- `KRASNOKAMEN_CLIENT_MCP_PORT`: free IPv4 loopback port, default `39095`.
 
 Normal launch checks for an occupied MCP port before starting Gradle; the
 in-client bind remains authoritative if another process races for the port.
@@ -421,14 +456,14 @@ Validate Java, configuration, MCP transport tests, and the Gradle adapter
 without launching Minecraft:
 
 ```sh
-(cd ../solaris && SOLARIS_CLIENT_MCP_TOKEN=local-check-token \
+(cd ../solaris && KRASNOKAMEN_CLIENT_MCP_TOKEN=local-check-token \
   python3 -m tools.harness client --check)
 ```
 
 The same run can be started directly:
 
 ```sh
-SOLARIS_CLIENT_MCP_TOKEN="$SOLARIS_CLIENT_MCP_TOKEN" \
+KRASNOKAMEN_CLIENT_MCP_TOKEN="$KRASNOKAMEN_CLIENT_MCP_TOKEN" \
   ./gradlew --no-configuration-cache :fabric-agent:runClientMcp
 ```
 
@@ -441,17 +476,17 @@ generation requests. The `configure`, `control`, `landmark`, `edit`, `render`,
 `render-update`, `state`, `debug` and `disconnect` phases are named `dh-protocol16-<phase>`.
 
 `tools/dh_scenario.py` is the Java-client driver used by the core harness's
-`dh-gate` profile. Set `SOLARIS_LOADER_ROOT` to this checkout and provide a
-worktree-built `SOLARIS_SERVER_BINARY`, publisher-verified `SOLARIS_DH_JAR`,
-Java 25 and Xvfb. Prepare `.analysis/prism-26.3/minecraft` here by copying
-the owner's Prism 26.3 instance as a **read-only template**, excluding saves,
+`dh-gate` profile. Set `KRASNOKAMEN_LOADER_ROOT` to this checkout and provide a
+worktree-built `KRASNOKAMEN_SERVER_BINARY`, publisher-verified `KRASNOKAMEN_DH_JAR`,
+Java 25 and Xvfb. Prepare `.analysis/prism-26.1.2/minecraft` here by copying
+the owner's Prism 26.1.2 instance as a **read-only template**, excluding saves,
 screenshots, logs, mods and `Distant_Horizons_server_data`. Install only the
 pinned DH jar in the private template's `minecraft/mods`; never edit the
 original instance. Each control/enabled/no-DH game directory is another
 isolated copy under this checkout's `.analysis/dh-runs`.
 
-The baseline pins are MC 26.3, DH 3.3.3/protocol 16, Fabric loader 0.19.5
-with Fabric API 0.163.0+26.3, or NeoForge 26.3.0.83.
+The baseline pins are MC 26.1.2, DH 3.3.3/protocol 16, Fabric loader 0.18.5
+with Fabric API 0.149.1+26.1.2, or NeoForge 26.1.2.76.
 The Fabric mod metadata expands its minimum loader dependency from the selected
 `fabricLoaderVersion`, matching the artifact it was compiled against.
 The driver uses core's canonical server/Xvfb/MCP lifecycle and generates a fresh
@@ -527,7 +562,7 @@ same bearer token used by the Minecraft process:
 ```sh
 codex mcp add minecraft-client \
   --url http://127.0.0.1:39095/mcp \
-  --bearer-token-env-var SOLARIS_CLIENT_MCP_TOKEN
+  --bearer-token-env-var KRASNOKAMEN_CLIENT_MCP_TOKEN
 ```
 
 No proxy process is required. The MCP endpoint is the mod inside the Minecraft
@@ -542,7 +577,7 @@ catalog, and calls `minecraft_observe`:
 (cd ../solaris && python3 -m tools.harness mcp)
 ```
 
-The Java smoke sources compile against the vanilla 26.3 client JAR, not
+The Java smoke sources compile against the vanilla 26.1.2 client JAR, not
 NeoForge-only extensions. Filled-shulker custody checks inspect all nonempty
 container templates and slot zero (`copyOne()`), retaining the exact three-diamond
 assertion. Bucket diagnostics use the vanilla outline/no-fluid POV ray and
@@ -569,7 +604,7 @@ Read-only tools:
 - `minecraft_wait_for_block_state`: wait for an exact block ID and optional
   state properties, rechecking only after applied client state events.
 - `minecraft_scan_blocks`: an inclusive loaded box with the same fields, capped at 4096 cells.
-- `minecraft_list_entities`: visible entities within 128 blocks, capped at 512. Entity IDs are signed 32-bit values, including server-sent presentation entities with negative IDs.
+- `minecraft_list_entities`: visible entities within 128 blocks, capped at 512.
 - `minecraft_read_recipe_book`: bounded recipe display IDs accepted into the
   real client's recipe book.
 - `minecraft_wait_for_visible_entity`: wait for an entity type within a bounded radius.
