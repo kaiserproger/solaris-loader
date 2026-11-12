@@ -31,7 +31,10 @@ final class LoaderLiveGateFixtureTest {
         writeCache("sapphire-live", sapphireHash, sapphire);
 
         byte[] manifest = """
-                {"protocol":3,"bundles":[%s,%s]}
+                {"protocol":3,"bundles":[
+                  %s,
+                  %s
+                ]}
                 """.formatted(
                         bundle("ruby-live", rubyHash, ruby.length),
                         bundle("sapphire-live", sapphireHash, sapphire.length))
@@ -78,9 +81,8 @@ final class LoaderLiveGateFixtureTest {
         assertTrue(active.assets().containsKey("sapphire-live:sapphire_block_model"));
 
         for (LoaderPlatform platform : List.of(LoaderPlatform.NEOFORGE, LoaderPlatform.FORGE)) {
-            LoaderOutgoing other =
-                    new LoaderClientTransport().acceptManifest(
-                            manifest, environment(platform), cacheDirectory);
+            LoaderOutgoing other = new LoaderClientTransport().acceptManifest(
+                    manifest, environment(platform), cacheDirectory);
             assertEquals(LoaderOutgoing.Kind.ACKNOWLEDGEMENT, other.kind());
             assertTrue(!new String(other.bytes(), StandardCharsets.UTF_8).contains("carrier_block_state_ids"));
             assertEquals(active.items().keySet(), other.activatedContent().items().keySet());

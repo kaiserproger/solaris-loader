@@ -160,7 +160,7 @@ final class ScreenClient {
     private static InteractionResult use(ScreenProtocol.Id id) {
         Minecraft client = Minecraft.getInstance();
         if (share != null && share.id().equals(id)) {
-            client.execute(() -> client.setScreen(ownerMenu()));
+            client.execute(() -> client.gui.setScreen(ownerMenu()));
             return InteractionResult.SUCCESS;
         }
         if (RELAY.active().containsKey(id)) {
@@ -183,7 +183,7 @@ final class ScreenClient {
         }
         // Opened only to prove this machine can capture; the dialog decides whether it is used.
         DesktopCapture capture = probe.get();
-        client.execute(() -> client.setScreen(new ScreenDialog(
+        client.execute(() -> client.gui.setScreen(new ScreenDialog(
                 "Share your screen on this monitor?",
                 List.of("Your entire primary screen can be shown to players you allow.",
                         "Nothing is shared until a player asks and you allow it."),
@@ -237,7 +237,7 @@ final class ScreenClient {
 
     private static void notice(String text) {
         Minecraft client = Minecraft.getInstance();
-        client.execute(() -> client.gui.setOverlayMessage(Component.literal(text), false));
+        client.execute(() -> client.gui.hud.setOverlayMessage(Component.literal(text), false));
     }
 
     // ---- per tick --------------------------------------------------------------
@@ -251,14 +251,14 @@ final class ScreenClient {
         if (message != null) {
             notice(message);
         }
-        boolean f8 = InputConstants.isKeyDown(client.getWindow(), KEY_F8);
-        if (f8 && !leaveDown && client.screen == null) {
+        boolean f8 = InputConstants.isKeyDown(KEY_F8);
+        if (f8 && !leaveDown && client.gui.screen() == null) {
             leave();
         }
         leaveDown = f8;
-        if (client.screen == null && RELAY.pendingRequests() > 0) {
+        if (client.gui.screen() == null && RELAY.pendingRequests() > 0) {
             ScreenProtocol.Requested request = RELAY.pollRequest();
-            client.setScreen(new ScreenDialog("Screen viewing request",
+            client.gui.setScreen(new ScreenDialog("Screen viewing request",
                     List.of(request.name() + " asks to view your shared screen."),
                     List.of(new ScreenDialog.Choice("Allow", () -> send(ScreenProtocol.answer(request.request(), true))),
                             new ScreenDialog.Choice("Deny", () -> send(ScreenProtocol.answer(request.request(), false)))),

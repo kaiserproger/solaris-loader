@@ -65,7 +65,7 @@ public final class ScreenAudioSound extends AbstractTickableSoundInstance implem
     }
 
     @Override
-    public WeighedSoundEvents resolve(SoundManager manager) {
+    public WeighedSoundEvents getOrResolve(SoundManager manager) {
         return EVENT;
     }
 

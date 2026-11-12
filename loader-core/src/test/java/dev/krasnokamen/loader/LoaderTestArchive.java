@@ -127,34 +127,6 @@ final class LoaderTestArchive {
                         "assets/example/items/ruby_block.json", item));
     }
 
-    /** A carrier-backed block and its drop item sharing one id, as the first-party monitor does. */
-    static byte[] blockWithSameIdDropItem() {
-        byte[] model = "{\"parent\":\"minecraft:block/cube_all\",\"textures\":{\"all\":\"minecraft:block/redstone_block\"}}"
-                .getBytes(StandardCharsets.UTF_8);
-        byte[] definition = "{\"model\":{\"type\":\"minecraft:model\",\"model\":\"example:block/ruby\"}}"
-                .getBytes(StandardCharsets.UTF_8);
-        return archive(
-                """
-                {"schema":2,"blocks":[{
-                  "id":"example:ruby","model":"example:block/ruby",
-                  "name":"Ruby","carrier":"minecraft:black_glazed_terracotta",
-                  "drop_item":"example:ruby"
-                }],"items":[{
-                  "id":"example:ruby","base_item":"minecraft:black_glazed_terracotta","name":"Ruby"
-                }],"assets":[{
-                  "id":"example:ruby_block_model",
-                  "path":"assets/example/models/block/ruby.json",
-                  "sha256":"%s","size_bytes":%d
-                },{
-                  "id":"example:ruby_item_definition",
-                  "path":"assets/example/items/ruby.json",
-                  "sha256":"%s","size_bytes":%d
-                }]}
-                """.formatted(sha256(model), model.length, sha256(definition), definition.length),
-                Map.of("assets/example/models/block/ruby.json", model,
-                        "assets/example/items/ruby.json", definition));
-    }
-
     /** One screen declaring every implemented widget type. */
     static byte[] screenWithEveryWidget() {
         return archive(

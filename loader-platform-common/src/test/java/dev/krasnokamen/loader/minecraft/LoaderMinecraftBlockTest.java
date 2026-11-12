@@ -1,7 +1,6 @@
 package dev.krasnokamen.loader.minecraft;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.krasnokamen.loader.LoaderActivatedContent;
@@ -17,7 +16,7 @@ import org.junit.jupiter.api.Test;
 
 final class LoaderMinecraftBlockTest {
     @Test
-    void referencedBlockResolvesAndOverridesTheCarrierBlockstate() {
+    void referencedBlockResolvesAndGeneratesCarrierModels() {
         LoaderScreenDefinition screen = new LoaderScreenDefinition(
                 new LoaderViewKey("example:catalog"),
                 false,
@@ -39,7 +38,7 @@ final class LoaderMinecraftBlockTest {
                 List.of(),
                 Map.of(screen.id().value(), screen),
                 Map.of(),
-                Map.of(block.id(), block),
+                Map.of(block.id(), block, second.id(), second),
                 Map.of(),
                 Map.of(),
                 Map.of());

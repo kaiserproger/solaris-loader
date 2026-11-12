@@ -690,8 +690,6 @@ final class LoaderContentArchive {
         for (JsonElement entry : entries) {
             JsonObject block = LoaderJson.object(entry, "Loader block");
             LoaderJson.rejectUnknown(block, BLOCK_FIELDS, "Loader block");
-            String dropItem = LoaderJson.identifier(block, "drop_item", "Loader block drop item");
-            requireNamespaced(dropItem, "Loader block drop item");
             blocks.add(new BlockIndex(
                     LoaderJson.identifier(block, "id", "Loader block id"),
                     LoaderJson.identifier(block, "model", "Loader block model"),
