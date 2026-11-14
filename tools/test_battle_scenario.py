@@ -8,14 +8,14 @@ from battle_scenario import battle_model_errors
 class BattlePackLoadTest(unittest.TestCase):
     def test_rejected_battle_model_and_metadata_fail(self):
         rejected = [
-            '[Worker/ERROR] Failed to load model solaris_battle:models/item/iron_lance.json',
-            '[Worker/WARN] Missing block model: solaris_battle:item/iron_halberd',
+            '[Worker/ERROR] Failed to load model krasnokamen_battle:models/item/iron_lance.json',
+            '[Worker/WARN] Missing block model: krasnokamen_battle:item/iron_halberd',
             '[Render thread/WARN] Error reading pack metadata, attempting fallback type',
         ]
         with tempfile.TemporaryDirectory() as root:
             log = Path(root) / 'client.log'
             log.write_text('\n'.join(rejected + [
-                'Missing model for variant: Block{solaris_loader:loader_block}',
+                'Missing model for variant: Block{krasnokamen_loader:loader_block}',
                 'Reloading ResourceManager: vanilla',
             ]))
             self.assertEqual(battle_model_errors([log]), {str(log): rejected})

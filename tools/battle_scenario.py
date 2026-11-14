@@ -22,7 +22,7 @@ def battle_model_errors(paths):
     """Fail the functional gate on rejected battle models or pack metadata."""
     return {str(path): [line for line in path.read_text(errors="replace").splitlines()
                        if "Error reading pack metadata" in line or
-                       ("solaris_battle:" in line and
+                       ("krasnokamen_battle:" in line and
                         ("Failed to load model" in line or "Missing block model:" in line))]
             for path in paths}
 
@@ -144,7 +144,7 @@ def run(args):
         logs.append(log)
         server = subprocess.Popen(command, cwd=repo, stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
         runtime.wait_for_path_condition(battle, 240, lambda: (battle.is_dir(), None))
-        server_line("Solaris is listening")
+        server_line("Krasnokamen is listening")
         xvfb, display, log = runtime.start_xvfb(artifact)
         logs.append(log)
         pack_statuses = []
@@ -176,7 +176,7 @@ def run(args):
             while not state.get("in_play"):
                 screen = state.get("screen", {})
                 if screen.get("title") in {
-                        f"Allow Solaris content from {host}:{proxy.address.rsplit(':', 1)[1]}?"
+                        f"Allow Krasnokamen content from {host}:{proxy.address.rsplit(':', 1)[1]}?"
                         for host in ("127.0.0.1", "localhost")}:
                     shot(client, name + "-loader-permission")
                     record(name + "-loader-permission", state)
@@ -238,12 +238,12 @@ def run(args):
         shot(pov, "PovRed-respawn-kit")
         report["checks"]["respawn_same_kit"] = True
         entities = record("entities", pov.call_tool("minecraft_list_entities", {"radius": 128, "limit": 512}))["entities"]
-        check(any(e.get("main_hand", {}).get("item_model", "").startswith("solaris_battle:") for e in entities),
+        check(any(e.get("main_hand", {}).get("item_model", "").startswith("krasnokamen_battle:") for e in entities),
               "received battle equipment observation missing (no visual claim from default stacks)")
         # Keep a received target when present. At a spear-rank spawn the nearest
         # 512 can instead hide the rear halberd rank, so move the observer there.
         weapon_entities = entities
-        halberds = [e for e in weapon_entities if e.get("main_hand", {}).get("item_model") == "solaris_battle:iron_halberd"
+        halberds = [e for e in weapon_entities if e.get("main_hand", {}).get("item_model") == "krasnokamen_battle:iron_halberd"
                     and e.get("entity_type") != "minecraft:player"]
         if not halberds:
             player = runtime.current_client_state(pov, 30)["player"]
@@ -253,7 +253,7 @@ def run(args):
             deadline = time.monotonic() + 30
             while not halberds:
                 weapon_entities = cam.call_tool("minecraft_list_entities", {"radius": 64, "limit": 512})["entities"]
-                halberds = [e for e in weapon_entities if e.get("main_hand", {}).get("item_model") == "solaris_battle:iron_halberd"
+                halberds = [e for e in weapon_entities if e.get("main_hand", {}).get("item_model") == "krasnokamen_battle:iron_halberd"
                             and e.get("entity_type") != "minecraft:player"]
                 if not halberds:
                     state = runtime.next_client_state(cam, state, deadline)
@@ -289,7 +289,7 @@ def run(args):
         while len(attacks) < 8:
             check(time.monotonic() < deadline, "no blue target reached within the live combat deadline")
             entities = pov.call_tool("minecraft_list_entities", {"radius": 16, "limit": 512})["entities"]
-            blue = [e for e in entities if e.get("off_hand", {}).get("item_model") == "solaris_battle:blue_heater_shield"
+            blue = [e for e in entities if e.get("off_hand", {}).get("item_model") == "krasnokamen_battle:blue_heater_shield"
                     and e.get("health", 0) > 0 and e.get("vehicle_id") is None
                     and e["entity_id"] not in unreachable]
             if not blue:
