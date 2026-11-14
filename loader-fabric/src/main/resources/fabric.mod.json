@@ -1,21 +1,21 @@
 {
   "schemaVersion": 1,
-  "id": "solaris_loader",
+  "id": "krasnokamen_loader",
   "version": "0.1.0",
-  "name": "Solaris Loader",
-  "description": "Solaris client-bundle configuration transport.",
+  "name": "Krasnokamen Loader",
+  "description": "Krasnokamen client-bundle configuration transport.",
   "environment": "client",
   "entrypoints": {
     "main": [
-      "dev.solaris.loader.fabric.SolarisFabricContent"
+      "dev.krasnokamen.loader.fabric.KrasnokamenFabricContent"
     ],
     "client": [
-      "dev.solaris.loader.fabric.SolarisFabricLoader"
+      "dev.krasnokamen.loader.fabric.KrasnokamenFabricLoader"
     ]
   },
   "mixins": [
-    "solaris-loader.mixins.json",
-    "solaris-loader-input.mixins.json"
+    "krasnokamen-loader.mixins.json",
+    "krasnokamen-loader-input.mixins.json"
   ],
   "depends": {
     "fabricloader": ">=${fabricLoaderVersion}",

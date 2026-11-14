@@ -3,19 +3,19 @@ loaderVersion="[1,)"
 license="All Rights Reserved"
 
 [[mods]]
-modId="solaris_loader"
+modId="krasnokamen_loader"
 version="0.1.0"
-displayName="Solaris Loader"
-description='''Solaris client-bundle configuration transport.'''
+displayName="Krasnokamen Loader"
+description='''Krasnokamen client-bundle configuration transport.'''
 
-[[dependencies.solaris_loader]]
+[[dependencies.krasnokamen_loader]]
 modId="neoforge"
 type="required"
 versionRange="[26.3.0.83,)"
 ordering="NONE"
 side="CLIENT"
 
-[[dependencies.solaris_loader]]
+[[dependencies.krasnokamen_loader]]
 modId="minecraft"
 type="required"
 versionRange="[26.3]"
@@ -23,5 +23,5 @@ ordering="NONE"
 side="CLIENT"
 
 [[mixins]]
-config="solaris-loader-input.mixins.json"
+config="krasnokamen-loader-input.mixins.json"
 
