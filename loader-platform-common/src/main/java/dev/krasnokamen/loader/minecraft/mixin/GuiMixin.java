@@ -1,18 +1,8 @@
 package dev.krasnokamen.loader.minecraft.mixin;
 
 import dev.krasnokamen.loader.minecraft.LoaderMinecraftInput;
-<<<<<<<< HEAD:loader-platform-common/src/main/java/dev/krasnokamen/loader/minecraft/mixin/GuiMixin.java
-<<<<<<<< HEAD:loader-platform-common/src/main/java/dev/krasnokamen/loader/minecraft/mixin/GuiMixin.java
-<<<<<<<< HEAD:loader-platform-common/src/main/java/dev/krasnokamen/loader/minecraft/mixin/GuiMixin.java
 import net.minecraft.client.gui.Gui;
-========
-========
->>>>>>>> stage0/rebrand/JavaLoaderGateMod:loader-platform-common/src/main/java/dev/krasnokamen/loader/minecraft/mixin/MinecraftMixin.java
 import net.minecraft.client.Minecraft;
->>>>>>>> stage0/rebrand/ClientBugsGaps3Loader:loader-platform-common/src/main/java/dev/krasnokamen/loader/minecraft/mixin/MinecraftMixin.java
-========
-import dev.krasnokamen.loader.minecraft.ClientVersionApi;
->>>>>>>> stage0/rebrand/LoaderAgentJar:loader-platform-common/src/main/java/dev/krasnokamen/loader/minecraft/mixin/MinecraftMixin.java
 import net.minecraft.client.gui.screens.Overlay;
 import net.minecraft.client.gui.screens.Screen;
 import org.spongepowered.asm.mixin.Mixin;
