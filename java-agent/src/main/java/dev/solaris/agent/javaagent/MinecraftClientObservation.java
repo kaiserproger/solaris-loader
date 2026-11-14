@@ -286,6 +286,12 @@ final class MinecraftClientObservation {
         value.addProperty("distance", Math.sqrt(distanceSquared));
         value.addProperty("local_player", entity == localPlayer);
         value.addProperty("on_ground", entity.onGround());
+        value.addProperty("pose", entity.getPose().name());
+        JsonArray passengers = new JsonArray();
+        for (Entity passenger : entity.getPassengers()) {
+            passengers.add(passenger.getUUID().toString());
+        }
+        value.add("passengers", passengers);
         value.addProperty("crouching", entity.isCrouching());
         value.addProperty("sprinting", entity.isSprinting());
         value.addProperty("in_water", entity.isInWater());
@@ -315,6 +321,15 @@ final class MinecraftClientObservation {
         if (entity instanceof LivingEntity living) {
             value.addProperty("health", living.getHealth());
             value.addProperty("max_health", living.getMaxHealth());
+        }
+        if (entity instanceof net.minecraft.world.entity.animal.parrot.Parrot parrot) {
+            value.addProperty("parrot_dancing", parrot.isPartyParrot());
+        }
+        if (entity instanceof net.minecraft.world.entity.animal.frog.Frog frog) {
+            frog.getTongueTarget().ifPresent(target -> value.addProperty("tongue_target_uuid", target.getUUID().toString()));
+        }
+        if (entity instanceof net.minecraft.world.entity.animal.camel.Camel camel) {
+            value.addProperty("camel_dashing", camel.isDashing());
         }
         if (entity instanceof ItemEntity itemEntity) {
             value.add("item", item(itemEntity.getItem()));

@@ -551,6 +551,10 @@ Read-only tools:
   state properties, rechecking only after applied client state events.
 - `minecraft_scan_blocks`: an inclusive loaded box with the same fields, capped at 4096 cells.
 - `minecraft_list_entities`: visible entities within 128 blocks, capped at 512.
+  Parrot entries include `parrot_dancing`, read from the Java client's current
+  jukebox animation state.
+  Entities include pose and passenger UUIDs; frogs expose their resolved
+  tongue target and camels expose their current dashing state.
 - `minecraft_read_recipe_book`: bounded recipe display IDs accepted into the
   real client's recipe book.
 - `minecraft_wait_for_visible_entity`: wait for an entity type within a bounded radius.
