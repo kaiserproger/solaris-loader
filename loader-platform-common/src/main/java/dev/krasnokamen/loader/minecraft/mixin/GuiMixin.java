@@ -1,5 +1,6 @@
 package dev.krasnokamen.loader.minecraft.mixin;
 
+import dev.krasnokamen.loader.minecraft.ClientVersionApi;
 import dev.krasnokamen.loader.minecraft.LoaderMinecraftInput;
 import net.minecraft.client.gui.Gui;
 import net.minecraft.client.Minecraft;
