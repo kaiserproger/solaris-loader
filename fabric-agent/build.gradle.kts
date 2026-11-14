@@ -7,26 +7,26 @@ plugins {
 }
 
 val neoVersion = providers.gradleProperty("neoVersion")
-val clientAgentSecret = providers.gradleProperty("solaris.clientAgent.secret").orElse("")
-val clientAgentPort = providers.gradleProperty("solaris.clientAgent.port").orElse("39094")
-val clientAgentRunDir = providers.gradleProperty("solaris.clientAgent.runDir").orElse(".")
+val clientAgentSecret = providers.gradleProperty("krasnokamen.clientAgent.secret").orElse("")
+val clientAgentPort = providers.gradleProperty("krasnokamen.clientAgent.port").orElse("39094")
+val clientAgentRunDir = providers.gradleProperty("krasnokamen.clientAgent.runDir").orElse(".")
 val clientAgentRuntimeProvenanceFile = providers.gradleProperty(
-    "solaris.clientAgent.runtimeProvenanceFile"
+    "krasnokamen.clientAgent.runtimeProvenanceFile"
 ).orElse("")
-val clientAgentGameDir = providers.gradleProperty("solaris.clientAgent.gameDir")
+val clientAgentGameDir = providers.gradleProperty("krasnokamen.clientAgent.gameDir")
     .orElse(layout.projectDirectory.dir("run").asFile.absolutePath)
-val clientAgentUsername = providers.gradleProperty("solaris.clientAgent.username").orElse("SolarisClient")
+val clientAgentUsername = providers.gradleProperty("krasnokamen.clientAgent.username").orElse("KrasnoClient")
 val clientAgentConfigurationCacheReason =
     "runClientAgent uses per-run bridge credentials and game directories."
-val clientMcpToken = providers.environmentVariable("SOLARIS_CLIENT_MCP_TOKEN")
-    .orElse(providers.gradleProperty("solaris.clientMcp.token"))
+val clientMcpToken = providers.environmentVariable("KRASNOKAMEN_CLIENT_MCP_TOKEN")
+    .orElse(providers.gradleProperty("krasnokamen.clientMcp.token"))
     .orElse("")
-val clientMcpPort = providers.environmentVariable("SOLARIS_CLIENT_MCP_PORT")
-    .orElse(providers.gradleProperty("solaris.clientMcp.port"))
+val clientMcpPort = providers.environmentVariable("KRASNOKAMEN_CLIENT_MCP_PORT")
+    .orElse(providers.gradleProperty("krasnokamen.clientMcp.port"))
     .orElse("39095")
-val clientMcpGameDir = providers.gradleProperty("solaris.clientMcp.gameDir")
+val clientMcpGameDir = providers.gradleProperty("krasnokamen.clientMcp.gameDir")
     .orElse(layout.projectDirectory.dir("run-mcp").asFile.absolutePath)
-val clientMcpUsername = providers.gradleProperty("solaris.clientMcp.username").orElse("SolarisMcp")
+val clientMcpUsername = providers.gradleProperty("krasnokamen.clientMcp.username").orElse("KrasnoMcp")
 val clientMcpConfigurationCacheReason =
     "runClientMcp uses per-run bearer credentials and game directories."
 
@@ -105,33 +105,33 @@ neoForge {
         create("client") {
             client()
             gameDirectory.set(file(clientAgentGameDir.get()))
-            systemProperty("solaris.clientAgent.secret", clientAgentSecret.get())
-            systemProperty("solaris.clientAgent.port", clientAgentPort.get())
-            systemProperty("solaris.clientAgent.runDir", clientAgentRunDir.get())
+            systemProperty("krasnokamen.clientAgent.secret", clientAgentSecret.get())
+            systemProperty("krasnokamen.clientAgent.port", clientAgentPort.get())
+            systemProperty("krasnokamen.clientAgent.runDir", clientAgentRunDir.get())
             programArgument("--username")
             programArgument(clientAgentUsername.get())
         }
         create("clientAgent") {
             client()
             gameDirectory.set(file(clientAgentGameDir.get()))
-            systemProperty("solaris.clientAgent.secret", clientAgentSecret.get())
-            systemProperty("solaris.clientAgent.port", clientAgentPort.get())
-            systemProperty("solaris.clientAgent.runDir", clientAgentRunDir.get())
+            systemProperty("krasnokamen.clientAgent.secret", clientAgentSecret.get())
+            systemProperty("krasnokamen.clientAgent.port", clientAgentPort.get())
+            systemProperty("krasnokamen.clientAgent.runDir", clientAgentRunDir.get())
             programArgument("--username")
             programArgument(clientAgentUsername.get())
         }
         create("clientMcp") {
             client()
             gameDirectory.set(file(clientMcpGameDir.get()))
-            environment("SOLARIS_CLIENT_MCP_TOKEN", clientMcpToken.get())
-            environment("SOLARIS_CLIENT_MCP_PORT", clientMcpPort.get())
+            environment("KRASNOKAMEN_CLIENT_MCP_TOKEN", clientMcpToken.get())
+            environment("KRASNOKAMEN_CLIENT_MCP_PORT", clientMcpPort.get())
             programArgument("--username")
             programArgument(clientMcpUsername.get())
         }
     }
 
     mods {
-        create("solaris_client_agent") {
+        create("krasnokamen_client_agent") {
             sourceSet(sourceSets.main.get())
         }
     }
@@ -139,19 +139,19 @@ neoForge {
 
 tasks.register("validateClientAgentRunProperties") {
     group = "verification"
-    description = "Validates per-run Solaris client-agent Gradle runClient properties."
+    description = "Validates per-run Krasnokamen client-agent Gradle runClient properties."
     doLast {
         val secret = clientAgentSecret.get().trim()
         if (secret.isEmpty()) {
-            throw GradleException("Missing -Psolaris.clientAgent.secret for runClientAgent.")
+            throw GradleException("Missing -Pkrasnokamen.clientAgent.secret for runClientAgent.")
         }
         val port = clientAgentPort.get().trim().toIntOrNull()
         if (port == null || port !in 1..65535) {
-            throw GradleException("Invalid -Psolaris.clientAgent.port '${clientAgentPort.get()}'. Use 1..65535.")
+            throw GradleException("Invalid -Pkrasnokamen.clientAgent.port '${clientAgentPort.get()}'. Use 1..65535.")
         }
         val gameDir = file(clientAgentGameDir.get())
         if (!gameDir.isAbsolute) {
-            throw GradleException("Invalid -Psolaris.clientAgent.gameDir '${clientAgentGameDir.get()}'. Use an absolute path.")
+            throw GradleException("Invalid -Pkrasnokamen.clientAgent.gameDir '${clientAgentGameDir.get()}'. Use an absolute path.")
         }
     }
 }
@@ -163,25 +163,25 @@ tasks.register("validateClientMcpRunProperties") {
         val token = clientMcpToken.get().trim()
         if (token.isEmpty()) {
             throw GradleException(
-                "Missing SOLARIS_CLIENT_MCP_TOKEN or -Psolaris.clientMcp.token for runClientMcp."
+                "Missing KRASNOKAMEN_CLIENT_MCP_TOKEN or -Pkrasnokamen.clientMcp.token for runClientMcp."
             )
         }
         val port = clientMcpPort.get().trim().toIntOrNull()
         if (port == null || port !in 1..65535) {
             throw GradleException(
-                "Invalid MCP port '${clientMcpPort.get()}'. Use SOLARIS_CLIENT_MCP_PORT=1..65535."
+                "Invalid MCP port '${clientMcpPort.get()}'. Use KRASNOKAMEN_CLIENT_MCP_PORT=1..65535."
             )
         }
         val username = clientMcpUsername.get()
         if (!username.matches(Regex("[A-Za-z0-9_]{1,16}"))) {
             throw GradleException(
-                "Invalid -Psolaris.clientMcp.username '$username'. Use 1..16 ASCII letters, digits, or underscores."
+                "Invalid -Pkrasnokamen.clientMcp.username '$username'. Use 1..16 ASCII letters, digits, or underscores."
             )
         }
         val gameDir = file(clientMcpGameDir.get())
         if (!gameDir.isAbsolute) {
             throw GradleException(
-                "Invalid -Psolaris.clientMcp.gameDir '${clientMcpGameDir.get()}'. Use an absolute path."
+                "Invalid -Pkrasnokamen.clientMcp.gameDir '${clientMcpGameDir.get()}'. Use an absolute path."
             )
         }
     }
@@ -189,7 +189,7 @@ tasks.register("validateClientMcpRunProperties") {
 
 tasks.named("runClientAgent") {
     group = "verification"
-    description = "Runs the Solaris real-client gate through the repo-native Gradle runClient adapter."
+    description = "Runs the Krasnokamen real-client gate through the repo-native Gradle runClient adapter."
     dependsOn(tasks.named("validateClientAgentRunProperties"))
     notCompatibleWithConfigurationCache(clientAgentConfigurationCacheReason)
     doFirst {

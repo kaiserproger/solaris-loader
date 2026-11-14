@@ -1,0 +1,290 @@
+package dev.krasnokamen.agent.javaagent;
+
+import net.minecraft.resources.Identifier;
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+final class ClientStateEventsTest {
+    @Test
+    void appliedSystemChatPacketsKeepExactOrderedReceiptsAndWakeStateWaiters() {
+        String marker = "packet-receipt-" + UUID.randomUUID();
+        long before = ClientStateEvents.version();
+        var packet = new net.minecraft.network.protocol.game.ClientboundSystemChatPacket(
+            net.minecraft.network.chat.Component.literal(marker), false);
+        VanillaPacketHooks.afterPacket(packet);
+        var first = ClientStateEvents.systemChatSnapshot();
+        assertEquals(marker, first.messages().getLast());
+        assertEquals(before + 1, ClientStateEvents.version());
+        VanillaPacketHooks.afterPacket(packet);
+        var second = ClientStateEvents.systemChatSnapshot();
+        assertEquals(marker, second.messages().getLast());
+        assertEquals(marker, second.messages().get(second.messages().size() - 2));
+        assertEquals(before + 2, ClientStateEvents.version());
+        assertEquals(Math.min(first.messages().size() + 1, 4096), second.messages().size());
+        assertEquals(first.dropped() + (first.messages().size() == 4096 ? 1 : 0), second.dropped());
+    }
+
+    @Test
+    void systemChatJournalIsBoundedAndReportsLostReceipts() {
+        var before = ClientStateEvents.systemChatSnapshot();
+        for (int index = 0; index < 4097; index++) {
+            ClientStateEvents.publishSystemChat("overflow-" + index);
+        }
+        var after = ClientStateEvents.systemChatSnapshot();
+        assertEquals(4096, after.messages().size());
+        assertEquals("overflow-1", after.messages().getFirst());
+        assertEquals("overflow-4096", after.messages().getLast());
+        assertEquals(before.dropped() + before.messages().size() + 1, after.dropped());
+    }
+
+    @Test
+    void shieldBlockProofRequiresTheOwnEntityAndExactIncomingBlockSound() {
+        long before = ClientStateEvents.shieldBlockVersion();
+        long stateBefore = ClientStateEvents.version();
+        ClientStateEvents.publishEntitySound(8, 7, Identifier.parse("minecraft:item.shield.block"));
+        ClientStateEvents.publishEntitySound(7, 7, Identifier.parse("minecraft:entity.player.hurt"));
+        ClientStateEvents.publishEntitySound(7, 7, Identifier.parse("minecraft:item.shield.break"));
+        assertEquals(before, ClientStateEvents.shieldBlockVersion());
+        assertEquals(stateBefore, ClientStateEvents.version());
+
+        ClientStateEvents.publishEntitySound(7, 7, Identifier.parse("minecraft:item.shield.block"));
+        assertEquals(before + 1, ClientStateEvents.shieldBlockVersion());
+        assertEquals(stateBefore + 1, ClientStateEvents.version());
+        // A subsequent probe starts from this version, never reusing the old block event.
+        long nextProbe = ClientStateEvents.shieldBlockVersion();
+        assertFalse(ClientStateEvents.shieldBlockVersion() > nextProbe);
+    }
+
+    @Test
+    void appliedShieldBlockSoundWakesTheStateWaitWithoutRequiringDurability() throws Exception {
+        long stateBefore = ClientStateEvents.version();
+        CompletableFuture<Boolean> waiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitChange(stateBefore, Duration.ofSeconds(1));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+        ClientStateEvents.publishEntitySound(7, 7, Identifier.parse("minecraft:item.shield.block"));
+        assertTrue(waiter.get(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void itemTakeEventsAreCollectorBoundBoundedAndClearable() {
+        ClientStateEvents.clearItemTakenEvents();
+        ScenarioItemDropIdentity first = new ScenarioItemDropIdentity(1, new UUID(0, 1));
+        ClientStateEvents.publishItemTaken(first, 7);
+
+        assertFalse(ClientStateEvents.consumeItemTakenBy(first, 8));
+        assertTrue(ClientStateEvents.consumeItemTakenBy(first, 7));
+
+        for (int index = 0; index < 65; index += 1) {
+            ClientStateEvents.publishItemTaken(
+                new ScenarioItemDropIdentity(100 + index, new UUID(1, index)),
+                7
+            );
+        }
+        ScenarioItemDropIdentity evicted = new ScenarioItemDropIdentity(100, new UUID(1, 0));
+        ScenarioItemDropIdentity retained = new ScenarioItemDropIdentity(164, new UUID(1, 64));
+        assertFalse(ClientStateEvents.consumeItemTakenBy(evicted, 7));
+        assertTrue(ClientStateEvents.consumeItemTakenBy(retained, 7));
+
+        ClientStateEvents.clearItemTakenEvents();
+        ScenarioItemDropIdentity cleared = new ScenarioItemDropIdentity(163, new UUID(1, 63));
+        assertFalse(ClientStateEvents.consumeItemTakenBy(cleared, 7));
+    }
+
+    @Test
+    void publishedStateEventWakesStateWaiter() throws Exception {
+        long observedVersion = ClientStateEvents.version();
+        CompletableFuture<Boolean> waiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitChange(observedVersion, Duration.ofSeconds(1));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+
+        ClientStateEvents.publishState();
+
+        assertTrue(waiter.get(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void tickEventDoesNotWakeStateWaiter() throws Exception {
+        long observedStateVersion = ClientStateEvents.version();
+        CompletableFuture<Boolean> stateWaiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitChange(observedStateVersion, Duration.ofSeconds(1));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+
+        ClientStateEvents.publishTick();
+
+        assertEquals(observedStateVersion, ClientStateEvents.version());
+        assertFalse(stateWaiter.isDone());
+        ClientStateEvents.publishState();
+        assertTrue(stateWaiter.get(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void tickEventWakesTickWaiter() throws Exception {
+        long observedTickVersion = ClientStateEvents.tickVersion();
+        CompletableFuture<Boolean> tickWaiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitTickChange(
+                    observedTickVersion,
+                    Duration.ofSeconds(1)
+                );
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+
+        ClientStateEvents.publishTick();
+
+        assertTrue(tickWaiter.get(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void tickOrStateWaiterWakesForEitherEvent() throws Exception {
+        long observedTickVersion = ClientStateEvents.tickVersion();
+        long observedStateVersion = ClientStateEvents.version();
+        long stateWaitTickVersion = observedTickVersion;
+        long stateWaitStateVersion = observedStateVersion;
+        CompletableFuture<Boolean> stateWaiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitTickOrStateChange(
+                    stateWaitTickVersion,
+                    stateWaitStateVersion,
+                    Duration.ofSeconds(1)
+                );
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+        ClientStateEvents.publishState();
+        assertTrue(stateWaiter.get(1, TimeUnit.SECONDS));
+
+        observedTickVersion = ClientStateEvents.tickVersion();
+        observedStateVersion = ClientStateEvents.version();
+        long finalObservedTickVersion = observedTickVersion;
+        long finalObservedStateVersion = observedStateVersion;
+        CompletableFuture<Boolean> tickWaiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitTickOrStateChange(
+                    finalObservedTickVersion,
+                    finalObservedStateVersion,
+                    Duration.ofSeconds(1)
+                );
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+        ClientStateEvents.publishTick();
+        assertTrue(tickWaiter.get(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void healthWaiterWakesOnlyForAppliedHealthPacket() throws Exception {
+        long observedHealthVersion = ClientStateEvents.healthVersion();
+
+        ClientStateEvents.publishTick();
+        ClientStateEvents.publishState();
+        assertFalse(ClientStateEvents.awaitHealthChange(observedHealthVersion, Duration.ZERO));
+
+        CompletableFuture<Boolean> healthWaiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitHealthChange(
+                    observedHealthVersion,
+                    Duration.ofSeconds(1)
+                );
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+        ClientStateEvents.publishHealth();
+        assertTrue(healthWaiter.get(1, TimeUnit.SECONDS));
+    }
+
+    @Test
+    void serverTimePacketWakesOnlyTheServerTimeWaiter() throws Exception {
+        long observedVersion = ClientStateEvents.serverTimeVersion();
+        CompletableFuture<Boolean> waiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitServerTimeChange(observedVersion, Duration.ofSeconds(1));
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+
+        ClientStateEvents.publishServerTime(42L);
+
+        assertTrue(waiter.get(1, TimeUnit.SECONDS));
+        assertEquals(42L, ClientStateEvents.serverGameTime());
+    }
+
+    @Test
+    void blockChangeAcknowledgementWakesDedicatedWaiter() throws Exception {
+        long observedVersion = ClientStateEvents.blockChangeAckVersion();
+        CompletableFuture<Boolean> waiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitBlockChangeAck(
+                    observedVersion,
+                    Duration.ofSeconds(1)
+                );
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+
+        ClientStateEvents.publishBlockChangeAck();
+
+        assertTrue(waiter.get(1, TimeUnit.SECONDS));
+        assertEquals(observedVersion + 1, ClientStateEvents.blockChangeAckVersion());
+    }
+
+    @Test
+    void appliedContainerPacketWakesOnlyDedicatedContainerWaiter() throws Exception {
+        long observedVersion = ClientStateEvents.containerPacketVersion();
+        CompletableFuture<Boolean> waiter = CompletableFuture.supplyAsync(() -> {
+            try {
+                return ClientStateEvents.awaitContainerPacket(
+                    observedVersion,
+                    Duration.ofSeconds(1)
+                );
+            } catch (InterruptedException error) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(error);
+            }
+        });
+
+        ClientStateEvents.publishState();
+        assertEquals(observedVersion, ClientStateEvents.containerPacketVersion());
+        assertFalse(waiter.isDone());
+
+        ClientStateEvents.publishContainerPacket();
+
+        assertTrue(waiter.get(1, TimeUnit.SECONDS));
+        assertEquals(observedVersion + 1, ClientStateEvents.containerPacketVersion());
+    }
+}

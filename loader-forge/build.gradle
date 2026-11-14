@@ -4,15 +4,15 @@ plugins {
 }
 
 def minecraftVersion = providers.gradleProperty('minecraftVersion')
-def clientMcpToken = providers.environmentVariable('SOLARIS_CLIENT_MCP_TOKEN')
-    .orElse(providers.gradleProperty('solaris.clientMcp.token'))
+def clientMcpToken = providers.environmentVariable('KRASNOKAMEN_CLIENT_MCP_TOKEN')
+    .orElse(providers.gradleProperty('krasnokamen.clientMcp.token'))
     .orElse('')
-def clientMcpPort = providers.environmentVariable('SOLARIS_CLIENT_MCP_PORT')
-    .orElse(providers.gradleProperty('solaris.clientMcp.port'))
+def clientMcpPort = providers.environmentVariable('KRASNOKAMEN_CLIENT_MCP_PORT')
+    .orElse(providers.gradleProperty('krasnokamen.clientMcp.port'))
     .orElse('39095')
-def clientMcpGameDir = providers.gradleProperty('solaris.clientMcp.gameDir')
+def clientMcpGameDir = providers.gradleProperty('krasnokamen.clientMcp.gameDir')
     .orElse(rootProject.file('.analysis/minecraft-loader-mcp/forge').absolutePath)
-def clientMcpUsername = providers.gradleProperty('solaris.clientMcp.username').orElse('SolarisLoader')
+def clientMcpUsername = providers.gradleProperty('krasnokamen.clientMcp.username').orElse('KrasnoLoader')
 def java25Launcher = javaToolchains.launcherFor {
     languageVersion = JavaLanguageVersion.of(25)
 }
@@ -62,16 +62,16 @@ minecraft {
             jvmArgs '-Djava.net.preferIPv6Addresses=system',
                 '-XX:+UseCompactObjectHeaders'
             args '--username', clientMcpUsername.get()
-            args '--mixin.config', 'solaris-loader-input.mixins.json'
+            args '--mixin.config', 'krasnokamen-loader-input.mixins.json'
             environment 'MCP_MAPPINGS', '{mcp_mappings}'
             environment 'MOD_CLASSES', '{source_roots}'
-            environment 'SOLARIS_CLIENT_MCP_TOKEN', clientMcpToken.get()
-            environment 'SOLARIS_CLIENT_MCP_PORT', clientMcpPort.get()
-            systemProperty 'solaris.loader.cacheDir',
-                file(clientMcpGameDir.get()).toPath().resolve('solaris-loader-cache').toFile().absolutePath
+            environment 'KRASNOKAMEN_CLIENT_MCP_TOKEN', clientMcpToken.get()
+            environment 'KRASNOKAMEN_CLIENT_MCP_PORT', clientMcpPort.get()
+            systemProperty 'krasnokamen.loader.cacheDir',
+                file(clientMcpGameDir.get()).toPath().resolve('krasnokamen-loader-cache').toFile().absolutePath
             systemProperty 'forge.enableGameTest', 'true'
             mods {
-                solaris_loader {
+                krasnokamen_loader {
                     source sourceSets.main
                 }
             }
@@ -82,13 +82,13 @@ minecraft {
 tasks.named('jar', Jar) {
     dependsOn project(':loader-core').tasks.named('classes')
     from project(':loader-core').layout.buildDirectory.dir('classes/java/main')
-    manifest.attributes('MixinConfigs': 'solaris-loader-input.mixins.json')
+    manifest.attributes('MixinConfigs': 'krasnokamen-loader-input.mixins.json')
 }
 
 tasks.configureEach {
     if (name == 'runClientMcp') {
         group = 'verification'
-        description = 'Runs the Forge Loader client with the embedded Solaris MCP server.'
+        description = 'Runs the Forge Loader client with the embedded Krasnokamen MCP server.'
         mainClass.set('net.minecraftforge.launcher.Main')
         dependsOn rootProject.tasks.named('validateLoaderClientMcpRunProperties')
         notCompatibleWithConfigurationCache('The Loader MCP profile uses per-run credentials and game directories.')
