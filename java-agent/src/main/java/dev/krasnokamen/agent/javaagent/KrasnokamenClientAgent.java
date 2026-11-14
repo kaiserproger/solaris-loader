@@ -20,6 +20,7 @@ public final class KrasnokamenClientAgent {
     }
 
     public static void premain(String agentArgs, Instrumentation instrumentation) {
+        instrumentation.addTransformer(new VanillaEventTransformer());
         start(agentArgs);
     }
 

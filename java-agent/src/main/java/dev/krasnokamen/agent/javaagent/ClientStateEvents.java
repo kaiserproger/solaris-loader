@@ -3,6 +3,8 @@ package dev.krasnokamen.agent.javaagent;
 import net.minecraft.resources.Identifier;
 
 import java.time.Duration;
+import java.util.ArrayDeque;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.locks.Condition;
@@ -10,6 +12,9 @@ import java.util.concurrent.locks.ReentrantLock;
 
 public final class ClientStateEvents {
     private static final int MAX_ITEM_TAKEN_EVENTS = 64;
+    private static final int MAX_SYSTEM_CHAT_RECEIPTS = 4096;
+    private static final ArrayDeque<String> SYSTEM_CHAT_RECEIPTS = new ArrayDeque<>();
+    private static long droppedSystemChatReceipts;
     private static final Identifier SHIELD_BLOCK_SOUND = Identifier.parse("minecraft:item.shield.block");
     private static final ReentrantLock LOCK = new ReentrantLock();
     private static final Condition STATE_CHANGED = LOCK.newCondition();
@@ -102,6 +107,36 @@ public final class ClientStateEvents {
         } finally {
             LOCK.unlock();
         }
+    }
+
+    /** Exact applied SystemChat packet receipts, independent of GUI history edits. */
+    public static void publishSystemChat(String message) {
+        java.util.Objects.requireNonNull(message);
+        LOCK.lock();
+        try {
+            if (SYSTEM_CHAT_RECEIPTS.size() == MAX_SYSTEM_CHAT_RECEIPTS) {
+                SYSTEM_CHAT_RECEIPTS.removeFirst();
+                droppedSystemChatReceipts += 1;
+            }
+            SYSTEM_CHAT_RECEIPTS.addLast(message);
+            stateVersion += 1;
+            STATE_CHANGED.signalAll();
+            TICK_OR_STATE_CHANGED.signalAll();
+        } finally {
+            LOCK.unlock();
+        }
+    }
+
+    public static SystemChatSnapshot systemChatSnapshot() {
+        LOCK.lock();
+        try {
+            return new SystemChatSnapshot(List.copyOf(SYSTEM_CHAT_RECEIPTS), droppedSystemChatReceipts);
+        } finally {
+            LOCK.unlock();
+        }
+    }
+
+    public record SystemChatSnapshot(List<String> messages, long dropped) {
     }
 
     public static void publishState() {
