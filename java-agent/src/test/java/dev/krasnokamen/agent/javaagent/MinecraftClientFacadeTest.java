@@ -72,6 +72,7 @@ final class MinecraftClientFacadeTest {
         assertEquals(true, method.contains("\"experience_level\""));
         assertEquals(true, method.contains("\"experience_progress\""));
         assertEquals(true, method.contains("\"total_experience\""));
+        assertEquals(true, method.contains("\"eye_y\", minecraft.player.getEyeY()"));
     }
 
     @Test

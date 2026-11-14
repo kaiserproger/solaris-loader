@@ -11,14 +11,14 @@ description='''Krasnokamen client-bundle configuration transport.'''
 [[dependencies.krasnokamen_loader]]
 modId="neoforge"
 type="required"
-versionRange="[26.3.0.83,)"
+versionRange="[${neoVersion},)"
 ordering="NONE"
 side="CLIENT"
 
 [[dependencies.krasnokamen_loader]]
 modId="minecraft"
 type="required"
-versionRange="[26.3]"
+versionRange="[${minecraftVersion}]"
 ordering="NONE"
 side="CLIENT"
 

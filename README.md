@@ -245,6 +245,36 @@ On Windows use `gradlew.bat`. JARs appear in each adapter's `build/libs/`.
 Only `loader-fabric`, `loader-neoforge`, and `loader-forge` are player adapters;
 `fabric-agent`, `java-agent`, and `bridge-core` are development tooling.
 
+The source line also builds exact 26.1.2 and 26.2 targets. Select
+`-PminecraftVersion` consistently for the automation and player adapters;
+Minecraft API differences live only in per-version `ClientVersionApi` source sets.
+Use the matching local vanilla `SOLARIS_CLIENT_JAR` for `java-agent`:
+
+| Target | Additional Gradle properties | Player adapter |
+| --- | --- | --- |
+| 26.1.2 | `-PminecraftVersion=26.1.2 -PneoVersion=26.1.2.76 -PfabricLoaderVersion=0.19.3 -PfabricApiVersion=0.155.2+26.1.2` | Fabric or NeoForge |
+| 26.2 | `-PminecraftVersion=26.2 -PneoVersion=26.2.0.93` | NeoForge |
+| 26.3 | defaults | Fabric, NeoForge or Forge |
+
+Build each target separately: the output JAR is specific to that exact Minecraft
+version, not a cross-version binary. The Fabric mixin configuration does not
+redirect `SoundBufferLibrary.getStream`, avoiding Fabric Sound API's required
+injection conflict on Fabric API 0.155.2.
+The isolated capture test also selects a test-only `ClientVersionApi`: GLFW on
+26.1.2/26.2 and SDL3 on 26.3. Ordinary builds compile the matching test without
+requiring graphics; pixel capture still requires the explicit Xvfb smoke flag.
+GUI focus hooks select their owning Minecraft/Gui class through the version
+shim. Window focus hooks read the owning window's resulting focus state instead
+of depending on the native callback's version-specific parameter list.
+Fabric's MCP run compiles the same agent sources as NeoForge instead of adding
+the standalone shaded Java-agent JAR to Fabric Loader's classpath; the platform
+provides its own ASM runtime without duplicate bundled classes.
+
+The plain-vanilla `java-agent` instruments the pinned client at premain to
+publish tick, lifecycle and applied-packet events to its automation bridge.
+Fabric and other platform agents use their own runtime hooks instead; the
+vanilla transformer is not installed by `startFromRuntime`.
+
 <details>
 <summary>Developer reference: Loader protocol and content activation</summary>
 
@@ -642,7 +672,7 @@ Read-only tools:
 - `minecraft_wait_for_block_state`: wait for an exact block ID and optional
   state properties, rechecking only after applied client state events.
 - `minecraft_scan_blocks`: an inclusive loaded box with the same fields, capped at 4096 cells.
-- `minecraft_list_entities`: visible entities within 128 blocks, capped at 512. Entity IDs are signed 32-bit values, including server-sent presentation entities with negative IDs.
+- `minecraft_list_entities`: visible entities within 128 blocks, capped at 512. Entity IDs are signed 32-bit values, including server-sent presentation entities with negative IDs. Living entities include their observed walk position and speed for gait comparisons.
 - `minecraft_read_recipe_book`: bounded recipe display IDs accepted into the
   real client's recipe book.
 - `minecraft_wait_for_visible_entity`: wait for an entity type within a bounded radius.
@@ -698,6 +728,13 @@ Controls:
   ordinary clicks accept primary or secondary input and also confirm a
   server-side close/reopen, while quick moves and buttons require the active
   container state ID to advance.
+- `minecraft_submit_input_batch` dispatches an ordered bounded list of
+  `click_slot` and `break_block` actions in one client-thread task.
+  `break_block` is vanilla's start-destroy input and is refused unless the
+  player breaks that block instantly. Its client tick receipt proves dispatch
+  order only (a click receipt also names the container and state ids its packet
+  carried); server-side consumed-input and world observations are required to
+  prove admission and outcome.
 - Regression: `minecraft_run_scenario` runs an existing deterministic
   in-client scenario and returns its structured report through MCP.
 - Optional visual context: `minecraft_screenshot`.

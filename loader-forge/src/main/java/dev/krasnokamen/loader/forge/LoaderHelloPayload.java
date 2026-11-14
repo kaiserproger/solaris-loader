@@ -1,4 +1,8 @@
+<<<<<<<< HEAD:loader-forge/src/main/java/dev/krasnokamen/loader/forge/LoaderHelloPayload.java
 package dev.krasnokamen.loader.forge;
+========
+package dev.krasnokamen.loader.fabric;
+>>>>>>>> stage0/rebrand/LoaderAgentJar:loader-fabric/src/main/java/dev/krasnokamen/loader/fabric/LoaderHelloPayload.java
 
 import dev.krasnokamen.loader.LoaderHandshake;
 import net.minecraft.network.FriendlyByteBuf;

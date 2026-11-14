@@ -62,7 +62,7 @@ public final class LoaderMinecraftInput {
         } catch (IllegalArgumentException invalidKey) {
             return OptionalInt.empty();
         }
-        if (key.getType() != InputConstants.Type.KEYBOARD
+        if (key.getType() != ClientVersionApi.keyboardType()
                 || key.getValue() < 0
                 || !key.getName().equals(name)) {
             return OptionalInt.empty();
@@ -176,8 +176,8 @@ public final class LoaderMinecraftInput {
     /** The client's own gameplay-input focus: in play, no GUI, no overlay, active window. */
     private static boolean acceptsInput(Minecraft client) {
         return client.player != null
-                && client.gui.screen() == null
-                && client.gui.overlay() == null
+                && dev.krasnokamen.loader.minecraft.ClientVersionApi.screen(client) == null
+                && dev.krasnokamen.loader.minecraft.ClientVersionApi.overlay(client) == null
                 && client.isWindowActive();
     }
 }

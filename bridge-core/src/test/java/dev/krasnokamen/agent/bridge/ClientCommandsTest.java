@@ -1,5 +1,6 @@
 package dev.krasnokamen.agent.bridge;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import dev.krasnokamen.agent.client.ClientCommands;
 import dev.krasnokamen.agent.client.ClientFacade;
@@ -34,6 +35,24 @@ final class ClientCommandsTest {
 
         assertEquals("0.1.0", ping.execute(request("ping", "{}")).get("bridge_version").getAsString());
         assertEquals(0, executor.calls);
+    }
+
+    @Test
+    void batchUsesOneClientThreadTaskAndPreservesOrder() throws Exception {
+        ImmediateExecutor executor = new ImmediateExecutor();
+        FakeClient client = new FakeClient();
+        CommandRegistry registry = ClientCommands.create(executor, client);
+        BridgeCommand batch = registry.find("submit_input_batch").orElseThrow();
+        JsonObject result = batch.execute(request("submit_input_batch",
+            "{\"actions\":[{\"kind\":\"click_slot\",\"slot\":0},"
+                + "{\"kind\":\"break_block\",\"x\":1,\"y\":2,\"z\":3,\"face\":\"up\"}]}"));
+        assertEquals(2, result.get("count").getAsInt());
+        assertEquals("click_slot", client.submittedActions.get(0).getAsJsonObject().get("kind").getAsString());
+        assertEquals("break_block", client.submittedActions.get(1).getAsJsonObject().get("kind").getAsString());
+        assertEquals(1, executor.calls);
+        assertThrows(IllegalArgumentException.class,
+            () -> batch.execute(request("submit_input_batch", "{\"actions\":[]}")));
+        assertEquals(1, executor.calls);
     }
 
     @Test
@@ -777,11 +796,15 @@ final class ClientCommandsTest {
 
         BridgeCommand waitPlay = registry.find("wait_play").orElseThrow();
 
+        // The fake's state wait reports the bound expiring without an event, so the
+        // request bound can be generous: the outcome never depends on host speed.
         assertEquals("", waitPlay.execute(
-            request("wait_play", "{\"timeout_seconds\":0.01}")
+            request("wait_play", "{\"timeout_seconds\":60}")
         ).get("dimension").getAsString());
         assertEquals(1, client.snapshotCalls);
         assertEquals(1, client.awaitStateChangeCalls);
+        assertTrue(client.awaitedTimeout.isPositive());
+        assertTrue(client.awaitedTimeout.compareTo(Duration.ofSeconds(60)) <= 0);
     }
 
     @Test
@@ -1270,6 +1293,7 @@ final class ClientCommandsTest {
         Duration breakTimeout;
         long stateVersion;
         int awaitStateChangeCalls;
+        JsonArray submittedActions;
 
         @Override
         public ClientSnapshot snapshot() {
@@ -1301,6 +1325,14 @@ final class ClientCommandsTest {
             JsonObject observation = new JsonObject();
             observation.addProperty("dimension", "minecraft:overworld");
             return observation;
+        }
+
+        @Override
+        public JsonObject submitInputBatch(JsonArray actions) {
+            submittedActions = actions;
+            JsonObject result = new JsonObject();
+            result.addProperty("count", actions.size());
+            return result;
         }
 
         @Override
@@ -1735,6 +1767,7 @@ final class ClientCommandsTest {
 
     private static final class NeverPlayClient extends FakeClient {
         int snapshotCalls;
+        Duration awaitedTimeout;
 
         @Override
         public ClientSnapshot snapshot() {
@@ -1745,6 +1778,7 @@ final class ClientCommandsTest {
         @Override
         public boolean awaitStateChange(long observedVersion, Duration timeout) {
             awaitStateChangeCalls += 1;
+            awaitedTimeout = timeout;
             return false;
         }
     }

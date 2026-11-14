@@ -37,6 +37,16 @@ dependencies {
 sourceSets.main {
     java {
         srcDir(project(":java-agent").layout.projectDirectory.dir("src/main/java"))
+        srcDir(project(":java-agent").layout.projectDirectory.dir("src/minecraft-${providers.gradleProperty("minecraftVersion").get()}/java"))
+    }
+}
+
+tasks.processResources {
+    val minecraftVersion = providers.gradleProperty("minecraftVersion")
+    inputs.property("minecraftVersion", minecraftVersion)
+    inputs.property("neoVersion", neoVersion)
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand("minecraftVersion" to minecraftVersion.get(), "neoVersion" to neoVersion.get())
     }
 }
 
@@ -189,7 +199,7 @@ tasks.named("runClientAgent") {
 
 tasks.named("runClientMcp") {
     group = "verification"
-    description = "Runs Minecraft 26.3 with the reusable in-client Streamable HTTP MCP server."
+    description = "Runs the selected Minecraft version with the reusable in-client Streamable HTTP MCP server."
     dependsOn(tasks.named("validateClientMcpRunProperties"))
     notCompatibleWithConfigurationCache(clientMcpConfigurationCacheReason)
 }

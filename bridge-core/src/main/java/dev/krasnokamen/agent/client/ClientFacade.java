@@ -1,5 +1,6 @@
 package dev.krasnokamen.agent.client;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import java.nio.file.Path;
@@ -15,6 +16,8 @@ public interface ClientFacade {
     boolean awaitStateChange(long observedVersion, Duration timeout) throws InterruptedException;
 
     JsonObject observe();
+
+    JsonObject submitInputBatch(JsonArray actions);
 
     JsonObject readItemComponents(String source, int slot);
 

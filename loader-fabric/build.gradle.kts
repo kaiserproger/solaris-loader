@@ -32,6 +32,8 @@ loom {
 
 dependencies {
     implementation(project(":loader-core"))
+    implementation(project(":bridge-core"))
+    compileOnly("org.ow2.asm:asm:9.9")
     minecraft("com.mojang:minecraft:${minecraftVersion.get()}")
     implementation("net.fabricmc:fabric-loader:${fabricLoaderVersion.get()}")
     implementation("net.fabricmc.fabric-api:fabric-api:${fabricApiVersion.get()}")
@@ -47,17 +49,22 @@ dependencies {
 sourceSets {
     named("main") {
         java.srcDir(rootProject.file("loader-platform-common/src/main/java"))
+        java.srcDir(rootProject.file("loader-platform-common/src/minecraft-${minecraftVersion.get()}/java"))
         resources.srcDir(rootProject.file("loader-platform-common/src/main/resources"))
+        java.srcDir(project(":java-agent").layout.projectDirectory.dir("src/main/java"))
+        java.srcDir(project(":java-agent").layout.projectDirectory.dir("src/minecraft-${minecraftVersion.get()}/java"))
     }
     named("test") {
         java.srcDir(rootProject.file("loader-platform-common/src/test/java"))
+        java.srcDir("src/minecraft-${minecraftVersion.get()}/test/java")
     }
 }
 
 tasks.processResources {
     inputs.property("fabricLoaderVersion", fabricLoaderVersion)
+    inputs.property("minecraftVersion", minecraftVersion)
     filesMatching("fabric.mod.json") {
-        expand("fabricLoaderVersion" to fabricLoaderVersion.get())
+        expand("fabricLoaderVersion" to fabricLoaderVersion.get(), "minecraftVersion" to minecraftVersion.get())
     }
 }
 
@@ -65,7 +72,6 @@ tasks.named<JavaExec>("runClientMcp") {
     group = "verification"
     description = "Runs the Fabric Loader client with the embedded Krasnokamen MCP server."
     dependsOn(rootProject.tasks.named("validateLoaderClientMcpRunProperties"))
-    classpath += clientMcpRuntime
     workingDir(file(clientMcpGameDir.get()))
     args("--username", clientMcpUsername.get())
     environment("KRASNOKAMEN_CLIENT_MCP_TOKEN", clientMcpToken.get())

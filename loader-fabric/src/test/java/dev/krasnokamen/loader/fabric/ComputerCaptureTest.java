@@ -4,13 +4,6 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.nio.ByteBuffer;
 import org.junit.jupiter.api.Test;
-import static org.lwjgl.sdl.SDLHints.SDL_HINT_VIDEO_DRIVER;
-import static org.lwjgl.sdl.SDLHints.SDL_SetHint;
-import static org.lwjgl.sdl.SDLInit.SDL_INIT_VIDEO;
-import static org.lwjgl.sdl.SDLInit.SDL_Init;
-import static org.lwjgl.sdl.SDLInit.SDL_Quit;
-import static org.lwjgl.sdl.SDLVideo.*;
-import org.lwjgl.opengl.GL;
 import org.lwjgl.opengl.GL11;
 
 class ComputerCaptureTest {
@@ -52,11 +45,7 @@ class ComputerCaptureTest {
                 assertEquals(GL11.GL_NO_ERROR, GL11.glGetError());
                 assertPixel(readback, center);
             }
-        } finally {
-            if (context != 0) SDL_GL_DestroyContext(context);
-            if (window != 0) SDL_DestroyWindow(window);
-            SDL_Quit();
-        }
+        });
     }
     private static void assertPixel(ByteBuffer pixels, int offset) {
         assertEquals(32, Byte.toUnsignedInt(pixels.get(offset)), 1);

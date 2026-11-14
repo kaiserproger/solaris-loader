@@ -14,13 +14,13 @@ config="krasnokamen-client-agent.mixins.json"
 [[dependencies.krasnokamen_client_agent]]
 modId="neoforge"
 type="required"
-versionRange="[26.3.0.83,)"
+versionRange="[${neoVersion},)"
 ordering="NONE"
 side="CLIENT"
 
 [[dependencies.krasnokamen_client_agent]]
 modId="minecraft"
 type="required"
-versionRange="[26.3]"
+versionRange="[${minecraftVersion}]"
 ordering="NONE"
 side="CLIENT"

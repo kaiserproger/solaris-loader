@@ -11,6 +11,7 @@ val testClientJar = providers.gradleProperty("krasnokamen.testClientJar").orElse
 dependencies {
     implementation("org.ow2.asm:asm:9.9")
     implementation(project(":bridge-core"))
+    implementation("org.ow2.asm:asm:9.9")
     compileOnly(files(clientJar))
     compileOnly("com.mojang:brigadier:1.3.10")
     compileOnly("com.mojang:datafixerupper:9.0.19")
@@ -21,6 +22,7 @@ dependencies {
     testRuntimeOnly(files(file(testClientJar.get())))
     testCompileOnly(files(clientJar))
     testImplementation("com.google.code.gson:gson:2.11.0")
+    testRuntimeOnly("com.mojang:logging:1.7.12")
     testRuntimeOnly("com.mojang:authlib:7.0.63")
     testImplementation("com.mojang:brigadier:1.3.10")
     testRuntimeOnly("com.mojang:datafixerupper:9.0.19")

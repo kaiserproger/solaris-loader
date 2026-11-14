@@ -24,11 +24,22 @@ dependencies {
 sourceSets {
     named("main") {
         java.srcDir(rootProject.file("loader-platform-common/src/main/java"))
+        java.srcDir(rootProject.file("loader-platform-common/src/minecraft-${providers.gradleProperty("minecraftVersion").get()}/java"))
         resources.srcDir(rootProject.file("loader-platform-common/src/main/resources"))
         java.srcDir(project(":java-agent").layout.projectDirectory.dir("src/main/java"))
+        java.srcDir(project(":java-agent").layout.projectDirectory.dir("src/minecraft-${providers.gradleProperty("minecraftVersion").get()}/java"))
     }
     named("test") {
         java.srcDir(rootProject.file("loader-platform-common/src/test/java"))
+    }
+}
+
+tasks.processResources {
+    val minecraftVersion = providers.gradleProperty("minecraftVersion")
+    inputs.property("minecraftVersion", minecraftVersion)
+    inputs.property("neoVersion", neoVersion)
+    filesMatching("META-INF/neoforge.mods.toml") {
+        expand("minecraftVersion" to minecraftVersion.get(), "neoVersion" to neoVersion.get())
     }
 }
 
