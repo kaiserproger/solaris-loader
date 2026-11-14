@@ -424,7 +424,11 @@ public final class MinecraftClientFacade implements ClientFacade {
             case CONNECT -> {
             }
         }
-        ServerData serverData = new ServerData("Solaris", address, ServerData.Type.OTHER);
+        var servers = new net.minecraft.client.multiplayer.ServerList(minecraft);
+        servers.load();
+        ServerData savedServer = servers.get(address);
+        ServerData serverData = savedServer != null
+                ? savedServer : new ServerData("Solaris", address, ServerData.Type.OTHER);
         // Vanilla sends handshake intent TRANSFER whenever this is non-null
         // (ConnectScreen: transferState != null). An ordinary join must send
         // LOGIN, so pass null exactly like the vanilla multiplayer screen does;

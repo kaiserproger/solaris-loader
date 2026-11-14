@@ -315,6 +315,13 @@ final class MinecraftClientObservation {
         if (entity instanceof LivingEntity living) {
             value.addProperty("health", living.getHealth());
             value.addProperty("max_health", living.getMaxHealth());
+            value.addProperty("using_item", living.isUsingItem());
+            value.addProperty("blocking", living.isBlocking());
+            value.add("main_hand", item(living.getMainHandItem()));
+            value.add("off_hand", item(living.getOffhandItem()));
+        }
+        if (entity.getVehicle() != null) {
+            value.addProperty("vehicle_id", entity.getVehicle().getId());
         }
         if (entity instanceof ItemEntity itemEntity) {
             value.add("item", item(itemEntity.getItem()));
@@ -373,6 +380,10 @@ final class MinecraftClientObservation {
         item.addProperty("damage", stack.getDamageValue());
         item.addProperty("max_damage", stack.getMaxDamage());
         item.addProperty("foil", stack.hasFoil());
+        var model = stack.get(DataComponents.ITEM_MODEL);
+        if (model != null) {
+            item.addProperty("item_model", model.toString());
+        }
         stack.getEnchantments().entrySet().stream()
             .sorted(Comparator.comparing(entry -> entry.getKey().getRegisteredName()))
             .forEach(entry -> {

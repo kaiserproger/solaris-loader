@@ -6,7 +6,10 @@
   "client": [
     "KeyboardHandlerMixin",
     "MinecraftMixin",
-    "WindowMixin"
+    "WindowMixin",
+    "ZombieShieldPoseMixin",
+    "ZombieShieldAnimationMixin",
+    "LoaderClientPacketEventsMixin"
   ],
   "injectors": {
     "defaultRequire": 1
