@@ -5,8 +5,8 @@ platform adapters (`bridge-core`, `fabric-agent`, `java-agent`, `loader-core`,
 `loader-fabric`, `loader-neoforge`, `loader-forge`, `loader-platform-common`).
 Developed independently from the Krasnokamen core repository.
 
-This repository (formerly Solaris, renamed Krasnokamen on 2026-11-12) keeps its
-checkout directory name `solaris-loader` and the core sibling `../solaris` on
+This repository (formerly Krasnokamen, renamed Krasnokamen on 2026-11-12) keeps its
+checkout directory name `krasnokamen-loader` and the core sibling `../solaris` on
 the owner host; Java packages, mod ids, channels and env vars all use
 `krasnokamen`.
 
