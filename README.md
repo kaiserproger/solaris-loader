@@ -633,7 +633,9 @@ To test a real connection and structured world reads against Krasnokamen:
 Read-only tools:
 
 - `minecraft_observe`: player, health/food, pose, inventory, active container,
-  screen, target, clocks, and recent chat.
+  screen, target, clocks, and recent chat. The premain agent also exposes
+  ordered applied system-chat packet receipts and a dropped-receipt count;
+  bounded GUI chat history is not a substitute for this journal.
 - `minecraft_read_block`: one loaded block with state, fluid, sky-light, and block-light values.
 - `minecraft_wait_for_loaded_block`: wait for an applied packet event that makes
   one block's chunk client-loaded, then return that block.
