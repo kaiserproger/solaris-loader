@@ -5,7 +5,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.InteractionHand;
-import net.minecraft.world.item.component.SwingAnimation;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -364,7 +363,7 @@ final class ScenarioBlockTargets {
         }
         minecraft.gameMode.startDestroyBlock(obstacle, Direction.UP);
         minecraft.gameMode.continueDestroyBlock(obstacle, Direction.UP);
-        minecraft.player.swing(InteractionHand.MAIN_HAND, SwingAnimation.DEFAULT, true);
+        MinecraftActionAccess.swing(minecraft.player, InteractionHand.MAIN_HAND);
         return true;
     }
 

@@ -376,6 +376,32 @@ server in the real Minecraft Java 26.3 client. MCP hosts can inspect the
 client-visible world and drive ordinary client inputs without using screenshots
 as state assertions or an external command-string launcher.
 
+The plain-Java harness also retains 26.1.2. Its screen and overlay belong to
+`Minecraft`, and its chat belongs directly to `Gui`; 26.3 moved those APIs to
+`Gui` and `Hud`. Cached native bindings cover screen/overlay/chat access,
+screenshots, keyboard types, HUD visibility, team colors, hand swings, predicted
+drops and front-sign packets/text. They invoke the runtime's actual native APIs;
+missing layouts fail explicitly rather than returning empty or simulated state.
+The build still targets 26.3; a retained client must use its own unmodified Mojang
+runtime JAR, never the compile-time client JAR.
+Run `:java-agent:test` with `-Psolaris.testClientJar=/path/to/client.jar` once for
+each retained runtime. This changes only the test runtime classpath, not the 26.3
+compile target. `NativeMemberCompatibilityTest` checks every direct native member
+reference in the compiled agent, including inherited JVM descriptors and changed
+return types; binding tests exercise both native layouts and the actual runtime API.
+Plain-Java premain installs the native lifecycle/packet event transformer before
+Minecraft classes load. Screen/overlay changes, client ticks and applied packets
+publish the same event-owner signals used by modded runtimes; readiness and
+inventory waits do not depend on polling or a mod loader.
+`minecraft_observe` exposes the exact applied SystemChat packet journal as
+`received_system_chat`, with `dropped_system_chat` reporting loss beyond its 4096
+receipt bound. It preserves duplicates and packet order independently of GUI
+history; matrix input fences reject a journal with lost receipts.
+`minecraft_list_entities` reports experience-orb `value` from the runtime's
+synced `DATA_VALUE` accessor. It does not report `Count`: multiplicity is
+server-only NBT, so matrix conservation queries `Value` and `Count` by each
+received entity UUID and labels those console oracles separately from client data.
+
 ## Start
 
 Use Java 25 and choose a fresh bearer token:
