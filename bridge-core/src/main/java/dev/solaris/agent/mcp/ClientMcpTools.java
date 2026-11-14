@@ -72,7 +72,7 @@ public final class ClientMcpTools {
         ),
         readOnly(
             "minecraft_list_entities",
-            "List bounded client-visible entities near the player with stable ids, types, and positions.",
+            "List bounded client-visible entities near the player with stable ids, types, positions, and the same-thread client game_time.",
             "list_entities",
             listEntitiesSchema()
         ),
