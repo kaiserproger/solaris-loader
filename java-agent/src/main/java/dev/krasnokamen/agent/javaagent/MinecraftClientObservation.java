@@ -257,6 +257,7 @@ final class MinecraftClientObservation {
             entities.add(entity(entry.entity(), entry.distanceSquared(), minecraft.player));
         }
         JsonObject result = new JsonObject();
+        result.addProperty("game_time", minecraft.level.getGameTime());
         result.addProperty("count", returned);
         result.addProperty("visible_count", visible.size());
         result.addProperty("truncated", visible.size() > returned);

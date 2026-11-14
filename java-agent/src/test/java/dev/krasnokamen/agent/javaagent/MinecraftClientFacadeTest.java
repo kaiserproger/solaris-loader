@@ -60,6 +60,22 @@ final class MinecraftClientFacadeTest {
     }
 
     @Test
+    void entityListingIncludesSameClientThreadGameTime() throws Exception {
+        String observation = Files.readString(Path.of(
+            "src/main/java/dev/krasnokamen/agent/javaagent/MinecraftClientObservation.java"
+        ));
+        String method = observation.substring(
+            observation.indexOf("static JsonObject listEntities("),
+            observation.indexOf("private static JsonObject player(")
+        );
+        assertTrue(method.contains("result.addProperty(\"game_time\", minecraft.level.getGameTime())"));
+        String commands = Files.readString(Path.of(
+            "../bridge-core/src/main/java/dev/krasnokamen/agent/client/ClientCommands.java"
+        ));
+        assertTrue(commands.contains("executor.callOnClientThread(() -> client.listEntities(radius, limit))"));
+    }
+
+    @Test
     void playerObservationIncludesExperienceState() throws Exception {
         String source = Files.readString(Path.of(
             "src/main/java/dev/krasnokamen/agent/javaagent/MinecraftClientObservation.java"

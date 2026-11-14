@@ -27,6 +27,12 @@ final class ClientMcpToolsTest {
     }
 
     @Test
+    void entityListingDocumentsSameThreadGameTime() {
+        assertTrue(find(ClientMcpTools.definitions(), "minecraft_list_entities")
+            .description().contains("same-thread client game_time"));
+    }
+
+    @Test
     void publishesBoundsNeededToKeepClientQueriesFinite() {
         JsonObject scan = properties(find(ClientMcpTools.definitions(), "minecraft_scan_blocks"));
         JsonObject loadedBlock = properties(find(
