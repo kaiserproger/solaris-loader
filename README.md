@@ -820,3 +820,35 @@ bounded two-second applied-inventory wait still requires the requested item
 count to increase (and identity-bound collection still requires its take event).
 
 </details>
+
+## Java battle gate (26.1.2)
+
+`tools/battle_scenario.py` is invoked by the core harness's `java-battle-functional`
+profile, with `--platform fabric` or `--platform neoforge`. The core harness
+owns receipts and the shared Xvfb/client lifecycle; this repository owns the
+Java scenario. Each run uses clean game directories, the ordinary server-pushed
+resource pack, a copied battle world and the live `PovRed`/`CamSpec` roles.
+Received entity observations include hands, item models, blocking state and
+vehicle identity so combat targets and horse riders are not guessed from proximity.
+Functional assertions and retained screenshots are distinct: equipment, horse/rider
+and raised-shield rendering still require looking at the frames in the report.
+
+The shared Loader mixins preserve the humanoid shield-blocking pose for zombie
+renderers (including battle husks). Vanilla's zombie-arm animation otherwise
+overwrites both arms after the humanoid model computes its item poses. Nonblocking
+zombies keep their vanilla arm animation; Java entities and horses keep vanilla models.
+
+The automatic-pack cell uses vanilla's per-server **Server Resource Packs:
+Enabled** preference, stored in the private `servers.dat`. A new/default
+server entry remains **Prompt** and must not be reported as automatic.
+MCP connects load matching vanilla server entries rather than replacing their
+pack policy with an unsaved default `ServerData`.
+The Loader MCP packet hook publishes applied health packets as well as tick/state
+events. Respawn confirmation requires a fresh authoritative health event; an
+ordinary tick alone cannot satisfy that fence.
+The profile's PASS covers functional assertions only, including the absence of
+battle-pack model-load failures in both Java logs. `java-battle.json` keeps
+`visual_review.status=pending`: 3D weapons/shields, horses/riders and the raised
+shield pose need separate screenshot review. A functional result is not visual
+acceptance. The original invalid pack is a negative control for the model-load
+check.
