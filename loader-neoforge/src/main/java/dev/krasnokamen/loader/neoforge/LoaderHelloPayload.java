@@ -1,5 +1,6 @@
 <<<<<<<< HEAD:loader-neoforge/src/main/java/dev/krasnokamen/loader/neoforge/LoaderHelloPayload.java
 <<<<<<<< HEAD:loader-neoforge/src/main/java/dev/krasnokamen/loader/neoforge/LoaderHelloPayload.java
+<<<<<<<< HEAD:loader-neoforge/src/main/java/dev/krasnokamen/loader/neoforge/LoaderHelloPayload.java
 package dev.krasnokamen.loader.neoforge;
 ========
 package dev.krasnokamen.loader.forge;
@@ -7,6 +8,9 @@ package dev.krasnokamen.loader.forge;
 ========
 package dev.krasnokamen.loader.fabric;
 >>>>>>>> stage0/rebrand/RebrandBrandLoader:loader-fabric/src/main/java/dev/krasnokamen/loader/fabric/LoaderHelloPayload.java
+========
+package dev.krasnokamen.loader.fabric;
+>>>>>>>> stage0/rebrand/RebrandLoader:loader-fabric/src/main/java/dev/krasnokamen/loader/fabric/LoaderHelloPayload.java
 
 import dev.krasnokamen.loader.LoaderHandshake;
 import net.minecraft.network.FriendlyByteBuf;
