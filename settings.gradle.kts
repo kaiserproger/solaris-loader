@@ -19,7 +19,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "solaris-loader"
+rootProject.name = "krasnokamen-loader"
 
 include("bridge-core")
 include("fabric-agent")

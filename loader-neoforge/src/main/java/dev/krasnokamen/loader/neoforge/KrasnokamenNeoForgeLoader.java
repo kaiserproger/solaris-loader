@@ -1,0 +1,420 @@
+package dev.krasnokamen.loader.neoforge;
+
+import dev.krasnokamen.loader.LoaderActivatedContent;
+import dev.krasnokamen.loader.LoaderHandshake;
+import dev.krasnokamen.loader.LoaderOutgoing;
+import dev.krasnokamen.loader.LoaderPermissionController;
+import dev.krasnokamen.loader.LoaderPermissionRequest;
+import dev.krasnokamen.loader.LoaderPlatform;
+import dev.krasnokamen.loader.LoaderRuntimeSettings;
+import dev.krasnokamen.loader.LoaderViewMessage;
+import dev.krasnokamen.loader.LoaderViewActionRequest;
+import dev.krasnokamen.loader.LoaderViewKey;
+import dev.krasnokamen.loader.LoaderSoundCommand;
+import dev.krasnokamen.loader.minecraft.LoaderMinecraftInput;
+import dev.krasnokamen.loader.minecraft.LoaderMinecraftSound;
+import dev.krasnokamen.loader.minecraft.LoaderRuntimeResourcePack;
+import dev.krasnokamen.loader.minecraft.LoaderMinecraftView;
+import dev.krasnokamen.loader.minecraft.LoaderBlockCarrier;
+import dev.krasnokamen.loader.minecraft.LoaderMinecraftBlock;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.IntStream;
+import java.util.WeakHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
+import java.util.stream.Collectors;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ConfirmScreen;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.multiplayer.ServerData;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.Connection;
+import net.minecraft.network.protocol.common.ServerboundCustomPayloadPacket;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
+import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.registries.DeferredBlock;
+import net.neoforged.neoforge.registries.DeferredItem;
+import net.neoforged.neoforge.registries.DeferredRegister;
+import net.minecraft.world.item.BlockItem;
+import net.minecraft.world.level.block.Block;
+
+@Mod(KrasnokamenNeoForgeLoader.MOD_ID)
+public final class KrasnokamenNeoForgeLoader {
+    public static final String MOD_ID = "krasnokamen_loader";
+    private static final DeferredRegister.Blocks BLOCKS =
+            DeferredRegister.createBlocks(MOD_ID);
+    private static final DeferredRegister.Items ITEMS =
+            DeferredRegister.createItems(MOD_ID);
+    private static final List<DeferredBlock<Block>> LOADER_BLOCKS =
+            IntStream.range(0, LoaderBlockCarrier.MAX_CARRIERS)
+                    .mapToObj(index -> BLOCKS.register(
+                            LoaderBlockCarrier.path(index),
+                            () -> LoaderBlockCarrier.createBlock(index)))
+                    .toList();
+    @SuppressWarnings("unused")
+    private static final List<DeferredItem<BlockItem>> LOADER_BLOCK_ITEMS =
+            IntStream.range(0, LoaderBlockCarrier.MAX_CARRIERS)
+                    .mapToObj(index -> ITEMS.register(
+                            LoaderBlockCarrier.path(index),
+                            () -> LoaderBlockCarrier.createItem(
+                                    index,
+                                    LOADER_BLOCKS.get(index).get())))
+                    .toList();
+    private static final Map<Connection, LoaderPermissionController> CONTROLLERS =
+            Collections.synchronizedMap(new WeakHashMap<>());
+    private static final AtomicReference<LoaderActivatedContent> ACTIVE_CONTENT =
+            new AtomicReference<>(LoaderActivatedContent.empty());
+    private static final LoaderRuntimeResourcePack RESOURCE_PACK =
+            new LoaderRuntimeResourcePack();
+    private static final AtomicBoolean RESOURCE_PACK_REGISTERED =
+            new AtomicBoolean();
+    private static final LoaderNeoForgeMcpRuntime MCP_RUNTIME =
+            LoaderNeoForgeMcpRuntime.createIfEnabled();
+
+    public KrasnokamenNeoForgeLoader(IEventBus modBus) {
+        BLOCKS.register(modBus);
+        ITEMS.register(modBus);
+        modBus.addListener(KrasnokamenNeoForgeLoader::registerPayloads);
+        modBus.addListener(KrasnokamenNeoForgeLoader::registerGuiLayers);
+        NeoForge.EVENT_BUS.addListener(KrasnokamenNeoForgeLoader::onClientTickPre);
+        NeoForge.EVENT_BUS.addListener(KrasnokamenNeoForgeLoader::onClientTickPost);
+        NeoForge.EVENT_BUS.addListener(KrasnokamenNeoForgeLoader::onLoggingIn);
+        NeoForge.EVENT_BUS.addListener(KrasnokamenNeoForgeLoader::onLoggingOut);
+    }
+
+    private static void registerGuiLayers(RegisterGuiLayersEvent event) {
+        event.registerAboveAll(
+                Identifier.parse(LoaderMinecraftView.HUD_LAYER), LoaderMinecraftView::renderHud);
+    }
+
+    private static void onClientTickPre(ClientTickEvent.Pre event) {
+        if (MCP_RUNTIME != null) {
+            MCP_RUNTIME.beforeTick();
+        }
+    }
+
+    private static void onClientTickPost(ClientTickEvent.Post event) {
+        if (MCP_RUNTIME != null) {
+            MCP_RUNTIME.afterTick();
+        }
+    }
+
+    private static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
+        publishMcpState();
+        Connection connection = event.getConnection();
+        if (connection != null) {
+            unmount(Minecraft.getInstance(), connection);
+        }
+    }
+
+    private static void onLoggingIn(ClientPlayerNetworkEvent.LoggingIn event) {
+        publishMcpState();
+    }
+
+    private static void registerPayloads(RegisterPayloadHandlersEvent event) {
+        var registrar = event.registrar(Integer.toString(LoaderHandshake.PROTOCOL_VERSION)).optional();
+        registrar.playToClient(
+                LoaderViewPayload.TYPE,
+                LoaderViewPayload.CODEC,
+                (payload, context) -> {
+                    Connection origin = context.connection();
+                    Minecraft.getInstance().execute(() -> {
+                        Minecraft client = Minecraft.getInstance();
+                        var listener = client.getConnection();
+                        boolean originActive = origin.isConnected()
+                                && listener != null
+                                && listener.getConnection() == origin;
+                        decodeView(payload.bytes(), originActive).ifPresent(message ->
+                                LoaderMinecraftView.present(
+                                        message,
+                                        ACTIVE_CONTENT.get(),
+                                        actionBytes -> sendViewAction(client, origin, actionBytes)));
+                    });
+                });
+        registrar.playToClient(
+                LoaderSoundPayload.TYPE,
+                LoaderSoundPayload.CODEC,
+                (payload, context) -> {
+                    Connection origin = context.connection();
+                    Minecraft.getInstance().execute(() -> {
+                        var listener = Minecraft.getInstance().getConnection();
+                        boolean originActive = origin.isConnected() && listener != null
+                                && listener.getConnection() == origin;
+                        LoaderSoundCommand.resolve(payload.bytes(), ACTIVE_CONTENT.get(), originActive)
+                                .ifPresent(LoaderMinecraftSound::present);
+                    });
+                });
+        registrar.playToServer(
+                LoaderViewActionPayload.TYPE,
+                LoaderViewActionPayload.CODEC,
+                (payload, context) -> context.disconnect(
+                        Component.literal("Krasnokamen Loader view action is client-only")));
+        registrar.configurationToClient(
+                LoaderManifestPayload.TYPE,
+                LoaderManifestPayload.CODEC,
+                (manifest, context) -> {
+                    try {
+                        ACTIVE_CONTENT.set(LoaderActivatedContent.empty());
+                        Connection connection = context.connection();
+                        Minecraft client = Minecraft.getInstance();
+                        ensureResourcePackRegistered(client);
+                        watchConnection(client, connection);
+                        controller(connection).acceptManifest(
+                                manifest.bytes(),
+                                LoaderPlatform.NEOFORGE,
+                                LoaderRuntimeSettings.LOADER_VERSION,
+                                serverIdentity(connection),
+                                LoaderRuntimeSettings.cacheDirectory(),
+                                connection::isConnected,
+                                KrasnokamenNeoForgeLoader::prompt,
+                                outgoing -> send(
+                                        Minecraft.getInstance(),
+                                        connection,
+                                        outgoing),
+                                reason -> disconnect(context.connection(), reason));
+                    } catch (IllegalArgumentException error) {
+                        disconnect(context.connection(), error.getMessage());
+                    }
+                });
+        registrar.configurationToClient(
+                LoaderProbePayload.TYPE,
+                LoaderProbePayload.CODEC,
+                KrasnokamenNeoForgeLoader::handleProbe);
+        registrar.configurationToClient(
+                LoaderArtifactPayload.TYPE,
+                LoaderArtifactPayload.CODEC,
+                (artifact, context) -> {
+                    try {
+                        controller(context.connection())
+                                .acceptArtifact(
+                                        artifact.bytes(),
+                                        context.connection()::isConnected)
+                                .ifPresent(outgoing -> send(
+                                        Minecraft.getInstance(),
+                                        context.connection(),
+                                        outgoing));
+                    } catch (IllegalArgumentException error) {
+                        disconnect(context.connection(), error.getMessage());
+                    }
+                });
+        registrar.configurationToServer(
+                LoaderRequestPayload.TYPE,
+                LoaderRequestPayload.CODEC,
+                (payload, context) -> context.disconnect(
+                        Component.literal("Krasnokamen Loader request is client-only")));
+        registrar.configurationToServer(
+                LoaderAckPayload.TYPE,
+                LoaderAckPayload.CODEC,
+                (payload, context) -> context.disconnect(
+                        Component.literal("Krasnokamen Loader acknowledgement is client-only")));
+        registrar.configurationToServer(
+                LoaderHelloPayload.TYPE,
+                LoaderHelloPayload.CODEC,
+                (payload, context) -> context.disconnect(
+                        Component.literal("Krasnokamen Loader hello is client-only")));
+    }
+
+    static void handleProbe(
+            LoaderProbePayload probe,
+            net.neoforged.neoforge.network.handling.IPayloadContext context) {
+        context.reply(new LoaderHelloPayload());
+    }
+
+    static CustomPacketPayload payload(LoaderOutgoing outgoing) {
+        activate(outgoing);
+        return switch (outgoing.kind()) {
+            case REQUEST -> new LoaderRequestPayload(outgoing.bytes());
+            case ACKNOWLEDGEMENT -> new LoaderAckPayload(outgoing.bytes());
+        };
+    }
+
+    private static void send(
+            Minecraft client,
+            Connection connection,
+            LoaderOutgoing outgoing) {
+        if (outgoing.kind() == LoaderOutgoing.Kind.REQUEST) {
+            connection.send(new ServerboundCustomPayloadPacket(payload(outgoing)));
+            return;
+        }
+        RESOURCE_PACK.mount(
+                        client,
+                        connection,
+                        connection::isConnected,
+                        outgoing.activatedContent())
+                .whenCompleteAsync((unused, error) -> {
+                    if (error != null
+                            || !connection.isConnected()
+                            || !RESOURCE_PACK.owns(connection)) {
+                        unmount(client, connection);
+                        disconnect(
+                                connection,
+                                error == null
+                                        ? "connection closed before Loader resources mounted"
+                                        : "mounting Loader resources: " + error.getMessage());
+                        return;
+                    }
+                    connection.send(new ServerboundCustomPayloadPacket(payload(outgoing)));
+                }, client);
+    }
+
+    static void activate(LoaderOutgoing outgoing) {
+        if (outgoing.kind() == LoaderOutgoing.Kind.ACKNOWLEDGEMENT) {
+            LoaderMinecraftView.clear();
+            LoaderMinecraftSound.clear();
+            ACTIVE_CONTENT.set(outgoing.activatedContent());
+            LoaderMinecraftInput.armRequestKeys(
+                    outgoing.activatedContent(),
+                    view -> tryRequestView(view.value()));
+        }
+    }
+
+    public static LoaderActivatedContent activeContent() {
+        return ACTIVE_CONTENT.get();
+    }
+
+    static void clearActiveContent() {
+        LoaderMinecraftView.clear();
+        LoaderMinecraftSound.clear();
+        ACTIVE_CONTENT.set(LoaderActivatedContent.empty());
+    }
+
+    private static void watchConnection(
+            Minecraft client,
+            Connection connection) {
+        connection.channel().closeFuture().addListener(
+                ignored -> unmount(client, connection));
+    }
+
+    private static void ensureResourcePackRegistered(Minecraft client) {
+        if (RESOURCE_PACK_REGISTERED.compareAndSet(false, true)) {
+            client.getResourcePackRepository()
+                    .addPackFinder(RESOURCE_PACK.repositorySource());
+        }
+    }
+
+    private static void unmount(
+            Minecraft client,
+            Connection connection) {
+        RESOURCE_PACK.unmount(
+                client,
+                connection,
+                KrasnokamenNeoForgeLoader::clearActiveContent);
+    }
+
+    static Optional<LoaderViewMessage> decodeView(
+            byte[] payload,
+            boolean connectionActive) {
+        return LoaderViewMessage.decode(payload, ACTIVE_CONTENT.get(), connectionActive);
+    }
+
+    static void requestView(String viewKey) {
+        if (!tryRequestView(viewKey)) {
+            throw new IllegalStateException(
+                    "Loader view request requires an active declared view");
+        }
+    }
+
+    /** Send one declared view request on the active Loader connection; false when none applies. */
+    static boolean tryRequestView(String viewKey) {
+        Minecraft client = Minecraft.getInstance();
+        var listener = client.getConnection();
+        Connection origin = listener == null ? null : listener.getConnection();
+        boolean active = origin != null && origin.isConnected() && RESOURCE_PACK.owns(origin);
+        Optional<byte[]> bytes = LoaderViewActionRequest.request(
+                new LoaderViewKey(viewKey), ACTIVE_CONTENT.get(), active);
+        bytes.ifPresent(request -> sendViewAction(client, origin, request));
+        return bytes.isPresent();
+    }
+
+    private static void sendViewAction(
+            Minecraft client,
+            Connection origin,
+            byte[] bytes) {
+        var listener = client.getConnection();
+        boolean originActive = origin.isConnected()
+                && listener != null
+                && listener.getConnection() == origin;
+        if (originActive) {
+            origin.send(new ServerboundCustomPayloadPacket(
+                    new LoaderViewActionPayload(bytes)));
+        }
+    }
+
+    private static LoaderPermissionController controller(Connection connection) {
+        synchronized (CONTROLLERS) {
+            return CONTROLLERS.computeIfAbsent(
+                    connection,
+                    ignored -> new LoaderPermissionController(
+                            LoaderRuntimeSettings.permissionDecisionsFile(),
+                            LoaderMinecraftBlock::carrierStateIds));
+        }
+    }
+
+    private static void prompt(
+            LoaderPermissionRequest request,
+            Consumer<Boolean> decision) {
+        Minecraft client = Minecraft.getInstance();
+        String permissions = request.permissions().stream()
+                .map(permission -> permission.wireName())
+                .collect(Collectors.joining(", "));
+        client.execute(() -> {
+            Screen parent = client.screen;
+            client.setScreen(new ConfirmScreen(
+                    allowed -> {
+                        client.setScreen(parent);
+                        publishMcpState();
+                        decision.accept(allowed);
+                    },
+                    Component.literal("Allow Krasnokamen content from " + request.serverIdentity() + "?"),
+                    Component.literal("Requested permissions: " + permissions
+                            + ". Downloaded content is untrusted."),
+                    Component.literal("Allow"),
+                    Component.literal("Deny")));
+            publishMcpState();
+        });
+    }
+
+    private static void publishMcpState() {
+        if (MCP_RUNTIME != null) {
+            MCP_RUNTIME.publishState();
+        }
+    }
+
+    private static String serverIdentity(Connection connection) {
+        ServerData server = Minecraft.getInstance().getCurrentServer();
+        return serverIdentity(
+                server == null ? null : server.ip,
+                connection.getRemoteAddress());
+    }
+
+    static String serverIdentity(
+            String configuredAddress,
+            SocketAddress remoteAddress) {
+        if (configuredAddress != null && !configuredAddress.isBlank()) {
+            return configuredAddress;
+        }
+        if (remoteAddress instanceof InetSocketAddress address) {
+            return address.getHostString() + ":" + address.getPort();
+        }
+        throw new IllegalArgumentException(
+                "Krasnokamen Loader cannot identify the current server");
+    }
+
+    private static void disconnect(Connection connection, String reason) {
+        connection.disconnect(Component.literal(
+                "Krasnokamen Loader rejected manifest: " + reason));
+    }
+}

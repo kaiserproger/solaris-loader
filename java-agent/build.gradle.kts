@@ -2,8 +2,8 @@ plugins {
     java
 }
 
-val clientJarPath = providers.environmentVariable("SOLARIS_CLIENT_JAR")
-    .orElse(providers.gradleProperty("solaris.clientJar"))
+val clientJarPath = providers.environmentVariable("KRASNOKAMEN_CLIENT_JAR")
+    .orElse(providers.gradleProperty("krasnokamen.clientJar"))
     .orElse(rootProject.file("../solaris/.analysis/client-automation/versions/26.1.2/client.jar").absolutePath)
 val clientJar = file(clientJarPath.get())
 
@@ -35,8 +35,8 @@ tasks.jar {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes(
-            "Premain-Class" to "dev.solaris.agent.javaagent.SolarisClientAgent",
-            "Agent-Class" to "dev.solaris.agent.javaagent.SolarisClientAgent",
+            "Premain-Class" to "dev.krasnokamen.agent.javaagent.KrasnokamenClientAgent",
+            "Agent-Class" to "dev.krasnokamen.agent.javaagent.KrasnokamenClientAgent",
             "Can-Redefine-Classes" to "false",
             "Can-Retransform-Classes" to "false"
         )

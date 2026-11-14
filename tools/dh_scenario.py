@@ -146,7 +146,7 @@ def run(args: argparse.Namespace) -> int:
     repo = args.repo_root.resolve()
     artifact = args.artifact_dir.resolve()
     artifact.mkdir(parents=True, exist_ok=True)
-    os.environ["SOLARIS_LOADER_ROOT"] = str(loader)
+    os.environ["KRASNOKAMEN_LOADER_ROOT"] = str(loader)
     # System project properties override the normal Loader defaults for this
     # independently pinned DH cell; no owner Gradle file is changed.
     os.environ["GRADLE_OPTS"] = os.environ.get("GRADLE_OPTS", "") + (
@@ -190,7 +190,7 @@ def run(args: argparse.Namespace) -> int:
         replacements = {
             "port = 25565": f"port = {port}",
             'world_dir = ".analysis/test-world-v12"': f'world_dir = "{artifact / world_name}"',
-            'vanilla_data_dir = "data/vanilla"': f'vanilla_data_dir = "{os.environ.get("SOLARIS_CLIENT_DATA_DIR", repo / "data/vanilla")}"',
+            'vanilla_data_dir = "data/vanilla"': f'vanilla_data_dir = "{os.environ.get("KRASNOKAMEN_CLIENT_DATA_DIR", repo / "data/vanilla")}"',
             'directory = "plugins"': f'directory = "{artifact / "plugins"}"',
             "seed = 0": "seed = 81",
         }
@@ -278,7 +278,7 @@ def run(args: argparse.Namespace) -> int:
         while not state.get("in_play"):
             screen = state.get("screen", {})
             if (screen.get("class") == "net.minecraft.client.gui.screens.ConfirmScreen"
-                    and screen.get("title") == f"Allow Solaris content from {target}?"
+                    and screen.get("title") == f"Allow Krasnokamen content from {target}?"
                     and not allowed_fixture_prompt):
                 # Main explicitly authorized these two permissions for this
                 # isolated loopback fixture/private game copy on 2026-10-22.
